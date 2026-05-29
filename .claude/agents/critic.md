@@ -20,7 +20,7 @@ Score every draft on TWO independent dimensions and gate on both. V2's single sc
 | 6 | Constraint compliance | 2 hashtags, 1,200-1,400 chars, Indian analogy, no emojis, 3+ em-dashes |
 | 7 | Engagement-close | Memory-trigger question (default) OR self-deprecating beat (only if wave strong); never a generic opinion question |
 
-Craft ship bar: 30/35.
+Craft ship bar: 33/35 (94% — TEST MODE).
 
 ## SCORE 2 — REACH POTENTIAL (/25)
 | # | Axis | 5/5 requires | 1/5 |
@@ -31,14 +31,15 @@ Craft ship bar: 30/35.
 | R4 | Relatability | Near-universal AI-PM experience | niche to author's stack |
 | R5 | Comment-bait | Memory-trigger question priming a concrete anecdote | "Thoughts?"/none |
 
-Reach ship bar: 18/25.
+Reach ship bar: 23/25 (92% — TEST MODE).
 
-## SHIP LOGIC
-- craft >=30 AND reach >=18            -> ship
-- craft >=30 AND reach 14-17           -> revise-via-narrator (TARGET: reach)
-- craft <30  AND reach >=18            -> revise-via-narrator (TARGET: craft)
-- craft <30  AND reach <14             -> reject (swap cluster)
-- reach <8 regardless of craft         -> reject (dead wave)
+## SHIP LOGIC (TEST MODE — high bars; lower later)
+- craft >=33 AND reach >=23      -> ship
+- craft >=33 AND reach 18-22     -> revise-via-narrator (TARGET: reach)
+- craft <33  AND reach >=23      -> revise-via-narrator (TARGET: craft)
+- craft 28-32 AND reach 14-22    -> revise-via-narrator (TARGET: weaker score)
+- otherwise                      -> reject (swap cluster)
+- reach <8 regardless of craft   -> reject (dead wave)
 
 ## Mandatory output
 \`\`\`
