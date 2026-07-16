@@ -1,15 +1,22 @@
 # LinkedIn Authority OS v6
 
-This repository currently preserves the evidence-backed role, voice, and rubric assets recovered for LinkedIn Authority OS v6. The recovery is intentionally provenance-first: every retained asset is classified as recovered, recovered and modified, reconstructed, or new in [RECOVERY_MANIFEST.md](RECOVERY_MANIFEST.md).
+This repository preserves the evidence-backed role, voice, and rubric assets recovered for LinkedIn Authority OS v6 and provides a deliberately small offline runtime foundation.
 
-The preserved workflow boundary is Scout → Analyst → Writer → Critic → human approval. Historical Gmail ingestion, authenticated browser analytics, schedulers, messaging, and publishing-adjacent components are deliberately excluded. The reconstructed `/draft-post` coordinator is deferred until its CLI and output contract exist, so this snapshot contains no dangling executable instructions.
+The intended workflow boundary is Scout → Analyst → Writer → Critic → human approval. Historical Gmail ingestion, authenticated browser analytics, schedulers, messaging, and publishing-adjacent components are deliberately excluded.
 
-## Validate the recovery
+## Offline quick start
 
 Requires Python 3.11 or newer and no third-party packages.
 
 ```sh
-python3 -m unittest discover -s tests -v
+make setup
+make doctor
+./bin/linkedin-os draft --dry-run
+make test
 ```
 
-This recovery contribution contains no runtime or LinkedIn integration. Automatic publishing is absent and remains out of scope.
+The dry run validates the envelope of visibly synthetic fixture data; research-item validation follows with ingestion. It does not generate an approval package. Live drafting fails with an actionable message until the research, analysis, drafting, Critic, and packaging outcomes land.
+
+See [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md) for the current boundary and [RECOVERY_MANIFEST.md](RECOVERY_MANIFEST.md) for provenance.
+
+Automatic LinkedIn publishing is absent and remains out of scope.

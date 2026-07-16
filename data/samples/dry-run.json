@@ -1,0 +1,23 @@
+{
+  "fixture_mode": true,
+  "synthetic": true,
+  "topic": "agent reliability budgets",
+  "research_items": [
+    {
+      "title": "Synthetic reliability evaluation note for {{topic}}",
+      "body": "Synthetic fixture text: evaluate each component before combining a workflow reliability estimate.",
+      "source": "Synthetic standards fixture",
+      "published_at": "2026-07-15T08:00:00Z",
+      "url": "https://example.com/standards/reliability-fixture",
+      "source_quality": "primary"
+    },
+    {
+      "title": "Synthetic product decision note for {{topic}}",
+      "body": "Synthetic fixture text: a product team should set a reliability budget before adding more workflow steps.",
+      "source": "Synthetic engineering fixture",
+      "published_at": "2026-07-14T08:00:00Z",
+      "url": "https://example.org/engineering/product-fixture",
+      "source_quality": "secondary"
+    }
+  ]
+}
