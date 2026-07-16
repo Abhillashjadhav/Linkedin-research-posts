@@ -2,7 +2,7 @@
 
 ## Current implemented flow
 
-The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, and voice-grounded Writer drafting. It stops after three unscored text candidates; it does not yet score, gate, package, approve, or publish them.
+The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, voice-grounded Writer drafting, and five-axis Critic scoring. It stops after the scored candidate set and at most one light revision; it does not apply safety gates, create a final package, approve content, or publish.
 
 ### Research ledger
 
@@ -72,8 +72,28 @@ The visibly synthetic fixture exercises this contract without exposing private d
 
 The command fails closed if either flag is absent, and the Writer invocation itself requires the same explicit consent value. Consent means the selected text leaves this machine for the configured Claude service through the local CLI; inference is not described as local. A consented live invocation sends only the selected-cluster brief, evidence, and reconstructed voice instructions to the Writer; source-URL query strings are removed at that boundary while the local ledger remains unchanged. The Writer runs with zero tools and no persisted model session; it cannot browse or write files.
 
-Critic scoring and the one-revision maximum are deferred to PR 8. Authority conversion plus proof, honesty, citation, and relevance gates are deferred to PR 9. Final package generation and human-approval status are deferred to PR 10.
+### Critic scoring and bounded revision
+
+After the Writer contract is validated, the Critic scores every candidate from 1 to 5 on exactly these axes:
+
+1. `hook_strength`
+2. `middle_escalation`
+3. `earned_closer`
+4. `specificity_and_source_quality`
+5. `voice_fidelity`
+
+The model returns only candidate IDs and those five integer scores. Python rejects missing, extra, duplicated, unknown, non-integer, or out-of-range values and calculates the totals locally. A `hook_strength` score of 3 or below caps the effective total at 18 even when the five-axis raw total is higher.
+
+The effective-total bands have narrow meanings:
+
+- 24–25 means advance to the later safety-gate stage. It does not mean approved, ready for approval, recommended, scheduled, or published.
+- 22–23 permits one light revision of the current score leader. The Writer may be invoked once, the replacement candidate must still satisfy the full drafting contract, and the Critic may rescore it once. Revision does not recurse.
+- 21 or below is below the Critic bar for this run; major rewriting is outside this stage.
+
+The runtime reports a deterministic **score leader**, not a winner or recommended candidate. Candidate order cannot change the result: ranking compares effective total descending, raw total descending, the five rubric axes descending in the order listed above, and finally candidate ID ascending. Scoring is intentionally separated from safety policy: the Critic prompt contains the recovered five-axis rubric but excludes the recovered authority-conversion, proof, honesty, citation, and relevance gates. Those binary gates belong to PR 9. Final package generation and human-approval status belong to PR 10.
+
+The visibly synthetic fixture contains validated scorecards and remains fully offline: it invokes neither Writer nor Critic. A private run requires the existing explicit `--allow-model-egress` consent before any Writer or Critic invocation. Live model calls remain zero-tools, stateless, and stdin-only; the Critic receives only the validated candidates, minimal selected evidence and voice context, and the scoring rubric. A 22–23 revision uses the same explicit consent for at most one further Writer call and one rescore.
 
 ## Safety boundary
 
-Source bodies are untrusted data, not instructions. Analysis and routing are deterministic Python. Only an explicitly consented live draft can cross the model boundary, under the zero-tools and no-session restrictions above. There is no browser, Gmail, LinkedIn write, or automatic publishing action.
+Source bodies are untrusted data, not instructions. Analysis and routing are deterministic Python. Only an explicitly consented live drafting run can cross the Writer or Critic model boundary, under the zero-tools and no-session restrictions above. Critic scores are not safety gates or human approval. There is no browser, Gmail, LinkedIn write, or automatic publishing action.
