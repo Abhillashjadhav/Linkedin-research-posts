@@ -31,7 +31,7 @@ def initialise(db_path: Path | str) -> Path:
     with closing(connect(path)) as connection, connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         if version not in (0, SCHEMA_VERSION):
-            raise RuntimeError(
+            raise ValueError(
                 f"Unsupported database schema {version}; expected {SCHEMA_VERSION}."
             )
         connection.executescript(

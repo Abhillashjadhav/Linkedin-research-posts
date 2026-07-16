@@ -16,6 +16,13 @@ def _path(value: str) -> Path:
     return Path(value).expanduser().resolve()
 
 
+def _nonblank(value: str) -> str:
+    cleaned = value.strip()
+    if not cleaned:
+        raise argparse.ArgumentTypeError("value must not be blank")
+    return cleaned
+
+
 def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--db", type=_path, default=workflow.DEFAULT_DB, help=argparse.SUPPRESS)
 
@@ -35,13 +42,22 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(doctor)
 
     draft = subparsers.add_parser("draft", help="Validate the offline workflow fixture.")
-    draft.add_argument("--topic", help="Optional topic substituted into the fixture.")
+    draft.add_argument(
+        "--topic", type=_nonblank, help="Optional topic substituted into the fixture."
+    )
     draft.add_argument("--dry-run", action="store_true", help="Use the offline safe fixture.")
     _add_common(draft)
 
     research = subparsers.add_parser("research", help="Import or validate research signals.")
-    research.add_argument("--topic", help="Optional topic substituted into the fixture.")
+    research.add_argument(
+        "--topic", type=_nonblank, help="Optional topic substituted into the fixture."
+    )
     research.add_argument("--input", type=_path, help="Private JSON or JSONL research import.")
+    research.add_argument(
+        "--recent-posts",
+        type=_path,
+        help="Private JSON list of recent post text used only for stale-topic comparison.",
+    )
     research.add_argument("--dry-run", action="store_true", help="Use the offline safe fixture.")
     _add_common(research)
     return parser
@@ -130,10 +146,52 @@ def command_research(args: argparse.Namespace) -> int:
         raise workflow.WorkflowError(
             "Live research is not available yet; use --dry-run or --input."
         )
+    recent_posts = (
+        workflow.load_recent_posts_file(args.recent_posts) if args.recent_posts else None
+    )
     initialise_paths(args.db)
+    existing = storage.list_research_items(args.db)
+    prospective: list[dict[str, object]] = []
+    seen_urls: set[str] = set()
+    seen_hashes: set[str] = set()
+    # Analyse the current invocation's representation when it collides with a
+    # stored URL/hash. Persistence still applies its own durable deduplication.
+    for item in [*items, *existing]:
+        canonical_url = str(item.get("canonical_url", ""))
+        digest = str(item.get("content_hash", ""))
+        if canonical_url in seen_urls or digest in seen_hashes:
+            continue
+        seen_urls.add(canonical_url)
+        seen_hashes.add(digest)
+        prospective.append(dict(item))
+
+    analysis: dict[str, object] | None = None
+    if prospective:
+        analysis = workflow.analyse_research(
+            prospective,
+            topic=args.topic,
+            recent_posts=recent_posts,
+        )
+
     inserted, duplicates = storage.insert_research_items(args.db, items)
     print(f"Research mode: {mode}; inserted={inserted}; duplicates={duplicates}.")
-    if not items:
+    if analysis:
+        selected = analysis["pass_2"]["selected"]
+        print(analysis["broad_discovery_note"])
+        stale_status = (
+            "not-evaluated"
+            if selected["stale"] is None
+            else "yes"
+            if selected["stale"]
+            else "no"
+        )
+        print(
+            f"Selected cluster: {selected['slug']}; "
+            f"source_quality={'sufficient' if selected['source_quality_sufficient'] else 'insufficient'}; "
+            f"recency={'sufficient' if selected['recency_sufficient'] else 'insufficient'}; "
+            f"stale={stale_status}."
+        )
+    else:
         print("No defensible research items were supplied; nothing was invented.")
     return 0
 

@@ -8,9 +8,10 @@ import json
 import re
 import socket
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, Sequence
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
@@ -19,6 +20,8 @@ DEFAULT_DB = REPO_ROOT / "data" / "private" / "authority_os.sqlite"
 DEFAULT_FIXTURE = REPO_ROOT / "data" / "samples" / "dry-run.json"
 DEFAULT_OUTPUTS = REPO_ROOT / "outputs"
 SOURCE_QUALITIES = {"primary", "secondary", "mixed"}
+SHORT_TOKENS = {"ai", "ml", "pm", "ux"}
+PREFIX_THEME_TERMS = {"eval", "govern", "reliab"}
 
 
 class WorkflowError(RuntimeError):
@@ -27,6 +30,18 @@ class WorkflowError(RuntimeError):
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def parse_published_at(value: str) -> datetime:
+    """Parse a source timestamp into UTC, accepting date-only values as UTC."""
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"invalid source timestamp: {value!r}") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def canonicalise_url(url: str) -> str:
@@ -111,12 +126,16 @@ def prepare_research_items(
     for index, item in enumerate(raw_items, start=1):
         if not isinstance(item, Mapping):
             raise ValueError(f"research item {index} must be a JSON object")
-        title = str(item.get("title", "")).strip()
-        body = str(item.get("body", "")).strip()
-        source = str(item.get("source", "")).strip()
-        published_at = str(item.get("published_at", item.get("timestamp", ""))).strip()
-        quality = str(item.get("source_quality", "")).strip().lower()
-        url = str(item.get("canonical_url", item.get("url", ""))).strip()
+        def text_field(name: str, fallback: str | None = None) -> str:
+            value = item.get(name, item.get(fallback, "") if fallback else "")
+            return "" if value is None else str(value).strip()
+
+        title = text_field("title")
+        body = text_field("body")
+        source = text_field("source")
+        published_at = text_field("published_at", "timestamp")
+        quality = text_field("source_quality").lower()
+        url = text_field("canonical_url", "url")
         if not title or not source or not published_at or not url:
             raise ValueError(
                 f"research item {index} needs title, source, timestamp, and URL"
@@ -125,13 +144,14 @@ def prepare_research_items(
             raise ValueError(
                 f"research item {index} source_quality must be primary, secondary, or mixed"
             )
+        parse_published_at(published_at)
         prepared.append(
             {
                 "canonical_url": canonicalise_url(url),
                 "title": title,
                 "body": body,
                 "source": source,
-                "author": str(item.get("author", "")).strip(),
+                "author": text_field("author"),
                 "published_at": published_at,
                 "source_quality": quality,
                 "content_hash": content_hash(title, body),
@@ -157,10 +177,277 @@ def load_research_file(path: Path | str) -> list[dict[str, object]]:
         ]
     else:
         payload = json.loads(text)
-        items = payload.get("items", []) if isinstance(payload, dict) else payload
+        if isinstance(payload, dict):
+            if "items" not in payload:
+                raise WorkflowError("Research JSON object must contain an items[] list")
+            items = payload["items"]
+        else:
+            items = payload
     if not isinstance(items, list):
         raise WorkflowError("Research input must be a JSON list or an object with items[]")
     return prepare_research_items(items)
+
+
+def load_recent_posts_file(path: Path | str) -> list[str]:
+    """Load an explicit private JSON array of recent post text for stale checks."""
+
+    source = Path(path)
+    if not source.is_file():
+        raise WorkflowError(f"Recent-post input is not a readable file: {source}")
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise WorkflowError(f"Could not read recent-post input: {source}") from exc
+    if not isinstance(payload, list) or any(not isinstance(item, str) for item in payload):
+        raise WorkflowError("Recent-post input must be a JSON list of strings")
+    return [item.strip() for item in payload if item.strip()]
+
+
+THEMES = {
+    "agent-reliability": ("agent", "reliab", "failure", "workflow"),
+    "evaluations": ("eval", "benchmark", "measure", "test"),
+    "rag": ("rag", "retrieval", "rerank", "embedding"),
+    "context-engineering": ("context", "prompt", "tool result"),
+    "memory": ("memory", "remember", "state"),
+    "mcp-tool-use": ("mcp", "tool use", "protocol"),
+    "cost-latency": ("cost", "latency", "token", "inference"),
+    "enterprise-governance": ("enterprise", "govern", "risk", "safety"),
+}
+
+
+def slugify(value: str) -> str:
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    value = re.sub(r"[^a-zA-Z0-9]+", "-", value).strip("-").lower()
+    return value[:60].rstrip("-") or "untitled"
+
+
+def _theme_for(title: str) -> str:
+    tokens = _tokens(title)
+
+    def matches(term: str) -> bool:
+        term_tokens = term.split()
+        if len(term_tokens) > 1:
+            pattern = r"(?<![a-z0-9])" + r"\s+".join(map(re.escape, term_tokens)) + r"(?![a-z0-9])"
+            return bool(re.search(pattern, title.casefold()))
+        needle = term_tokens[0]
+        if needle in PREFIX_THEME_TERMS:
+            return any(token.startswith(needle) for token in tokens)
+        return needle in tokens
+
+    scored = [
+        (sum(matches(term) for term in terms), theme)
+        for theme, terms in THEMES.items()
+    ]
+    score, theme = max(scored, key=lambda pair: pair[0])
+    return theme if score else slugify(title) or "other-signal"
+
+
+def _tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", text.casefold())
+        if len(token) > 2 or token in SHORT_TOKENS
+    }
+
+
+def text_similarity(left: str, right: str) -> float:
+    left_norm = normalise_content("", left)
+    right_norm = normalise_content("", right)
+    sequence = SequenceMatcher(None, left_norm, right_norm).ratio()
+    left_tokens, right_tokens = _tokens(left), _tokens(right)
+    union = left_tokens | right_tokens
+    jaccard = len(left_tokens & right_tokens) / len(union) if union else 1.0
+    return max(sequence, jaccard)
+
+
+def stale_against_recent(
+    candidate: str, recent_posts: Sequence[str], *, threshold: float = 0.72
+) -> bool:
+    return any(text_similarity(candidate, recent) >= threshold for recent in recent_posts)
+
+
+def analyse_research(
+    items: Sequence[Mapping[str, object]],
+    *,
+    topic: str | None = None,
+    recent_posts: Sequence[str] | None = None,
+    as_of: datetime | None = None,
+) -> dict[str, object]:
+    """Cluster metadata first, then interpret the strongest full bodies."""
+
+    if not items:
+        raise WorkflowError("No research evidence is available; nothing was manufactured.")
+
+    grouped: dict[str, list[Mapping[str, object]]] = {}
+    for index, item in enumerate(items, start=1):  # pass 1: no body interpretation
+        title = str(item.get("title", "")).strip()
+        source = str(item.get("source", "")).strip()
+        if not title or not source:
+            raise WorkflowError(f"Research item {index} is missing title or source metadata.")
+        grouped.setdefault(_theme_for(title), []).append(item)
+
+    reference_time = as_of or datetime.now(timezone.utc)
+    if reference_time.tzinfo is None:
+        reference_time = reference_time.replace(tzinfo=timezone.utc)
+    reference_time = reference_time.astimezone(timezone.utc)
+
+    clusters: list[dict[str, object]] = []
+    quality_rank = {"primary": 2, "mixed": 1, "secondary": 0}
+    for slug, members in grouped.items():  # pass 2: strongest full bodies
+        dated_members: list[tuple[Mapping[str, object], datetime]] = []
+        for item in members:
+            raw_timestamp = str(item.get("published_at", "")).strip()
+            try:
+                published = parse_published_at(raw_timestamp)
+            except ValueError as exc:
+                raise WorkflowError(str(exc)) from exc
+            dated_members.append((item, published))
+        ranked = sorted(
+            dated_members,
+            key=lambda pair: (
+                quality_rank.get(str(pair[0].get("source_quality", "")), -1),
+                pair[1],
+                str(pair[0].get("canonical_url", "")).casefold(),
+                str(pair[0].get("title", "")).casefold(),
+            ),
+            reverse=True,
+        )
+        readable = [
+            (item, published, str(item.get("body", "")).strip())
+            for item, published in ranked
+            if str(item.get("body", "")).strip()
+        ][:3]
+        high_quality_readable = [
+            row
+            for row in readable
+            if row[0].get("source_quality") in {"primary", "mixed"}
+        ]
+        selected_body = (high_quality_readable or readable)
+        if selected_body:
+            strongest_item, strongest_published, strongest_body = selected_body[0]
+            dominant = strongest_body.split(". ", 1)[0].rstrip(".")[:500]
+        else:
+            strongest_item, strongest_published = ranked[0]
+            dominant = "Body unavailable"
+        thesis_text = f"{strongest_item.get('title', '')} {dominant}".strip()
+        primary_sources = [
+            str(item.get("canonical_url", ""))
+            for item, _published, _body in high_quality_readable
+            if str(item.get("canonical_url", "")).strip()
+        ]
+        publisher_identities: set[str] = set()
+        for item, _published in dated_members:
+            canonical_url = str(item.get("canonical_url", ""))
+            hostname = urlsplit(canonical_url).hostname if canonical_url else None
+            publisher_identities.add(
+                (hostname or str(item.get("source", ""))).strip().casefold()
+            )
+        publisher_identities.discard("")
+        freshest = max(published for _item, published in dated_members)
+        if freshest > reference_time + timedelta(days=1):
+            raise WorkflowError(
+                f"Source timestamp {freshest.isoformat()} is implausibly in the future."
+            )
+        age_days = max(0, (reference_time - freshest).days)
+        recency_score = (
+            4
+            if age_days <= 7
+            else 3
+            if age_days <= 30
+            else 2
+            if age_days <= 90
+            else 1
+            if age_days <= 365
+            else 0
+        )
+        recency_sufficient = age_days <= 90
+        recency_reason = (
+            "recent evidence supports a why-now case"
+            if recency_sufficient
+            else "evidence is older than 90 days; why-now is not established"
+        )
+        clusters.append(
+            {
+                "slug": slug,
+                "item_count": len(members),
+                "source_count": len(publisher_identities),
+                "momentum": min(
+                    10, len(members) * 2 + len(publisher_identities) + recency_score
+                ),
+                "why_now": (
+                    f"{len(members)} item(s) across {len(publisher_identities)} source "
+                    f"hostname(s); freshest evidence is {age_days} day(s) old, so {recency_reason}. "
+                    f"Strongest body: {str(strongest_item.get('title', ''))[:300]} "
+                    f"({strongest_published.isoformat()})."
+                ),
+                "dominant_take": dominant,
+                "missing_angle": (
+                    "What product decision changes, and what evidence would falsify it?"
+                ),
+                "primary_sources": primary_sources,
+                "source_quality_sufficient": bool(high_quality_readable),
+                "body_read_sufficient": bool(readable),
+                "recency_sufficient": recency_sufficient,
+                "latest_published_at": freshest.isoformat(),
+                "age_days": age_days,
+                "stale": (
+                    None
+                    if recent_posts is None
+                    else stale_against_recent(thesis_text, recent_posts)
+                ),
+            }
+        )
+    clusters.sort(
+        key=lambda cluster: (
+            -int(cluster["momentum"]),
+            -int(cluster["source_count"]),
+            str(cluster["slug"]),
+        )
+    )
+
+    selected = clusters[0]
+    if topic:
+        topic_tokens = _tokens(topic)
+        scored_clusters: list[tuple[int, dict[str, object]]] = []
+        for cluster in clusters:
+            members = grouped[str(cluster["slug"])]
+            searchable = " ".join(
+                [str(cluster["slug"]), *[str(item.get("title", "")) for item in members]]
+            )
+            scored_clusters.append((len(topic_tokens & _tokens(searchable)), cluster))
+        scored_clusters.sort(
+            key=lambda pair: (
+                -pair[0],
+                -int(pair[1]["momentum"]),
+                -int(pair[1]["source_count"]),
+                str(pair[1]["slug"]),
+            )
+        )
+        match_count, selected = scored_clusters[0]
+        if match_count == 0:
+            raise WorkflowError(
+                f"No research cluster matches requested topic {topic!r}; nothing was inferred."
+            )
+    diverse = sum(cluster["source_count"] >= 2 for cluster in clusters)
+    broad_sufficient = len(clusters) >= 7 and diverse >= 4
+    return {
+        "pass_1": {
+            "item_count": len(items),
+            "cluster_count": len(clusters),
+            "source_diverse_cluster_count": diverse,
+        },
+        "pass_2": {"clusters": clusters, "selected": selected},
+        "broad_discovery_sufficient": broad_sufficient,
+        "broad_discovery_note": (
+            "Broad discovery target met."
+            if broad_sufficient
+            else "Insufficient evidence for seven viable and four source-diverse clusters; proceeding only with the explicitly selected evidence."
+        ),
+        "selected_source_quality_sufficient": selected["source_quality_sufficient"],
+        "selected_body_read_sufficient": selected["body_read_sufficient"],
+        "selected_recency_sufficient": selected["recency_sufficient"],
+        "selected_stale": selected["stale"],
+    }
 
 
 def _replace_template(value: object, topic: str) -> object:
