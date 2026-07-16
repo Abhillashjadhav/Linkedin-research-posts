@@ -6,29 +6,22 @@ description: Produce one evidence-backed LinkedIn post for Abhillash. Use for /d
 # Draft Post
 
 ## Inputs
-Optional topic, goal (`reach|authority|opportunity`), and format (`text|carousel|video`). Default goal is authority and default format is text.
+Optional topic, goal (`reach|authority|opportunity`), and format (`text|carousel|vertical-video|article|artifact-demo`). Default goal is authority and default format is text.
 
 ## Execution
 1. Read `docs/WORKFLOW.md`, `data/voice/voice-guide.md`, and `data/voice/abhillash-best-posts.md`.
-2. Ask no follow-up when the topic and evidence are sufficient. When evidence is missing, research before drafting.
-3. Route the goal:
-   - reach: incident/humour/observation;
-   - authority: mechanism/framework/trade-off;
-   - opportunity: artifact/case study/proof.
-4. Run Scout. Prefer primary sources. Store a short evidence brief with URLs and what each source supports.
-5. Run Analyst. Produce one thesis using `Incident → Mechanism → Decision → Artifact`. Mark missing elements explicitly.
-6. Run Writer. Produce three candidates with distinct hooks.
-7. Run Critic. Reject unsupported claims and obvious AI voice. Permit one revision only.
-8. Return the winner with:
-   - copy-ready post;
-   - goal and format;
-   - evidence list;
-   - critic score and remaining risk;
-   - one suggested first comment only when useful.
-9. Save to `drafts/YYYY-MM-DD-<slug>.md`.
+2. Translate the invocation into one CLI call. Examples:
+   - `/draft-post` → `./bin/linkedin-os draft`
+   - `/draft-post --goal authority` → `./bin/linkedin-os draft --goal authority`
+   - `/draft-post PM-agent-OS --goal opportunity` → `./bin/linkedin-os draft --topic "PM-agent-OS" --goal opportunity`
+3. Run the command. The CLI owns Scout → Analyst → Writer → Critic, exactly three initial drafts, deterministic fatal gates, at most one revision, and atomic output writing.
+4. If Opportunity proof is missing, report the failed proof gate. Never invent or infer ownership. The user may rerun with `--proof-type` and `--proof-value`.
+5. Return the generated `outputs/YYYY-MM-DD/<slug>/final-package.md` for human review.
+
+For an offline workflow check, add `--dry-run`. Fixture output is explicitly synthetic and must not be published.
 
 ## Human gate
-Never publish automatically. Final output must say `STATUS: READY FOR HUMAN APPROVAL`.
+Never publish, schedule, comment, or message. A successful final output says `STATUS: READY FOR HUMAN APPROVAL`; this is not approval to publish.
 
 ## Quality bar
 A post passes only when it contains original judgment, concrete evidence, and a clear reason for the target reader to remember Abhillash. Polished summarisation alone fails.

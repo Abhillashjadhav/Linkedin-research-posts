@@ -1,0 +1,98 @@
+{
+  "topic": "agent reliability budgets",
+  "goal": "authority",
+  "target_reader": "AI PM",
+  "reader_problem": "Component-level demos can hide weak end-to-end reliability and unclear human checkpoints.",
+  "core_hypothesis": "Agent reliability is a product-level budget across the full workflow, not an average component score.",
+  "authority_statement": "Abhillash can be remembered for deciding that agent workflows need an explicit reliability budget and human stop conditions before more complexity is added.",
+  "recommended_format": "text",
+  "analysis_summary": "The fixture connects a transparent reliability calculation with primary guidance on measuring AI risk and keeping agent architectures simple. It is synthetic workflow data, not a personal incident or a live trend claim.",
+  "why_it_should_work": "It starts with visible arithmetic, explains the compounding mechanism, and turns it into a concrete product decision and reviewable artefact.",
+  "main_risk": "The independence assumption behind the calculation is illustrative; a human must state that caveat before using it in a real post.",
+  "conversion_suggestion": "If the human approves the argument, convert the reliability-budget fields into a seven-slide carousel with the calculation on slide two.",
+  "proof": {
+    "type": "reusable framework",
+    "value": "data/samples/dry-run.json#artifact",
+    "ownership_evidence": false
+  },
+  "artifact": {
+    "name": "Reliability budget review",
+    "fields": [
+      "workflow stages",
+      "stage reliability assumptions",
+      "end-to-end calculation",
+      "human stop conditions",
+      "evidence still needed"
+    ]
+  },
+  "research_items": [
+    {
+      "canonical_url": "https://www.anthropic.com/research/building-effective-agents",
+      "title": "Building effective agents",
+      "body": "Anthropic distinguishes predefined workflows from agents and recommends starting with the simplest suitable solution, adding complexity only when it demonstrably helps. It also notes that agentic systems trade latency and cost for task performance.",
+      "source": "Anthropic Research",
+      "author": "Erik Schluntz and Barry Zhang",
+      "published_at": "2024-12-19T00:00:00Z",
+      "source_quality": "primary"
+    },
+    {
+      "canonical_url": "https://airc.nist.gov/airmf-resources/airmf/5-sec-core/",
+      "title": "NIST AI RMF Core — Measure",
+      "body": "The NIST AI RMF Measure function calls for testing AI systems before deployment and regularly while they operate, with reliability, robustness, monitoring, and failure response included in measurement.",
+      "source": "NIST AI Resource Center",
+      "author": "National Institute of Standards and Technology",
+      "published_at": "2023-01-26T00:00:00Z",
+      "source_quality": "primary"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "reliability-math",
+      "claim": "Under an explicit independence assumption, five 95%-reliable stages have 0.95^5 = 0.7737809375, or approximately 77% (0.77) end-to-end reliability.",
+      "source": "calculation:0.95^5",
+      "source_quality": "primary",
+      "body_read": true
+    },
+    {
+      "id": "nist-measure",
+      "claim": "The NIST AI RMF Measure function calls for testing before deployment and regularly in operation, including reliability and failure-response measurement.",
+      "source": "https://airc.nist.gov/airmf-resources/airmf/5-sec-core/",
+      "source_quality": "primary",
+      "body_read": true
+    },
+    {
+      "id": "anthropic-simple",
+      "claim": "Anthropic recommends starting with the simplest suitable solution and adding agentic complexity only when needed, while accounting for latency and cost trade-offs.",
+      "source": "https://www.anthropic.com/research/building-effective-agents",
+      "source_quality": "primary",
+      "body_read": true
+    },
+    {
+      "id": "fixture-artifact",
+      "claim": "The committed dry-run fixture contains a reliability-budget review with workflow stages, assumptions, an end-to-end calculation, human stop conditions, and missing-evidence fields.",
+      "source": "repository:data/samples/dry-run.json#artifact",
+      "source_quality": "primary",
+      "body_read": true
+    }
+  ],
+  "candidates": [
+    {
+      "id": "candidate-1",
+      "angle": "compounding arithmetic",
+      "claim_ids": ["reliability-math", "nist-measure", "anthropic-simple"],
+      "text": "Five 95%-reliable steps produce a 77% reliable workflow.\n\nThe failure is easy to miss because every component dashboard can still look healthy. End-to-end quality compounds: multiply 0.95 across the full path and the result is roughly 0.77.\n\nThat changes the product decision for {{topic}}. Before adding another agent or tool, write a reliability budget for the whole path and define where a human must stop it.\n\nNIST's AI RMF calls for testing before deployment and during operation. Anthropic separately advises starting simple and adding complexity only when it earns its cost.\n\nA reliable component is not the same as a reliable product."
+    },
+    {
+      "id": "candidate-2",
+      "angle": "demo versus operating decision",
+      "claim_ids": ["nist-measure", "anthropic-simple", "reliability-math"],
+      "text": "A clean agent demo can still hide a weak product decision.\n\nThe demo proves that {{topic}} can complete one path. It does not show how failure compounds across stages, which conditions require a human, or whether another layer of autonomy is worth the latency and cost.\n\nThis is why evaluation cannot sit at the end of delivery. NIST frames measurement across deployment and operation. Anthropic's simpler-first guidance makes the architecture question explicit.\n\nA practical review starts with the full workflow, a 0.95-per-stage assumption, the resulting 77% end-to-end figure, and the evidence still missing.\n\nThe useful question is not whether the demo worked. It is whether the operating decision survives contact with failure."
+    },
+    {
+      "id": "candidate-3",
+      "angle": "reviewable artefact",
+      "claim_ids": ["fixture-artifact", "nist-measure", "anthropic-simple"],
+      "text": "The most useful agent artefact may be a one-page failure budget.\n\nFor {{topic}}, list the workflow stages, the reliability assumption behind each stage, the human stop condition, and the evidence the team still lacks.\n\nThat page forces the mechanism into view. It also makes the next product decision reviewable: simplify the path, improve a weak stage, or accept the residual risk deliberately.\n\nThe structure matches NIST's emphasis on measurement through operation and Anthropic's advice to earn complexity. The committed fixture shows the fields without claiming a production result.\n\nArchitecture gets easier to judge when failure has its own artefact."
+    }
+  ]
+}

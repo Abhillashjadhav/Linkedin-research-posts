@@ -20,3 +20,15 @@ Check: `git diff --check`.
 - Rejected direct HTTP crawling, duplicate prompts, orchestration layers, schedulers, browser/Gmail access, and every LinkedIn write surface.
 
 Check: `git diff --check`.
+
+## 2026-07-16 — Milestone 3: minimal implementation
+
+- Added the fixed `linkedin-os` CLI with `init`, `doctor`, `research`, `draft`, `record-performance`, and `weekly-review` only.
+- Implemented canonical URL/content deduplication, two-pass analysis, exactly three candidates, the recovered five-axis rubric, v6 binary gates, one-revision cap, collision-safe atomic five-file packages, and explicit paid/organic checkpoints.
+- Kept one ignored SQLite database with exactly `research_items` and `performance` tables.
+- Reconstructed the missing voice files honestly from supplied aggregate patterns and made four role prompts canonical under `.claude/agents/`.
+- Moved the Analyst stub into its canonical agent and removed the duplicate `prompts/` location.
+- Added a synthetic offline fixture using traceable NIST/Anthropic sources, transparent arithmetic, and a committed proof framework. Fixture packages are labelled `Do not publish`.
+- Preserved the unrelated `prd-first` skill unchanged and kept generated/private state ignored.
+
+Checks: `make setup`, `make doctor`, Python compilation, fixture JSON validation, all six CLI surfaces, two complete dry-run packages (including Opportunity), performance recording, weekly review, and `git diff --check`.

@@ -23,7 +23,17 @@ This manifest uses repository evidence, not filenames or embedded version labels
 | `.claude/agents/writer.md` | RECOVERED AND MODIFIED | Three-candidate and voice-safety semantics come from `21e04d5:.claude/agents/writer.v1.bak.md`; forced stylistic devices and database writes are removed. |
 | `.claude/agents/critic.md` | RECOVERED AND MODIFIED | The five-axis 25-point rubric comes from `21e04d5:.claude/agents/critic.v4.bak.md`; thresholds and v6 binary gates follow the supplied brief. |
 | Voice guide and performance-pattern anchors | RECONSTRUCTED | The originals are absent. Only user-supplied aggregate patterns and voice rules are recorded; missing post text is never fabricated. |
-| Runtime, safe fixtures, tests, CI, Makefile, privacy check, architecture and decision records | NEW | No executable workflow or supporting files exist in reachable history. |
+| `src/authority_os/__init__.py` | NEW | Package version only. |
+| `src/authority_os/__main__.py` | NEW | Fixed CLI command router; no historical executable exists. |
+| `src/authority_os/workflow.py` | NEW | Minimal workflow, gates, optional Claude calls, and atomic renderer. |
+| `src/authority_os/storage.py` | NEW | Direct two-table SQLite persistence. |
+| `bin/linkedin-os`, `Makefile`, `requirements.txt` | NEW | Zero-download setup and the single CLI entry point. |
+| `data/samples/dry-run.json` | NEW | Synthetic offline evidence, drafts, and a small proof framework; visibly not live content. |
+| `data/samples/performance.csv` | NEW | Synthetic import-schema example. |
+| `outputs/.gitkeep` | NEW | Preserves the ignored generated-output root. |
+| `.gitignore` | NEW | Protects private inputs, databases, credentials, generated packages, and the local `.agents/` mirror. |
+| `ARCHITECTURE_DECISION.md`, `RECOVERY_MANIFEST.md`, `DECISIONS.md` | NEW | Governance records produced by the required review process. |
+| `prompts/analyst.md` | RECONSTRUCTED, THEN REMOVED | Its useful July stub content moved into the one canonical Analyst agent; no duplicate prompt remains. |
 
 ## Deliberately not recovered
 
