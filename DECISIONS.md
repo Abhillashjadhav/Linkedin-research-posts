@@ -42,3 +42,14 @@ Checks: `make setup`, `make doctor`, Python compilation, fixture JSON validation
 - Kept fixture mode model/network-free and verified that failed proof, honesty, citation, authority, relevance, or stale gates cannot produce a ready status.
 
 Checks: `make test` (35 passed), privacy scan passed, Python compilation passed, and `git diff --check` passed.
+
+## 2026-07-16 — Milestone 5: independent code review
+
+- Accepted the skeptical staff review's `REQUEST CHANGES` verdict and corrected all five P1/P2 findings.
+- Ranked only eligible candidates as winners, so a gated high score can never displace a ready draft.
+- Added explicit `--allow-model-egress` consent for selected stored research; the default daily command now drafts only from fresh public Scout results held in memory.
+- Labelled non-passing packages as rejected with their blocking gates, validated proof arguments unconditionally, and preserved live Critic observations as advisory output without letting them override deterministic gates.
+- Hardened Claude calls with safe mode, canonical prompt loading, stdin-only dynamic evidence, no session persistence, and an allowlisted tool boundary.
+- Made weekly review report the actual winning narrative angle and authority conversion from its matching package.
+
+Checks: `make test` (43 passed), privacy scan passed, ResourceWarning-as-error suite passed, Python compilation passed, and `git diff --check` passed.

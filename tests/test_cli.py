@@ -14,7 +14,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import authority_os.__main__ as cli
-from authority_os import workflow
+from authority_os import storage, workflow
 
 
 class CliTests(unittest.TestCase):
@@ -87,6 +87,72 @@ class CliTests(unittest.TestCase):
                 self.assertIn("READY FOR HUMAN APPROVAL", stdout)
                 candidates = next((goal_root / "outputs").glob("*/*/candidates.md")).read_text()
                 self.assertIn("PM-agent-OS", candidates)
+
+    def test_partial_proof_arguments_fail_before_creating_state(self) -> None:
+        code, _stdout, stderr = self.run_cli(
+            [
+                "draft",
+                "--dry-run",
+                "--proof-value",
+                "orphaned proof value",
+                "--db",
+                str(self.db),
+                "--output-root",
+                str(self.outputs),
+            ]
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("must be supplied together", stderr)
+        self.assertFalse(self.db.exists())
+
+    def test_default_live_draft_does_not_send_stored_research_to_model(self) -> None:
+        cli.initialise_paths(self.db)
+        stored = workflow.prepare_research_items(
+            [
+                {
+                    "canonical_url": "https://private-import.example.org/stored",
+                    "title": "Stored private import",
+                    "body": "PRIVATE-STORED-SENTINEL",
+                    "source": "Private import",
+                    "author": "Local user",
+                    "published_at": "2026-07-16T00:00:00Z",
+                    "source_quality": "primary",
+                }
+            ]
+        )
+        storage.insert_research_items(self.db, stored)
+        fresh = workflow.prepare_research_items(
+            [
+                {
+                    "canonical_url": "https://public.example.org/fresh",
+                    "title": "Fresh public Scout result",
+                    "body": "Fresh public evidence.",
+                    "source": "Public source",
+                    "author": "Public author",
+                    "published_at": "2026-07-16T01:00:00Z",
+                    "source_quality": "primary",
+                }
+            ]
+        )
+        completed = workflow.complete_payload(workflow.load_fixture())
+        with mock.patch.object(workflow, "run_live_research", return_value=fresh), mock.patch.object(
+            workflow, "run_live_draft", return_value=completed
+        ) as draft_call:
+            code, stdout, stderr = self.run_cli(
+                [
+                    "draft",
+                    "--goal",
+                    "authority",
+                    "--db",
+                    str(self.db),
+                    "--output-root",
+                    str(self.outputs),
+                ]
+            )
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(draft_call.call_args.args[0], fresh)
+        self.assertNotIn("PRIVATE-STORED-SENTINEL", json.dumps(draft_call.call_args.args[0]))
+        self.assertIn("Stored/private research was not sent", stdout)
 
     def test_doctor_handles_missing_private_data_and_redacts_environment(self) -> None:
         sentinel = "SUPER-SECRET-SENTINEL-VALUE"
@@ -183,6 +249,7 @@ class CliTests(unittest.TestCase):
             ["draft", "--goal", "authority"],
             ["draft", "--goal", "opportunity"],
             ["draft", "--topic", "PM-agent-OS", "--goal", "opportunity"],
+            ["draft", "--allow-model-egress"],
             ["record-performance"],
             ["weekly-review"],
         ]

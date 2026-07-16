@@ -52,6 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Confirm supplied proof supports an ownership claim; never inferred.",
     )
+    draft.add_argument(
+        "--allow-model-egress",
+        action="store_true",
+        help="Allow selected stored research excerpts to be sent to the local Claude CLI.",
+    )
     draft.add_argument("--dry-run", action="store_true", help="Use the offline safe fixture.")
     draft.add_argument("--output-root", type=_path, default=workflow.DEFAULT_OUTPUTS)
     _add_common(draft)
@@ -156,6 +161,10 @@ def command_research(args: argparse.Namespace) -> int:
 def _proof_from_args(args: argparse.Namespace) -> dict[str, object]:
     if bool(args.proof_type) != bool(args.proof_value):
         raise workflow.WorkflowError("--proof-type and --proof-value must be supplied together.")
+    if args.ownership_evidence and not args.proof_type:
+        raise workflow.WorkflowError(
+            "--ownership-evidence requires --proof-type and --proof-value."
+        )
     if not args.proof_type:
         return {}
     return {
@@ -166,6 +175,7 @@ def _proof_from_args(args: argparse.Namespace) -> dict[str, object]:
 
 
 def command_draft(args: argparse.Namespace) -> int:
+    supplied_proof = _proof_from_args(args)
     initialise_paths(args.db)
     recent = workflow.recent_post_texts(args.output_root)
     if args.dry_run:
@@ -174,8 +184,8 @@ def command_draft(args: argparse.Namespace) -> int:
             goal=args.goal,
             output_format=args.output_format,
         )
-        if args.proof_type:
-            payload["proof"] = _proof_from_args(args)
+        if supplied_proof:
+            payload["proof"] = supplied_proof
         items = workflow.prepare_research_items(payload.get("research_items", []))
         storage.insert_research_items(args.db, items)
         payload["analysis_summary"] = workflow.analyse_research(
@@ -184,19 +194,30 @@ def command_draft(args: argparse.Namespace) -> int:
         completed = workflow.complete_payload(payload, recent_posts=recent)
     else:
         topic = args.topic or "current GenAI product-management signal"
-        items = storage.list_research_items(args.db, topic=args.topic)
-        if not items:
-            items = storage.list_research_items(args.db)
-        if not items:
+        if args.allow_model_egress:
+            items = storage.list_research_items(args.db, limit=8, topic=args.topic)
+            if items:
+                print(
+                    "Model egress enabled: selected stored source URLs, quality labels, and "
+                    "body excerpts may be sent to the local Claude CLI."
+                )
+            else:
+                items = workflow.run_live_research(args.topic)
+                storage.insert_research_items(args.db, items)
+        else:
             fresh = workflow.run_live_research(args.topic)
             storage.insert_research_items(args.db, fresh)
-            items = storage.list_research_items(args.db)
+            items = fresh
+            print(
+                "Stored/private research was not sent to the model. "
+                "Use --allow-model-egress to reuse selected database excerpts."
+            )
         completed = workflow.run_live_draft(
             items,
             topic=topic,
             goal=args.goal,
             requested_format=args.output_format,
-            proof=_proof_from_args(args),
+            proof=supplied_proof,
             recent_posts=recent,
         )
     destination = workflow.write_output_package(completed, output_root=args.output_root)

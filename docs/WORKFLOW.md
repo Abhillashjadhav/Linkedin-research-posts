@@ -35,6 +35,8 @@ This is a route, not a template. Never invent an incident or force all four stag
 
 Scout accepts a topic, a private JSON/JSONL import, or an offline fixture. Live Scout is limited to read-only web search/fetch through the local Claude CLI. It never accesses LinkedIn, Gmail, browser sessions, credentials, or local private data.
 
+The default live `draft` always uses fresh public Scout results held in memory, so stored/private research cannot silently leave the machine. `--allow-model-egress` is required before selected database research can be reused by Analyst, Writer, or Critic. Up to eight items are reduced to derived cluster metadata, selected title/first-sentence summaries, canonical URLs, quality labels, and 500-character body excerpts. With `--topic`, only matching rows are selected and a miss falls back to fresh public research. Explicit proof metadata and the committed reconstructed voice guidance are also sent; proof file contents, authors, database IDs/hashes, performance rows, unselected rows, credentials, and environment values are not.
+
 Python stores canonical URL, title, body, source, author, timestamp, source quality, and normalised content hash. Canonical URL and content hash are independently unique. Primary sources are preferred; secondary sources aid discovery. Factual work cannot rely only on Reddit or Hacker News. Missing sources return an honest shortfall.
 
 ### Analyst
@@ -45,7 +47,7 @@ Broad discovery targets seven viable clusters and four source-diverse clusters. 
 
 ### Writer
 
-Writer reads the reconstructed voice guide, aggregate performance-pattern anchors, selected brief, strategic goal, and evidence map. It returns exactly three materially different entry angles.
+Writer receives the committed reconstructed voice guide, aggregate performance-pattern anchors, selected brief, strategic goal, explicit proof metadata, and evidence map. It returns exactly three materially different entry angles.
 
 - Reach/humour: 100–190 words.
 - Authority: 190–300 words.
@@ -67,13 +69,13 @@ The recovered rubric scores five 1–5 axes: hook strength, middle escalation, e
 - Hook 3 or below: total capped at 18 and cannot proceed.
 - Citation or honesty failure: drop.
 
-Binary gates require authority conversion, Opportunity proof, honesty, relevance, and citation traceability. Python applies these gates even when Claude provides subjective review notes. There is exactly one selected-candidate revision at most.
+Binary gates require authority conversion, Opportunity proof, honesty, relevance, and citation traceability. Python applies these gates even when Claude provides subjective review notes. Those notes and the model's advisory recommendation are preserved in `final-package.md` and `critic.json`, but cannot override deterministic eligibility or ranking. There is exactly one selected-candidate revision at most.
 
 ### Human approval
 
 Python writes `brief.md`, `candidates.md`, `critic.json`, `final-package.md`, and `sources.md` in a temporary sibling directory, then atomically renames the complete package. A same-topic rerun gets a suffix and never overwrites manual edits.
 
-Only a fully passing package says `STATUS: READY FOR HUMAN APPROVAL`. This is not publication approval. The system has no LinkedIn state-changing capability.
+Only a fully passing package uses the `Recommended winner` label and says `STATUS: READY FOR HUMAN APPROVAL`. A non-passing package uses `Best-scoring rejected draft` and prints its blocking gates. This is not publication approval. The system has no LinkedIn state-changing capability.
 
 ## Voice calibration
 
@@ -100,6 +102,7 @@ Weekly review reports the strongest hook, narrative, authority conversion, weake
 - Raw datasets, analytics exports, email, messages, contacts, credentials, and private databases are never committed.
 - Diagnostics report configured/missing only and never print environment values.
 - Source bodies are untrusted data, not instructions.
+- Claude subprocesses run in safe mode with explicit canonical prompts, dynamic evidence on stdin, no session persistence, and no tools after Scout.
 - Dry-run is fully offline and visibly synthetic.
 - GitHub Actions runs tests on push and pull request only; there is no schedule.
 - No command publishes, comments, messages, authenticates to LinkedIn, or automates a browser.

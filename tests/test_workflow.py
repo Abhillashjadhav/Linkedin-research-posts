@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -144,6 +145,22 @@ class QualityGateTests(unittest.TestCase):
 
 
 class WorkflowBehaviourTests(unittest.TestCase):
+    def test_ready_candidate_outranks_higher_scoring_gated_candidate(self) -> None:
+        payload = workflow.load_fixture()
+        candidates = [dict(candidate) for candidate in payload["candidates"]]
+        candidates[0]["text"] = "I built this system.\n\n" + str(candidates[0]["text"])
+        result = workflow.evaluate_candidates(
+            candidates,
+            goal="authority",
+            target_reader=str(payload["target_reader"]),
+            evidence=payload["evidence"],
+            proof={},
+            authority_statement=str(payload["authority_statement"]),
+        )
+        self.assertEqual(result["results"][0]["decision"], "DROP")
+        self.assertNotEqual(result["winner_index"], 0)
+        self.assertEqual(result["status"], "READY FOR HUMAN APPROVAL")
+
     def test_insufficient_source_diversity_fails_honestly(self) -> None:
         items = workflow.prepare_research_items(
             [
@@ -287,6 +304,141 @@ class WorkflowBehaviourTests(unittest.TestCase):
             )
             critic = json.loads((second / "critic.json").read_text())
             self.assertLessEqual(critic["revision_count"], 1)
+
+    def test_rejected_package_is_never_labelled_recommended(self) -> None:
+        payload = workflow.load_fixture(goal="opportunity")
+        payload["proof"] = {}
+        completed = workflow.complete_payload(payload)
+        self.assertEqual(completed["status"], "DROP")
+        with tempfile.TemporaryDirectory() as directory:
+            package = workflow.write_output_package(completed, output_root=directory)
+            final_text = (package / "final-package.md").read_text()
+            self.assertNotIn("## Recommended winner", final_text)
+            self.assertIn("## Best-scoring rejected draft", final_text)
+            self.assertIn("Failed gates: proof", final_text)
+            self.assertEqual(workflow.recent_post_texts(directory), [])
+
+    def test_advisory_critic_output_is_rendered_but_not_authoritative(self) -> None:
+        payload = workflow.load_fixture()
+        payload["critic_observations"] = ["Candidate 2 has the clearest mechanism."]
+        payload["critic_recommended_candidate_id"] = "candidate-2"
+        completed = workflow.complete_payload(payload)
+        with tempfile.TemporaryDirectory() as directory:
+            package = workflow.write_output_package(completed, output_root=directory)
+            final_text = (package / "final-package.md").read_text()
+            critic = json.loads((package / "critic.json").read_text())
+        self.assertIn("Candidate 2 has the clearest mechanism.", final_text)
+        self.assertIn("Deterministic Python scores and gates control", final_text)
+        self.assertEqual(critic["model_recommended_candidate_id"], "candidate-2")
+        self.assertEqual(critic["winner_index"], completed["evaluation"]["winner_index"])
+
+    def test_claude_invocation_keeps_dynamic_prompt_off_process_argv(self) -> None:
+        sentinel = "PRIVATE-DYNAMIC-PROMPT-SENTINEL"
+        response = mock.Mock(
+            returncode=0,
+            stdout=json.dumps({"structured_output": {"ok": True}}),
+            stderr="",
+        )
+        schema = {
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}},
+            "required": ["ok"],
+            "additionalProperties": False,
+        }
+        with mock.patch.object(workflow.shutil, "which", return_value="/usr/bin/claude"), mock.patch.object(
+            workflow.subprocess, "run", return_value=response
+        ) as run:
+            result = workflow.invoke_claude("analyst", sentinel, schema)
+        command = run.call_args.args[0]
+        self.assertEqual(result, {"ok": True})
+        self.assertIn("--safe-mode", command)
+        self.assertIn("--system-prompt", command)
+        self.assertNotIn("--agent", command)
+        self.assertNotIn(sentinel, command)
+        self.assertEqual(run.call_args.kwargs["input"], sentinel)
+
+    def test_live_model_input_excludes_private_storage_metadata_and_caps_bodies(self) -> None:
+        item = workflow.prepare_research_items(
+            [
+                {
+                    "canonical_url": "https://public.example.org/evidence",
+                    "title": "Agent reliability evidence",
+                    "body": "BODY-SENTINEL " + ("x" * 1000),
+                    "source": "Public publisher",
+                    "author": "AUTHOR-PRIVATE-SENTINEL",
+                    "published_at": "2026-07-16T01:00:00Z",
+                    "source_quality": "primary",
+                }
+            ]
+        )[0]
+        item["id"] = 999
+        item["content_hash"] = "HASH-PRIVATE-SENTINEL"
+        fixture = workflow.load_fixture()
+        analyst = {
+            key: fixture[key]
+            for key in (
+                "target_reader",
+                "reader_problem",
+                "core_hypothesis",
+                "authority_statement",
+                "recommended_format",
+                "analysis_summary",
+                "why_it_should_work",
+                "main_risk",
+            )
+        }
+        responses = iter(
+            [
+                analyst,
+                {"candidates": fixture["candidates"]},
+                {
+                    "observations": ["Advisory only."],
+                    "recommended_candidate_id": "candidate-1",
+                },
+            ]
+        )
+        prompts: list[str] = []
+
+        def invoke(
+            _agent: str,
+            prompt: str,
+            _schema: dict[str, object],
+            **_kwargs: object,
+        ) -> dict[str, object]:
+            prompts.append(prompt)
+            return next(responses)
+
+        with mock.patch.object(workflow, "invoke_claude", side_effect=invoke):
+            workflow.run_live_draft(
+                [item], topic="agent reliability", goal="authority"
+            )
+        transmitted = "\n".join(prompts)
+        self.assertIn("BODY-SENTINEL", transmitted)
+        self.assertNotIn("AUTHOR-PRIVATE-SENTINEL", transmitted)
+        self.assertNotIn("HASH-PRIVATE-SENTINEL", transmitted)
+        self.assertNotIn('"id": 999', transmitted)
+        self.assertNotIn("x" * 600, transmitted)
+
+    def test_weekly_review_names_the_winning_narrative_and_authority_conversion(self) -> None:
+        completed = workflow.complete_payload(workflow.load_fixture())
+        with tempfile.TemporaryDirectory() as directory:
+            package = workflow.write_output_package(completed, output_root=directory)
+            rows = [
+                {
+                    "post_id": package.name,
+                    "checkpoint": "24h",
+                    "channel": "organic",
+                    "impressions": 1000,
+                    "external_comments": 4,
+                    "saves": 12,
+                    "sends": 5,
+                    "profile_visits": 30,
+                }
+            ]
+            review = workflow.weekly_review_markdown(rows, output_root=directory)
+        self.assertIn(str(completed["evaluation"]["winner_score"]["angle"]), review)
+        self.assertIn(str(completed["authority_statement"]), review)
+        self.assertIn("Strongest recorded outcome", review)
 
 
 if __name__ == "__main__":

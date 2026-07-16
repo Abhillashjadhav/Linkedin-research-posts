@@ -42,7 +42,8 @@ outputs/.gitkeep
 - `storage.py` owns direct, parameterised SQLite functions for two tables. There is no ORM, repository class, or migration framework.
 - The four `.claude/agents/` files are the only role prompts. The draft-post skill is the only coordinator.
 - Dry-run mode reads a committed synthetic fixture and never invokes Claude or the network.
-- Live mode may invoke the local authenticated `claude` executable. Scout is restricted to read-only web tools; Analyst, Writer, and Critic receive data in their prompt and get no tools. Python alone writes repository/runtime files.
+- Live mode may invoke the local authenticated `claude` executable. Calls use safe mode, load one canonical role prompt explicitly, pass dynamic input over stdin, and persist no session. Scout is restricted to read-only web tools; Analyst, Writer, and Critic receive data in their prompt and get no tools. Python alone writes repository/runtime files.
+- The default daily draft never sends stored/private research to a model; it uses fresh public Scout results held in memory. Reusing selected database excerpts requires `--allow-model-egress`. The README enumerates the transmitted fields.
 - Successful packages are assembled in a sibling temporary directory and atomically renamed. Existing packages are never overwritten.
 
 The only database is ignored at `data/private/authority_os.sqlite`. It has exactly two tables:
@@ -106,6 +107,7 @@ The Test, Privacy and Reliability Reviewer proposed separate `quality.py`, `rese
 
 - The original voice-anchor post text, raw research corpus, and personal analytics were not found and are not reconstructed. Calibration uses only the user-supplied aggregate patterns until the user imports private local data.
 - Live quality depends on the locally authenticated Claude CLI and current web access. Fixture mode remains fully offline.
+- Reusing imported/private research with a live model requires explicit `--allow-model-egress`; the default daily command performs fresh public research instead.
 - Canonicalisation and content hashes remove exact/normalised duplicates; they are not semantic search or fact verification.
 - The simple token-similarity stale check may require human judgment at the boundary.
 - Weekly review reports patterns but never changes the frozen rubric automatically.

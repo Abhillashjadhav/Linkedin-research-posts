@@ -34,7 +34,7 @@ For a supplied topic and verified Opportunity proof:
   --proof-type repository --proof-value "https://github.com/OWNER/REPOSITORY"
 ```
 
-The optional Claude executable is the only live model surface. Scout receives read-only `WebSearch` and `WebFetch`; Analyst, Writer, and Critic receive no tools. Python alone writes the private database and approval package.
+The optional Claude executable is the only live model surface. Each call runs in Claude safe mode with an explicitly loaded canonical role prompt. Scout receives read-only `WebSearch` and `WebFetch`; Analyst, Writer, and Critic receive no tools. Python alone writes the private database and approval package.
 
 ## Commands
 
@@ -48,6 +48,7 @@ make test
 ./bin/linkedin-os research
 ./bin/linkedin-os research --input data/private/research.jsonl
 ./bin/linkedin-os draft
+./bin/linkedin-os draft --allow-model-egress
 ./bin/linkedin-os draft --goal reach
 ./bin/linkedin-os draft --goal authority
 ./bin/linkedin-os draft --goal opportunity
@@ -75,6 +76,14 @@ Keep private files under `data/private/`; the directory is ignored. JSON may be 
 ```
 
 The CLI canonicalises URLs and deduplicates both canonical URL and normalised content hash in `data/private/authority_os.sqlite`. Missing private inputs do not break setup.
+
+Stored research is never sent to a model by the default daily command. Without `--allow-model-egress`, `draft` runs a fresh public Scout search and drafts only from those in-memory results. To reuse research previously imported or stored in the private SQLite database, acknowledge model egress explicitly:
+
+```sh
+./bin/linkedin-os draft --goal authority --allow-model-egress
+```
+
+That flag permits up to eight selected stored items to leave the machine through the authenticated Claude CLI. If `--topic` is supplied, only matching rows are selected; if none match, the workflow performs fresh public research instead. The transmitted material is limited to derived cluster counts and labels, selected source title/first-sentence summaries, canonical source URLs, source-quality labels, and at most 500 characters of each selected body. The Writer also receives the two committed reconstructed voice files and any proof metadata explicitly supplied on the command line; it never reads the referenced proof file itself. Database IDs, content hashes, authors, performance rows, unselected database rows, raw private files, credentials, and environment values are not transmitted.
 
 ## Performance loop
 
