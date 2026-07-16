@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "proof_id": "proof-reliability-budget",
+  "proof_type": "decision-record",
+  "artifact_path": "synthetic-proof.md",
+  "public_claim": "A synthetic reliability-budget decision record exists for this fixture.",
+  "attested_personal_sentences": []
+}

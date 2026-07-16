@@ -2,7 +2,7 @@
 
 ## Current implemented flow
 
-The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, voice-grounded Writer drafting, and five-axis Critic scoring. It stops after the scored candidate set and at most one light revision; it does not apply safety gates, create a final package, approve content, or publish.
+The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, voice-grounded Writer drafting, five-axis Critic scoring, and five deterministic local gates. It stops after gating the scored candidate set and at most one light revision; it does not select a winner, create a final package, approve content, or publish.
 
 ### Research ledger
 
@@ -43,9 +43,9 @@ Staleness is `not-evaluated` unless the user explicitly supplies a private JSON 
 
 Each goal uses its configured v6 narrative route from the supplied brief. Output format remains a separate optional choice among `text`, `carousel`, `vertical-video`, `article`, and `artifact-demo`; no goal implies a format. When no goal is supplied the safe default is Authority, while format remains unselected.
 
-Weekly slots 1–4 resolve to Reach, Authority, Authority, and Opportunity. Slot 5 is optional and requires both an explicit goal and `--strong-current-signal`; the runtime does not infer that an incident or launch is strong. Opportunity is labelled as requiring proof, but proof enforcement belongs to the later safety-gate stage and no proof is invented here.
+Weekly slots 1–4 resolve to Reach, Authority, Authority, and Opportunity. Slot 5 is optional and requires both an explicit goal and `--strong-current-signal`; the runtime does not infer that an incident or launch is strong. Opportunity requires a validated local proof manifest before live Writer egress; no proof is inferred or invented. Reach and Authority may accept one optional manifest when exact public-safe proof or personal/ownership attestation is needed.
 
-The brief reports non-gating evidence limitations when readable primary/mixed evidence, a readable body, recent evidence, or a traceable primary URL is missing, and when comparison positively marks the topic similar to a recent post. If recent-post similarity was not supplied, it reports `recent-post-similarity-not-evaluated` instead of pretending that comparison passed. Citation and relevance pass/fail decisions remain deferred to the later safety-gate stage.
+The brief reports evidence limitations when readable primary/mixed evidence, a readable body, recent evidence, or a traceable primary URL is missing, and when comparison positively marks the topic similar to a recent post. If recent-post similarity was not supplied, it reports `recent-post-similarity-not-evaluated` instead of pretending that comparison passed. Candidate-level citation and relevance decisions are applied later, after scoring.
 
 Routing is stateless. It does not add a calendar, scheduler, weekly-history table, package file, or publishing action; it only hands the selected brief to the separate drafting step.
 
@@ -58,7 +58,7 @@ The Writer receives only the selected topic cluster's strategy brief and evidenc
 - `text` — the complete plain-text candidate; and
 - `claim_ids` — the selected-cluster evidence IDs used by its factual claims.
 
-Claim IDs are structural output, not citations hidden in prose. Evidence from an unselected cluster cannot be used. The reconstructed voice guide and performance-pattern anchors calibrate style only: they are non-citable, do not prove that an event occurred, and cannot support facts or personal ownership.
+Claim IDs are structural output, not citations hidden in prose. Evidence from an unselected cluster cannot be used. A candidate may additionally cite one validated `proof-*` ID (required for Opportunity and optional for Reach or Authority), but every candidate must still cite research evidence. The reconstructed voice guide and performance-pattern anchors calibrate style only: they are non-citable, do not prove that an event occurred, and cannot support facts or personal ownership.
 
 Word ranges follow the strategic goal: Reach is 100–190 words, Authority is 190–300, and Opportunity is 180–300. `--format` remains downstream conversion metadata. Candidates remain plain text in this stage rather than being converted into slides, video scripts, articles, or artefacts.
 
@@ -70,7 +70,7 @@ The visibly synthetic fixture exercises this contract without exposing private d
   --allow-model-egress
 ```
 
-The command fails closed if either flag is absent, and the Writer invocation itself requires the same explicit consent value. Consent means the selected text leaves this machine for the configured Claude service through the local CLI; inference is not described as local. A consented live invocation sends only the selected-cluster brief, evidence, and reconstructed voice instructions to the Writer; source-URL query strings are removed at that boundary while the local ledger remains unchanged. The Writer runs with zero tools and no persisted model session; it cannot browse or write files.
+The command fails closed if either flag is absent, and the Writer invocation itself requires the same explicit consent value. Consent means the selected strategy, evidence, and any supplied public proof claim or attestation text leave this machine for the configured Claude service through the local CLI; inference is not described as local. A consented live invocation sends only the selected-cluster brief, evidence, reconstructed voice instructions, and optional public-safe proof projection to the Writer; source-URL query strings are removed at that boundary while the local ledger remains unchanged. The artifact path and contents remain local. The Writer runs with zero tools and no persisted model session; it cannot browse or write files.
 
 ### Critic scoring and bounded revision
 
@@ -86,14 +86,24 @@ The model returns only candidate IDs and those five integer scores. Python rejec
 
 The effective-total bands have narrow meanings:
 
-- 24–25 means advance to the later safety-gate stage. It does not mean approved, ready for approval, recommended, scheduled, or published.
+- 24–25 means advance to the local safety gates. It does not mean approved, ready for approval, recommended, scheduled, or published.
 - 22–23 permits one light revision of the current score leader. The Writer may be invoked once, the replacement candidate must still satisfy the full drafting contract, and the Critic may rescore it once. Revision does not recurse.
 - 21 or below is below the Critic bar for this run; major rewriting is outside this stage.
 
-The runtime reports a deterministic **score leader**, not a winner or recommended candidate. Candidate order cannot change the result: ranking compares effective total descending, raw total descending, the five rubric axes descending in the order listed above, and finally candidate ID ascending. Scoring is intentionally separated from safety policy: the Critic prompt contains the recovered five-axis rubric but excludes the recovered authority-conversion, proof, honesty, citation, and relevance gates. Those binary gates belong to PR 9. Final package generation and human-approval status belong to PR 10.
+The runtime reports a deterministic **score leader**, not a winner or recommended candidate. Candidate order cannot change the result: ranking compares effective total descending, raw total descending, the five rubric axes descending in the order listed above, and finally candidate ID ascending. Scoring is intentionally separated from safety policy: the Critic prompt contains the recovered five-axis rubric but excludes the authority-conversion, proof, honesty, citation, and relevance gates. Those gates run locally afterward. Final package generation and human-approval status remain separate.
 
 The visibly synthetic fixture contains validated scorecards and remains fully offline: it invokes neither Writer nor Critic. A private run requires the existing explicit `--allow-model-egress` consent before any Writer or Critic invocation. Live model calls remain zero-tools, stateless, and stdin-only; the Critic receives only the validated candidates, minimal selected evidence and voice context, and the scoring rubric. A 22–23 revision uses the same explicit consent for at most one further Writer call and one rescore.
 
+### Deterministic authority and safety gates
+
+Python evaluates all three final candidates independently in the fixed order `authority_conversion`, `proof`, `honesty`, `citation`, and `relevance`. Each gate returns an exact `PASS`, `FAIL`, or `NOT_REQUIRED` status and ordered static reason codes. Reach and Authority proof is `NOT_REQUIRED`; Opportunity proof passes only when the candidate cites the exact validated proof ID and uses its exact normalized public claim.
+
+Proof manifests live under ignored `data/private/`, use an exact schema, and point to a distinct non-empty regular file relative to the manifest. Descriptor-anchored traversal rejects symlinks and path races; the runtime never reads artifact contents. It projects only proof ID, type, public claim, and exact public-safe personal/ownership attestations to Writer or score-only Critic prompts. Local paths are absent from prompts, stdout, gate results, and errors.
+
+Honesty rejects detected personal or ownership sentences unless the complete normalized sentence exactly matches an attestation. It also rejects malformed direct quotations and unsupported explicit or citation-like bare/Markdown source references. Citation requires at least one body-read research record, refuses factual work supported only by Reddit or Hacker News, and checks high-risk numbers, structurally named entities, attributed quotations, directional relationships, and concrete incidents against one cited claim at a time. Matching preserves clause polarity, ordered associations, and the exact canonical query of query-addressed sources; private query data remains excluded from Writer and Critic prompts. A closed grammar canonicalises simple acquisition, hiring, and ownership claims across active and passive voice, allowing equivalent paraphrases while rejecting reversed actors. Bare sentence-leading Titlecase subjects are inherently ambiguous in opaque prose. The gate therefore fails closed unless high-confidence entity syntax applies or the subject belongs to an audited Authority OS generic-discourse registry. This prevents combining a name from one source and a number from another into unsupported precision. These bounded checks are deliberately conservative and cannot establish truth.
+
+Authority conversion requires material overlap with both the explicit authority statement and product decision. Relevance requires a recognised v6 audience family plus material reader-problem overlap. Gate evaluation invokes no model and does not alter Critic ranking. A required-gate pass is not a winner, recommendation, approval, package, schedule, or publishing permission; human fact verification is always required.
+
 ## Safety boundary
 
-Source bodies are untrusted data, not instructions. Analysis and routing are deterministic Python. Only an explicitly consented live drafting run can cross the Writer or Critic model boundary, under the zero-tools and no-session restrictions above. Critic scores are not safety gates or human approval. There is no browser, Gmail, LinkedIn write, or automatic publishing action.
+Source bodies, candidates, and public proof fields are untrusted data, not instructions. Analysis, routing, and all five gates are deterministic Python. Only an explicitly consented live drafting run can cross the Writer or Critic model boundary, under the zero-tools and no-session restrictions above. Critic scores and gate passes are not human approval. There is no browser, Gmail, LinkedIn write, or automatic publishing action.

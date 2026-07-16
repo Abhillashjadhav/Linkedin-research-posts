@@ -16,6 +16,12 @@ def _path(value: str) -> Path:
     return Path(value).expanduser().resolve()
 
 
+def _unresolved_path(value: str) -> Path:
+    """Keep symlink information available for private proof validation."""
+
+    return Path(value).expanduser()
+
+
 def _nonblank(value: str) -> str:
     cleaned = value.strip()
     if not cleaned:
@@ -43,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     draft = subparsers.add_parser(
         "draft",
-        help="Generate and Critic-score three drafts from fixture or consented evidence.",
+        help="Generate, Critic-score, and locally gate three drafts.",
     )
     draft.add_argument(
         "--topic", type=_nonblank, help="Optional topic substituted into the fixture."
@@ -78,8 +84,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-model-egress",
         action="store_true",
         help=(
-            "Explicitly allow selected evidence and strategy text to leave this machine "
-            "for the configured Claude service."
+            "Explicitly allow selected evidence, strategy, and any public proof claim or "
+            "attestation text to leave this machine for the configured Claude service."
+        ),
+    )
+    draft.add_argument(
+        "--proof-manifest",
+        type=_unresolved_path,
+        help=(
+            "Private proof manifest under data/private (required for Opportunity and "
+            "optional otherwise); its local artifact path and contents never leave this "
+            "machine."
         ),
     )
     draft.add_argument("--dry-run", action="store_true", help="Use the offline safe fixture.")
@@ -121,6 +136,8 @@ def command_doctor(args: argparse.Namespace) -> int:
         "data/voice/voice-guide.md",
         "data/voice/abhillash-best-posts.md",
         "data/samples/dry-run.json",
+        "data/samples/proof-fixture.json",
+        "data/samples/synthetic-proof.md",
     ):
         path = workflow.REPO_ROOT / relative
         checks.append((relative, path.exists() and path.stat().st_size > 0, "present"))
@@ -158,11 +175,12 @@ def command_doctor(args: argparse.Namespace) -> int:
 def command_draft(args: argparse.Namespace) -> int:
     strategy_input = getattr(args, "strategy_input", None)
     allow_model_egress = bool(getattr(args, "allow_model_egress", False))
+    proof_manifest = getattr(args, "proof_manifest", None)
     fixture: dict[str, object] | None = None
     if args.dry_run:
-        if strategy_input or allow_model_egress:
+        if strategy_input or allow_model_egress or proof_manifest:
             raise workflow.WorkflowError(
-                "Fixture drafting does not accept strategy files or model-egress consent."
+                "Fixture drafting does not accept strategy files, proof files, or model-egress consent."
             )
         fixture = workflow.load_fixture(topic=args.topic)
         items = workflow.prepare_research_items(fixture["research_items"])
@@ -218,6 +236,20 @@ def command_draft(args: argparse.Namespace) -> int:
         items,
         topic_slug=str(brief["topic_slug"]),
     )
+    proof: workflow.LoadedProof | None = None
+    if fixture is not None and brief["goal"] == "opportunity":
+        proof = workflow.load_proof_manifest(
+            workflow.DEFAULT_FIXTURE_PROOF,
+            fixture_mode=True,
+        )
+    elif fixture is None and brief["goal"] == "opportunity":
+        if proof_manifest is None:
+            raise workflow.WorkflowError(
+                "Live Opportunity drafting requires --proof-manifest before model egress."
+            )
+        proof = workflow.load_proof_manifest(proof_manifest)
+    elif fixture is None and proof_manifest is not None:
+        proof = workflow.load_proof_manifest(proof_manifest)
     if fixture is not None:
         candidate_sets = fixture.get("draft_candidates")
         if not isinstance(candidate_sets, dict):
@@ -231,6 +263,7 @@ def command_draft(args: argparse.Namespace) -> int:
             raw_candidates,
             brief=brief,
             evidence=evidence,
+            proof=proof,
         )
         print(
             f"Fixture envelope validated: topic={fixture['topic']}; "
@@ -241,6 +274,7 @@ def command_draft(args: argparse.Namespace) -> int:
             brief=brief,
             evidence=evidence,
             allow_model_egress=allow_model_egress,
+            proof=proof,
         )
         print(
             f"Stored evidence selected for Writer: topic={brief['topic_slug']}; "
@@ -298,6 +332,7 @@ def command_draft(args: argparse.Namespace) -> int:
                 brief,
                 evidence,
                 allow_model_egress=allow_model_egress,
+                proof=proof,
             )
 
         def revision_provider(
@@ -313,6 +348,7 @@ def command_draft(args: argparse.Namespace) -> int:
                 evidence,
                 scorecard=scorecard,
                 allow_model_egress=allow_model_egress,
+                proof=proof,
             )
 
     review = workflow.run_critic_review(
@@ -321,8 +357,15 @@ def command_draft(args: argparse.Namespace) -> int:
         evidence,
         score_provider,
         revision_provider,
+        proof=proof,
     )
     candidates = review["candidates"]
+    gate_results = workflow.evaluate_candidate_set_gates(
+        candidates,
+        brief=brief,
+        evidence=evidence,
+        proof=proof,
+    )
     output_format = brief["output_format"] or "not-selected"
     route = " -> ".join(brief["narrative_route"])
     print(
@@ -355,7 +398,7 @@ def command_draft(args: argparse.Namespace) -> int:
         f"limitations={limitations}."
     )
     if brief["proof_required"]:
-        print("Opportunity route: proof is required later; no proof was invented or gated here.")
+        print("Opportunity route: a validated local proof manifest was supplied; its path is private.")
     for index, candidate in enumerate(candidates, start=1):
         claim_ids = ",".join(candidate["claim_ids"])
         print(
@@ -378,7 +421,23 @@ def command_draft(args: argparse.Namespace) -> int:
         f"Score leader: {review['score_leader_id']}; "
         f"revision_count={review['revision_count']}."
     )
-    print("Three draft candidates scored. No winner was selected and no gate was applied.")
+    for result in gate_results:
+        gate_summary = ",".join(
+            f"{name}={result['gates'][name]['status']}"
+            for name in workflow.GATE_ORDER
+        )
+        reasons = ",".join(
+            reason
+            for name in workflow.GATE_ORDER
+            for reason in result["gates"][name]["reason_codes"]
+        )
+        print(
+            f"Gate result: id={result['candidate_id']}; {gate_summary}; "
+            f"passes_required_gates={'yes' if result['passes_required_gates'] else 'no'}; "
+            f"manual_fact_verification_required=yes; reasons={reasons}."
+        )
+    print("Three draft candidates scored and gated. No winner was selected.")
+    print("A gate pass is not approval, recommendation, scheduling, or permission to publish.")
     print("No approval package was generated. No LinkedIn action was taken.")
     return 0
 
