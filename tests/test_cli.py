@@ -111,24 +111,28 @@ class MinimalCliTests(unittest.TestCase):
                 )
                 self.assertIn("No LinkedIn action was taken", result.stdout)
 
-    def test_fixture_drafting_emits_three_unscored_candidates_for_each_goal(self) -> None:
+    def test_fixture_drafting_scores_three_candidates_for_each_goal(self) -> None:
         for goal in cli.workflow.STRATEGIC_GOALS:
             with self.subTest(goal=goal):
                 result = run_cli("draft", "--dry-run", "--goal", goal)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.count("Candidate "), 3)
-                self.assertIn("Three unscored draft candidates generated", result.stdout)
+                self.assertEqual(result.stdout.count("Critic score: id="), 3)
+                self.assertIn("Three draft candidates scored", result.stdout)
+                self.assertIn("Critic ranking:", result.stdout)
+                expected_revisions = 1 if goal == "authority" else 0
+                self.assertIn(
+                    f"revision_count={expected_revisions}", result.stdout
+                )
                 lowered = result.stdout.casefold()
                 for deferred in (
-                    "critic score",
                     "score=",
                     "ready for human approval",
-                    "revision count",
                     "package path",
                 ):
                     self.assertNotIn(deferred, lowered)
 
-    def test_fixture_drafting_never_invokes_the_writer_model(self) -> None:
+    def test_fixture_drafting_never_invokes_any_model(self) -> None:
         args = SimpleNamespace(
             dry_run=True,
             topic=None,
@@ -145,10 +149,22 @@ class MinimalCliTests(unittest.TestCase):
                 "invoke_writer",
                 side_effect=AssertionError("fixture mode crossed the model boundary"),
             ) as writer,
+            patch.object(
+                cli.workflow,
+                "invoke_critic",
+                side_effect=AssertionError("fixture mode crossed the model boundary"),
+            ) as critic,
+            patch.object(
+                cli.workflow,
+                "invoke_writer_revision",
+                side_effect=AssertionError("fixture mode crossed the model boundary"),
+            ) as revision,
             redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(cli.command_draft(args), 0)
         writer.assert_not_called()
+        critic.assert_not_called()
+        revision.assert_not_called()
 
     def test_fixture_mode_rejects_private_input_and_egress_flags(self) -> None:
         egress = run_cli("draft", "--dry-run", "--allow-model-egress")
@@ -274,6 +290,16 @@ class MinimalCliTests(unittest.TestCase):
                 db=database,
             )
             candidates = fixture["draft_candidates"]["authority"]
+            critic_scores = [
+                {
+                    "candidate_id": candidate["id"],
+                    **{
+                        axis: 5 if index == 0 else 4
+                        for axis in cli.workflow.CRITIC_AXES
+                    },
+                }
+                for index, candidate in enumerate(candidates)
+            ]
             with (
                 patch.object(
                     cli.storage, "list_research_items", return_value=items
@@ -281,12 +307,18 @@ class MinimalCliTests(unittest.TestCase):
                 patch.object(
                     cli.workflow, "invoke_writer", return_value=candidates
                 ) as writer,
+                patch.object(
+                    cli.workflow, "invoke_critic", return_value=critic_scores
+                ) as critic,
                 redirect_stdout(io.StringIO()) as output,
             ):
                 self.assertEqual(cli.command_draft(args), 0)
             brief = writer.call_args.kwargs["brief"]
             evidence = writer.call_args.kwargs["evidence"]
             self.assertIs(writer.call_args.kwargs["allow_model_egress"], True)
+            self.assertIs(critic.call_args.kwargs["allow_model_egress"], True)
+            self.assertEqual(critic.call_args.args[1], brief)
+            self.assertEqual(critic.call_args.args[2], evidence)
             self.assertEqual(brief["strategy_input_origin"], "explicit-input")
             self.assertEqual(brief["output_format"], "carousel")
             self.assertEqual(len(evidence), 2)

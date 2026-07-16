@@ -43,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     draft = subparsers.add_parser(
         "draft",
-        help="Generate three unscored drafts from a fixture or consented stored evidence.",
+        help="Generate and Critic-score three drafts from fixture or consented evidence.",
     )
     draft.add_argument(
         "--topic", type=_nonblank, help="Optional topic substituted into the fixture."
@@ -246,6 +246,83 @@ def command_draft(args: argparse.Namespace) -> int:
             f"Stored evidence selected for Writer: topic={brief['topic_slug']}; "
             f"sources={len(evidence)}."
         )
+    if fixture is not None:
+        fixture_scorecards = fixture.get("critic_scorecards")
+        if not isinstance(fixture_scorecards, dict):
+            raise workflow.WorkflowError("Fixture needs goal-specific Critic scorecards.")
+        fixture_review = fixture_scorecards.get(str(brief["goal"]))
+        if not isinstance(fixture_review, dict):
+            raise workflow.WorkflowError(
+                f"Fixture needs {brief['goal']} Critic scorecards."
+            )
+        initial_scores = fixture_review.get("initial")
+        if not isinstance(initial_scores, list):
+            raise workflow.WorkflowError("Fixture needs initial Critic scorecards.")
+        revision_fixture = fixture_review.get("revision")
+        score_responses: list[object] = [initial_scores]
+        if isinstance(revision_fixture, dict):
+            score_responses.append([revision_fixture.get("scorecard")])
+
+        def score_provider(
+            _candidates: object,
+        ) -> list[dict[str, object]]:
+            if not score_responses:
+                raise workflow.WorkflowError("Fixture Critic was invoked too many times.")
+            response = score_responses.pop(0)
+            if not isinstance(response, list) or not all(
+                isinstance(item, dict) for item in response
+            ):
+                raise workflow.WorkflowError("Fixture Critic scorecards are malformed.")
+            return response
+
+        def revision_provider(
+            _candidate: object, _scorecard: object
+        ) -> dict[str, object]:
+            if not isinstance(revision_fixture, dict) or not isinstance(
+                revision_fixture.get("candidate"), dict
+            ):
+                raise workflow.WorkflowError(
+                    "Fixture needs a candidate for the one-revision band."
+                )
+            return dict(revision_fixture["candidate"])
+
+    else:
+
+        def score_provider(
+            candidates_to_score: object,
+        ) -> list[dict[str, object]]:
+            if not isinstance(candidates_to_score, list):
+                raise workflow.WorkflowError("Critic candidates must be a list.")
+            return workflow.invoke_critic(
+                candidates_to_score,
+                brief,
+                evidence,
+                allow_model_egress=allow_model_egress,
+            )
+
+        def revision_provider(
+            candidate_to_revise: object, scorecard: object
+        ) -> dict[str, object]:
+            if not isinstance(candidate_to_revise, dict) or not isinstance(
+                scorecard, dict
+            ):
+                raise workflow.WorkflowError("Writer revision inputs are malformed.")
+            return workflow.invoke_writer_revision(
+                candidate_to_revise,
+                brief,
+                evidence,
+                scorecard=scorecard,
+                allow_model_egress=allow_model_egress,
+            )
+
+    review = workflow.run_critic_review(
+        candidates,
+        brief,
+        evidence,
+        score_provider,
+        revision_provider,
+    )
+    candidates = review["candidates"]
     output_format = brief["output_format"] or "not-selected"
     route = " -> ".join(brief["narrative_route"])
     print(
@@ -286,7 +363,22 @@ def command_draft(args: argparse.Namespace) -> int:
             f"claim_ids={claim_ids}."
         )
         print(candidate["text"])
-    print("Three unscored draft candidates generated. No winner was selected.")
+    for scorecard in review["scorecards"]:
+        axis_scores = ",".join(
+            f"{axis}={scorecard[axis]}" for axis in workflow.CRITIC_AXES
+        )
+        print(
+            f"Critic score: id={scorecard['candidate_id']}; {axis_scores}; "
+            f"raw_total={scorecard['raw_total']}; "
+            f"effective_total={scorecard['effective_total']}; "
+            f"band={scorecard['band']}."
+        )
+    print(f"Critic ranking: {','.join(review['ranking'])}.")
+    print(
+        f"Score leader: {review['score_leader_id']}; "
+        f"revision_count={review['revision_count']}."
+    )
+    print("Three draft candidates scored. No winner was selected and no gate was applied.")
     print("No approval package was generated. No LinkedIn action was taken.")
     return 0
 

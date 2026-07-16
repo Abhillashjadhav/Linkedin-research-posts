@@ -116,5 +116,37 @@
         ]
       }
     ]
+  },
+  "critic_scorecards": {
+    "reach": {
+      "initial": [
+        {"candidate_id": "reach-1", "hook_strength": 5, "middle_escalation": 5, "earned_closer": 5, "specificity_and_source_quality": 5, "voice_fidelity": 5},
+        {"candidate_id": "reach-2", "hook_strength": 5, "middle_escalation": 5, "earned_closer": 4, "specificity_and_source_quality": 4, "voice_fidelity": 4},
+        {"candidate_id": "reach-3", "hook_strength": 3, "middle_escalation": 5, "earned_closer": 5, "specificity_and_source_quality": 5, "voice_fidelity": 5}
+      ]
+    },
+    "authority": {
+      "initial": [
+        {"candidate_id": "authority-1", "hook_strength": 5, "middle_escalation": 5, "earned_closer": 5, "specificity_and_source_quality": 4, "voice_fidelity": 4},
+        {"candidate_id": "authority-2", "hook_strength": 5, "middle_escalation": 4, "earned_closer": 4, "specificity_and_source_quality": 4, "voice_fidelity": 4},
+        {"candidate_id": "authority-3", "hook_strength": 4, "middle_escalation": 4, "earned_closer": 4, "specificity_and_source_quality": 4, "voice_fidelity": 4}
+      ],
+      "revision": {
+        "candidate": {
+          "id": "authority-1",
+          "angle": "mechanism-first",
+          "text": "Reliability compounds across {{topic}}. A component-by-component review can miss that mechanism even when every local check looks reassuring.\n\nA multi-step workflow is a system, not a folder of independent results. Evaluate each component first because those observations show where uncertainty enters. Then combine the estimates into an end-to-end view. That combined view, not the most attractive local result, should drive the product decision.\n\nThe first pass answers whether each step can work. The second asks whether the complete path still meets the reliability budget chosen before expansion. If it falls short, improve the current path or reduce uncertainty. If evidence is missing, keep the gap visible instead of treating absence as success.\n\nThe two synthetic notes support this order. One supports evaluating components before combining a workflow estimate. The other supports setting a reliability budget before adding more steps. Neither supplies a universal threshold or guaranteed outcome, so the threshold remains an explicit product assumption for human review.\n\nThis creates a defensible rule: local evidence informs the estimate, the system estimate is compared with the budget, and the recorded result informs whether the workflow should expand.\n\nAnother capability is progress only when the complete workflow can still meet the standard chosen for it.",
+          "claim_ids": ["source-1", "source-2"]
+        },
+        "scorecard": {"candidate_id": "authority-1", "hook_strength": 5, "middle_escalation": 5, "earned_closer": 5, "specificity_and_source_quality": 5, "voice_fidelity": 4}
+      }
+    },
+    "opportunity": {
+      "initial": [
+        {"candidate_id": "opportunity-1", "hook_strength": 5, "middle_escalation": 5, "earned_closer": 5, "specificity_and_source_quality": 5, "voice_fidelity": 4},
+        {"candidate_id": "opportunity-2", "hook_strength": 5, "middle_escalation": 4, "earned_closer": 4, "specificity_and_source_quality": 4, "voice_fidelity": 4},
+        {"candidate_id": "opportunity-3", "hook_strength": 4, "middle_escalation": 4, "earned_closer": 4, "specificity_and_source_quality": 4, "voice_fidelity": 4}
+      ]
+    }
   }
 }
