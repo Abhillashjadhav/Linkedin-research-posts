@@ -37,7 +37,7 @@ class MinimalCliTests(unittest.TestCase):
             self.assertEqual(first.returncode, 0, first.stderr)
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertTrue(database.parent.is_dir())
-            self.assertFalse(database.exists())
+            self.assertTrue(database.exists())
 
     def test_doctor_redacts_environment_values(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -68,6 +68,53 @@ class MinimalCliTests(unittest.TestCase):
         result = run_cli("draft")
         self.assertEqual(result.returncode, 2)
         self.assertIn("Live drafting is not available", result.stderr)
+
+    def test_fixture_research_is_persisted_and_deduplicated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "private" / "authority.sqlite"
+            first = run_cli("research", "--dry-run", "--db", str(database))
+            second = run_cli("research", "--dry-run", "--db", str(database))
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("inserted=2; duplicates=0", first.stdout)
+            self.assertIn("inserted=0; duplicates=2", second.stdout)
+
+    def test_research_missing_input_and_live_mode_fail_honestly(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "authority.sqlite"
+            database = str(database_path)
+            missing = run_cli(
+                "research", "--input", str(Path(temporary) / "missing.json"), "--db", database
+            )
+            live = run_cli("research", "--db", database)
+            self.assertEqual(missing.returncode, 2)
+            self.assertIn("not a readable file", missing.stderr)
+            self.assertEqual(live.returncode, 2)
+            self.assertIn("Live research is not available", live.stderr)
+            self.assertFalse(database_path.exists())
+
+    def test_research_directory_input_is_a_safe_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "authority.sqlite"
+            result = run_cli("research", "--input", temporary, "--db", str(database))
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("not a readable file", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertFalse(database.exists())
+
+    def test_corrupt_database_is_a_safe_cli_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "authority.sqlite"
+            database.write_bytes(b"not a sqlite database")
+            for command in ("init", "research"):
+                args = [command]
+                if command == "research":
+                    args.append("--dry-run")
+                result = run_cli(*args, "--db", str(database))
+                with self.subTest(command=command):
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn("database is unavailable or corrupt", result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
 
     def test_no_publish_surface_exists(self) -> None:
         help_result = run_cli("--help")
