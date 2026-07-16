@@ -45,6 +45,27 @@ def build_parser() -> argparse.ArgumentParser:
     draft.add_argument(
         "--topic", type=_nonblank, help="Optional topic substituted into the fixture."
     )
+    draft.add_argument(
+        "--goal",
+        choices=workflow.STRATEGIC_GOALS,
+        help="Strategic outcome; independent from the output format.",
+    )
+    draft.add_argument(
+        "--format",
+        dest="output_format",
+        choices=workflow.OUTPUT_FORMATS,
+        help="Optional output format; never inferred from the strategic goal.",
+    )
+    draft.add_argument(
+        "--week-slot",
+        type=int,
+        help="Use the default four-post weekly mix, or guarded optional slot 5.",
+    )
+    draft.add_argument(
+        "--strong-current-signal",
+        action="store_true",
+        help="Confirm that optional slot 5 has a strong current incident or launch.",
+    )
     draft.add_argument("--dry-run", action="store_true", help="Use the offline safe fixture.")
     _add_common(draft)
 
@@ -124,10 +145,59 @@ def command_draft(args: argparse.Namespace) -> int:
             "Live drafting is not available in this runtime foundation; use --dry-run."
         )
     fixture = workflow.load_fixture(topic=args.topic)
+    items = workflow.prepare_research_items(fixture["research_items"])
+    analysis_items, _combined = workflow.deduplicate_analysis_items(items, ())
+    analysis = workflow.analyse_research(
+        analysis_items,
+        topic=args.topic,
+        as_of=workflow.parse_published_at(str(fixture["as_of"])),
+    )
+    brief = workflow.build_strategy_brief(
+        analysis["pass_2"]["selected"],
+        strategy_inputs=fixture.get("strategy_inputs"),
+        strategy_input_origin="synthetic-fixture",
+        goal=args.goal,
+        output_format=args.output_format,
+        week_slot=args.week_slot,
+        strong_current_signal=args.strong_current_signal,
+    )
     print(
         f"Fixture envelope validated: topic={fixture['topic']}; "
         f"research_items={len(fixture['research_items'])}."
     )
+    output_format = brief["output_format"] or "not-selected"
+    route = " -> ".join(brief["narrative_route"])
+    print(
+        f"Strategy brief: goal={brief['goal']}; format={output_format}; "
+        f"weekly_slot={brief['weekly_slot'] or 'not-selected'}; topic={brief['topic_slug']}."
+    )
+    print(f"Purpose: {brief['goal_purpose']} Route: {route}.")
+    print(
+        f"Reader: {brief['target_reader']} Problem: {brief['reader_problem']}"
+    )
+    print(f"Core hypothesis: {brief['core_hypothesis']}")
+    print(f"Product decision: {brief['product_decision']}")
+    print(f"Authority statement: {brief['authority_statement']}")
+    print(f"Strategy input origin: {brief['strategy_input_origin']}")
+    evidence_status = brief["evidence_status"]
+    stale_status = (
+        "not-evaluated"
+        if evidence_status["stale"] is None
+        else "yes"
+        if evidence_status["stale"]
+        else "no"
+    )
+    limitations = ",".join(evidence_status["limitations"]) or "none"
+    print(
+        "Evidence status: "
+        f"source_quality={'sufficient' if evidence_status['source_quality_sufficient'] else 'insufficient'}; "
+        f"body={'sufficient' if evidence_status['body_read_sufficient'] else 'insufficient'}; "
+        f"recency={'sufficient' if evidence_status['recency_sufficient'] else 'insufficient'}; "
+        f"stale={stale_status}; primary_sources={evidence_status['primary_source_count']}; "
+        f"limitations={limitations}."
+    )
+    if brief["proof_required"]:
+        print("Opportunity route: proof is required later; no proof was invented or gated here.")
     print("No approval package was generated. No LinkedIn action was taken.")
     return 0
 
@@ -138,9 +208,11 @@ def command_research(args: argparse.Namespace) -> int:
     if args.dry_run:
         fixture = workflow.load_fixture(topic=args.topic)
         items = workflow.prepare_research_items(fixture["research_items"])
+        analysis_as_of = workflow.parse_published_at(str(fixture["as_of"]))
         mode = "fixture"
     elif args.input:
         items = workflow.load_research_file(args.input)
+        analysis_as_of = None
         mode = "private import"
     else:
         raise workflow.WorkflowError(
@@ -151,26 +223,17 @@ def command_research(args: argparse.Namespace) -> int:
     )
     initialise_paths(args.db)
     existing = storage.list_research_items(args.db)
-    prospective: list[dict[str, object]] = []
-    seen_urls: set[str] = set()
-    seen_hashes: set[str] = set()
     # Analyse the current invocation's representation when it collides with a
     # stored URL/hash. Persistence still applies its own durable deduplication.
-    for item in [*items, *existing]:
-        canonical_url = str(item.get("canonical_url", ""))
-        digest = str(item.get("content_hash", ""))
-        if canonical_url in seen_urls or digest in seen_hashes:
-            continue
-        seen_urls.add(canonical_url)
-        seen_hashes.add(digest)
-        prospective.append(dict(item))
-
+    current_unique, prospective = workflow.deduplicate_analysis_items(items, existing)
+    analysis_candidates = current_unique if args.dry_run else prospective
     analysis: dict[str, object] | None = None
-    if prospective:
+    if analysis_candidates:
         analysis = workflow.analyse_research(
-            prospective,
+            analysis_candidates,
             topic=args.topic,
             recent_posts=recent_posts,
+            as_of=analysis_as_of,
         )
 
     inserted, duplicates = storage.insert_research_items(args.db, items)

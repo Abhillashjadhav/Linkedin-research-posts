@@ -1,7 +1,15 @@
 {
   "fixture_mode": true,
   "synthetic": true,
+  "as_of": "2026-07-16T12:00:00Z",
   "topic": "agent reliability budgets",
+  "strategy_inputs": {
+    "target_reader": "AI product leaders designing multi-step GenAI workflows",
+    "reader_problem": "They need to judge whether a workflow using {{topic}} is reliable enough before adding another step.",
+    "core_hypothesis": "For {{topic}}, component reliability compounds across steps and must be evaluated as a system.",
+    "product_decision": "Set an explicit end-to-end reliability budget before expanding the synthetic workflow.",
+    "authority_statement": "The reader should remember the author for connecting the mechanics of {{topic}} to a falsifiable product decision; no personal incident or ownership is claimed."
+  },
   "research_items": [
     {
       "title": "Synthetic reliability evaluation note for {{topic}}",
