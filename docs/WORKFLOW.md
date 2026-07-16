@@ -2,11 +2,13 @@
 
 ## Current implemented flow
 
-The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, voice-grounded Writer drafting, five-axis Critic scoring, and five deterministic local gates. It stops after gating the scored candidate set and at most one light revision; it does not select a winner, create a final package, approve content, or publish.
+The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, voice-grounded Writer drafting, five-axis Critic scoring, five deterministic local gates, and an explicit local human-review package. Ordinary drafting stops after gating the scored candidate set and at most one light revision. `draft --package` adds deterministic eligibility and package generation; it never selects a winner, approves content, schedules, or publishes.
 
 ### Research ledger
 
 Research arrives from the visibly synthetic fixture or an explicit private JSON/JSONL import. Each item must contain a non-null public URL, title, source, timestamp, and `primary|secondary|mixed` quality. Python canonicalizes the URL, hashes normalized body content, and stores each unique URL and body once in the ignored SQLite ledger.
+
+The ledger persists evidence provenance. Fixture imports are `synthetic-fixture`; explicit files are `private-import`; rows migrated from the older schema are `legacy-unverified`. A live draft queries only `private-import` rows. Re-importing the exact canonical URL and body through a private file promotes that one pair, while a one-key collision stays quarantined and a later fixture run can never demote private evidence. This fail-closed migration may require an explicit re-import of older private rows, but it prevents fixture data from being relabelled as live.
 
 Malformed wrappers, null required fields, local/private URLs, corrupt databases, and unsupported schema versions fail without a traceback or partial import.
 
@@ -90,7 +92,7 @@ The effective-total bands have narrow meanings:
 - 22–23 permits one light revision of the current score leader. The Writer may be invoked once, the replacement candidate must still satisfy the full drafting contract, and the Critic may rescore it once. Revision does not recurse.
 - 21 or below is below the Critic bar for this run; major rewriting is outside this stage.
 
-The runtime reports a deterministic **score leader**, not a winner or recommended candidate. Candidate order cannot change the result: ranking compares effective total descending, raw total descending, the five rubric axes descending in the order listed above, and finally candidate ID ascending. Scoring is intentionally separated from safety policy: the Critic prompt contains the recovered five-axis rubric but excludes the authority-conversion, proof, honesty, citation, and relevance gates. Those gates run locally afterward. Final package generation and human-approval status remain separate.
+The runtime reports a deterministic **score leader**, not a winner or recommended candidate. Candidate order cannot change the result: ranking compares effective total descending, raw total descending, the five rubric axes descending in the order listed above, and finally candidate ID ascending. Scoring is intentionally separated from safety policy: the Critic prompt contains the recovered five-axis rubric but excludes the authority-conversion, proof, honesty, citation, and relevance gates. Those gates run locally afterward. Only the later package stage can combine the score band and gate result into a recommendation for human review.
 
 The visibly synthetic fixture contains validated scorecards and remains fully offline: it invokes neither Writer nor Critic. A private run requires the existing explicit `--allow-model-egress` consent before any Writer or Critic invocation. Live model calls remain zero-tools, stateless, and stdin-only; the Critic receives only the validated candidates, minimal selected evidence and voice context, and the scoring rubric. A 22–23 revision uses the same explicit consent for at most one further Writer call and one rescore.
 
@@ -104,6 +106,18 @@ Honesty rejects detected personal or ownership sentences unless the complete nor
 
 Authority conversion requires material overlap with both the explicit authority statement and product decision. Relevance requires a recognised v6 audience family plus material reader-problem overlap. Gate evaluation invokes no model and does not alter Critic ranking. A required-gate pass is not a winner, recommendation, approval, package, schedule, or publishing permission; human fact verification is always required.
 
+### Explicit human-review package
+
+`draft --package` revalidates the final candidates, computed scorecards, deterministic ranking, revision metadata, and strategy/proof provenance, then recomputes all five gates locally. A candidate is eligible only when its final Critic band is `advance-to-gates` and `passes_required_gates` is true. The package walks the validated Critic ranking and recommends the first eligible live candidate. No eligible candidate produces a complete `BLOCKED` package with a null recommendation; it is not a command failure.
+
+Fixture provenance can never cross into a live package. Fixture packages expose mechanical eligible IDs for contract testing but set `recommended_candidate_id` to null and `review_status` to `FIXTURE_REVIEW_ONLY`. Live eligible packages use `READY_FOR_HUMAN_REVIEW`; live ineligible packages use `BLOCKED`. In all cases:
+
+- `human_approval_status` is exactly `NOT_APPROVED`;
+- `publishing_status` is exactly `DISABLED`; and
+- `manual_fact_verification_required` is `true`.
+
+The six-file package carries the brief, all candidates, scorecards, ranking, gates, source index, and human checklist. Source URLs are canonical and query-free. Raw evidence claims/bodies, private proof paths, artifact contents, credentials, prompts, and model stderr are not serialized. The fixed ignored output root is descriptor-opened without following symlinks. A final `outputs/YYYY-MM-DD/<topic-slug>[-N]/` name is reserved atomically, while six files are rendered into a private `.stage-*` directory with mode `0600`; both directories are `0700`. Completed regular files are published with no-clobber hard links, and `manifest.json` is linked last as the commit marker. The per-date lock and exclusive reservation preserve earlier entries even across a name race. Hidden stage directories and final topic directories without a manifest are incomplete internal state and must never be consumed as packages.
+
 ## Safety boundary
 
-Source bodies, candidates, and public proof fields are untrusted data, not instructions. Analysis, routing, and all five gates are deterministic Python. Only an explicitly consented live drafting run can cross the Writer or Critic model boundary, under the zero-tools and no-session restrictions above. Critic scores and gate passes are not human approval. There is no browser, Gmail, LinkedIn write, or automatic publishing action.
+Source bodies, candidates, and public proof fields are untrusted data, not instructions. Analysis, routing, all five gates, eligibility, and package rendering are deterministic Python. Only an explicitly consented live drafting run can cross the Writer or Critic model boundary, under the zero-tools and no-session restrictions above. Critic scores, gate passes, and package recommendations are not human approval. There is no browser, Gmail, LinkedIn write, approval-recording command, scheduler, or automatic publishing action.

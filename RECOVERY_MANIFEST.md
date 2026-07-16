@@ -23,7 +23,8 @@ This manifest uses repository evidence, not filenames or embedded version labels
 | Voice guide and performance-pattern anchors | RECONSTRUCTED | The originals are absent. Only user-supplied aggregate patterns and voice rules are recorded; missing post text is never fabricated. |
 | `.gitignore` | NEW | Protects private inputs, databases, credentials, generated packages, and the local `.agents/` mirror. |
 | `bin/linkedin-os`, `src/authority_os/*` | NEW | Minimal offline CLI and fixture-validation runtime; no historical executable exists. |
-| `src/authority_os/storage.py` | NEW | Direct research-ledger persistence with canonical URL and normalized-content deduplication. |
+| `src/authority_os/storage.py` | NEW | Direct research-ledger persistence with canonical URL/content deduplication and fail-closed synthetic/private provenance. |
+| `src/authority_os/package.py` | NEW | Deterministic, private six-file human-review packaging with live-only recommendation eligibility and no approval or publishing authority. |
 | `data/samples/dry-run.json` | NEW | Visibly synthetic offline fixture data. |
 | `data/samples/proof-fixture.json`, `data/samples/synthetic-proof.md` | NEW | Visibly synthetic local-proof fixture; it contains no personal data or publishing authority. |
 | `Makefile`, `requirements.txt` | NEW | Zero-download setup and verification commands. |
@@ -31,6 +32,7 @@ This manifest uses repository evidence, not filenames or embedded version labels
 | `docs/WORKFLOW.md` | RECONSTRUCTED | Documents the implemented evidence and two-pass analysis boundary without claiming missing stages. |
 | `tests/test_cli.py`, `tests/test_storage.py` | NEW | Setup, diagnostics, fixture, research persistence, failure, and no-publishing tests. |
 | `tests/test_gates.py` | NEW | Validates strict proof privacy and deterministic authority, proof, honesty, citation, and relevance gates. |
+| `tests/test_package.py` | NEW | Validates eligibility, fixture suppression, blocked outcomes, privacy projections, collision safety, atomic writes, restrictive modes, and rollback. |
 | `tests/test_recovery.py` | NEW | Validates the asset inventory, provenance labels, exclusions, and private-path ignore boundary. |
 | `.github/workflows/test.yml` | NEW | Runs the recovery validation on pushes and pull requests; it has no schedule. |
 | `RECOVERY_MANIFEST.md` | NEW | This evidence-backed provenance record. |
@@ -44,6 +46,6 @@ This manifest uses repository evidence, not filenames or embedded version labels
 
 ## Safely deferred
 
-- `.claude/skills/draft-post/SKILL.md` is `RECONSTRUCTED`, not an original. It remains preserved on the superseded source branch and will land only when its referenced CLI, workflow document, and output contract are runnable.
+- `.claude/skills/draft-post/SKILL.md` is `RECONSTRUCTED`, not an original. Its package dependency is now runnable, but the coordinator remains deferred to the final hardening contribution so it cannot imply unfinished performance/learning commands or publishing authority.
 
 The historical branch remains untouched as provenance. Existing untracked `.agents/` files are locally preserved and ignored; they are not part of this recovery. Runtime code is intentionally out of scope for this asset-only contribution and follows in later atomic work.
