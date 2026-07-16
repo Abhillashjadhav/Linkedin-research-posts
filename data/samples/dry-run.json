@@ -80,18 +80,21 @@
       "id": "candidate-1",
       "angle": "compounding arithmetic",
       "claim_ids": ["reliability-math", "nist-measure", "anthropic-simple"],
+      "proof_id": "",
       "text": "Five 95%-reliable steps produce a 77% reliable workflow.\n\nThe failure is easy to miss because every component dashboard can still look healthy. End-to-end quality compounds: multiply 0.95 across the full path and the result is roughly 0.77.\n\nThat changes the product decision for {{topic}}. Before adding another agent or tool, write a reliability budget for the whole path and define where a human must stop it.\n\nNIST's AI RMF calls for testing before deployment and during operation. Anthropic separately advises starting simple and adding complexity only when it earns its cost.\n\nA reliable component is not the same as a reliable product."
     },
     {
       "id": "candidate-2",
       "angle": "demo versus operating decision",
       "claim_ids": ["nist-measure", "anthropic-simple", "reliability-math"],
+      "proof_id": "",
       "text": "A clean agent demo can still hide a weak product decision.\n\nThe demo proves that {{topic}} can complete one path. It does not show how failure compounds across stages, which conditions require a human, or whether another layer of autonomy is worth the latency and cost.\n\nThis is why evaluation cannot sit at the end of delivery. NIST frames measurement across deployment and operation. Anthropic's simpler-first guidance makes the architecture question explicit.\n\nA practical review starts with the full workflow, a 0.95-per-stage assumption, the resulting 77% end-to-end figure, and the evidence still missing.\n\nThe useful question is not whether the demo worked. It is whether the operating decision survives contact with failure."
     },
     {
       "id": "candidate-3",
       "angle": "reviewable artefact",
       "claim_ids": ["fixture-artifact", "nist-measure", "anthropic-simple"],
+      "proof_id": "supplied-proof",
       "text": "The most useful agent artefact may be a one-page failure budget.\n\nFor {{topic}}, list the workflow stages, the reliability assumption behind each stage, the human stop condition, and the evidence the team still lacks.\n\nThat page forces the mechanism into view. It also makes the next product decision reviewable: simplify the path, improve a weak stage, or accept the residual risk deliberately.\n\nThe structure matches NIST's emphasis on measurement through operation and Anthropic's advice to earn complexity. The committed fixture shows the fields without claiming a production result.\n\nArchitecture gets easier to judge when failure has its own artefact."
     }
   ]

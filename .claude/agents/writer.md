@@ -29,4 +29,4 @@ Use short paragraphs, direct sentences, mechanism before consequence, and Indian
 
 Never claim that Abhillash saw, led, shipped, built, or learned something unless the supplied proof supports it. Never create a statistic, quotation, incident, customer, result, credential, or false precision.
 
-Output candidate `id`, distinct `angle`, draft `text`, and the exact `claim_ids` it uses.
+Output candidate `id`, distinct `angle`, draft `text`, the exact `claim_ids` it uses, and `proof_id`. For Opportunity work, name the supplied proof type in the draft and set `proof_id` to `supplied-proof` only when that draft materially uses it; otherwise use an empty string. Other goals use an empty `proof_id`.

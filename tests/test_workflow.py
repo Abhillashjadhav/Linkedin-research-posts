@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest import mock
 
@@ -45,11 +46,13 @@ def good_candidate(
     hook: str = "A documented agent failure stopped at the final tool call.",
     closer: str = "Reliability needs an owner before it needs another agent.",
     angle: str = "incident to decision",
+    proof_id: str = "",
 ) -> dict[str, object]:
     return {
         "id": candidate_id,
         "angle": angle,
         "claim_ids": ["incident", "mechanism", "decision"],
+        "proof_id": proof_id,
         "text": (
             f"{hook}\n\n"
             "The incident matters because dependent stages can each look healthy while the full path fails.\n\n"
@@ -98,12 +101,48 @@ class QualityGateTests(unittest.TestCase):
 
     def test_demo_satisfies_proof_gate(self) -> None:
         result = self.score(
-            good_candidate(),
+            good_candidate(
+                hook="A demo exposed the final agent tool-call failure.",
+                proof_id="supplied-proof",
+            ),
             goal="opportunity",
             proof={"type": "demo", "value": "data/private/demo.mov"},
         )
         self.assertTrue(result["gates"]["proof"])
         self.assertEqual(result["decision"], "READY FOR HUMAN APPROVAL")
+
+    def test_opportunity_proof_must_be_used_by_the_candidate(self) -> None:
+        result = self.score(
+            good_candidate(proof_id="supplied-proof"),
+            goal="opportunity",
+            proof={"type": "demo", "value": "data/private/demo.mov"},
+        )
+        self.assertFalse(result["gates"]["proof"])
+        self.assertEqual(result["decision"], "DROP")
+
+    def test_opportunity_fixture_selects_the_proof_using_candidate(self) -> None:
+        completed = workflow.complete_payload(workflow.load_fixture(goal="opportunity"))
+        winner_score = completed["evaluation"]["winner_score"]
+        self.assertEqual(winner_score["candidate_id"], "candidate-3")
+        self.assertTrue(winner_score["proof_materially_used"])
+        self.assertTrue(winner_score["gates"]["proof"])
+        self.assertEqual(completed["status"], "READY FOR HUMAN APPROVAL")
+
+    def test_plural_ownership_claim_without_evidence_fails(self) -> None:
+        candidate = good_candidate(hook="We built the agent reliability system in production.")
+        result = self.score(candidate)
+        self.assertFalse(result["gates"]["honesty"])
+        self.assertEqual(result["decision"], "DROP")
+
+    def test_unsupported_named_claim_fails_citation_and_honesty(self) -> None:
+        candidate = good_candidate(
+            hook="OpenAI launched an enterprise reliability product yesterday."
+        )
+        result = self.score(candidate)
+        self.assertIn("openai", result["unsupported_named_terms"])
+        self.assertFalse(result["gates"]["citation"])
+        self.assertFalse(result["gates"]["honesty"])
+        self.assertEqual(result["decision"], "DROP")
 
     def test_generic_question_closer_is_penalised(self) -> None:
         result = self.score(good_candidate(closer="What do you think?"))
@@ -318,6 +357,12 @@ class WorkflowBehaviourTests(unittest.TestCase):
             self.assertIn("Failed gates: proof", final_text)
             self.assertEqual(workflow.recent_post_texts(directory), [])
 
+    def test_fixture_packages_never_pollute_live_stale_history(self) -> None:
+        completed = workflow.complete_payload(workflow.load_fixture())
+        with tempfile.TemporaryDirectory() as directory:
+            workflow.write_output_package(completed, output_root=directory)
+            self.assertEqual(workflow.recent_post_texts(directory), [])
+
     def test_advisory_critic_output_is_rendered_but_not_authoritative(self) -> None:
         payload = workflow.load_fixture()
         payload["critic_observations"] = ["Candidate 2 has the clearest mechanism."]
@@ -425,7 +470,7 @@ class WorkflowBehaviourTests(unittest.TestCase):
             package = workflow.write_output_package(completed, output_root=directory)
             rows = [
                 {
-                    "post_id": package.name,
+                    "post_id": f"{package.parent.name}/{package.name}",
                     "checkpoint": "24h",
                     "channel": "organic",
                     "impressions": 1000,
@@ -439,6 +484,31 @@ class WorkflowBehaviourTests(unittest.TestCase):
         self.assertIn(str(completed["evaluation"]["winner_score"]["angle"]), review)
         self.assertIn(str(completed["authority_statement"]), review)
         self.assertIn("Strongest recorded outcome", review)
+
+    def test_weekly_review_rejects_ambiguous_legacy_slug(self) -> None:
+        completed = workflow.complete_payload(workflow.load_fixture())
+        with tempfile.TemporaryDirectory() as directory:
+            first = workflow.write_output_package(
+                completed, output_root=directory, run_date=date(2026, 7, 15)
+            )
+            workflow.write_output_package(
+                completed, output_root=directory, run_date=date(2026, 7, 16)
+            )
+            rows = [
+                {
+                    "post_id": first.name,
+                    "checkpoint": "24h",
+                    "channel": "organic",
+                    "impressions": 1000,
+                    "external_comments": 4,
+                    "saves": 12,
+                    "sends": 5,
+                    "profile_visits": 30,
+                }
+            ]
+            review = workflow.weekly_review_markdown(rows, output_root=directory)
+        self.assertIn("Ambiguous package ID", review)
+        self.assertIn("YYYY-MM-DD/slug", review)
 
 
 if __name__ == "__main__":

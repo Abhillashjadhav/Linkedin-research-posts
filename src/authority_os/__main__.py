@@ -65,7 +65,11 @@ def build_parser() -> argparse.ArgumentParser:
         "record-performance", help="Record an explicit paid or organic checkpoint."
     )
     performance.add_argument("--csv", type=_path, help="Private CSV import.")
-    performance.add_argument("--post", dest="post_id")
+    performance.add_argument(
+        "--post",
+        dest="post_id",
+        help="Package ID printed by draft (YYYY-MM-DD/slug).",
+    )
     performance.add_argument("--checkpoint", choices=sorted(storage.CHECKPOINTS))
     performance.add_argument("--channel", choices=sorted(storage.CHANNELS))
     performance.add_argument("--observed-at")
@@ -222,6 +226,7 @@ def command_draft(args: argparse.Namespace) -> int:
         )
     destination = workflow.write_output_package(completed, output_root=args.output_root)
     print(f"Package: {destination}")
+    print(f"Post ID: {destination.parent.name}/{destination.name}")
     print(f"STATUS: {completed['status']}")
     print("No LinkedIn action was taken.")
     return 0 if completed["status"] == "READY FOR HUMAN APPROVAL" else 2

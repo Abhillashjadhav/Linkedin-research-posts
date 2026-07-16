@@ -51,5 +51,7 @@ Checks: `make test` (35 passed), privacy scan passed, Python compilation passed,
 - Labelled non-passing packages as rejected with their blocking gates, validated proof arguments unconditionally, and preserved live Critic observations as advisory output without letting them override deterministic gates.
 - Hardened Claude calls with safe mode, canonical prompt loading, stdin-only dynamic evidence, no session persistence, and an allowlisted tool boundary.
 - Made weekly review report the actual winning narrative angle and authority conversion from its matching package.
+- The final independent pass returned `REQUEST CHANGES` for three remaining attribution defects. Opportunity proof is now candidate-specific and visible in the package; plural ownership and unsupported named terms fail deterministic gates; and performance uses the printed `YYYY-MM-DD/slug` package ID instead of guessing across repeated slugs.
+- Fixture packages are excluded from live stale-history comparisons, and a scored revision is now shown beside initial Critic scores.
 
-Checks: `make test` (43 passed), privacy scan passed, ResourceWarning-as-error suite passed, Python compilation passed, and `git diff --check` passed.
+Checks: `make test` (49 passed), privacy scan passed, ResourceWarning-as-error suite passed, Python/fixture compilation passed, and `git diff --check` passed.

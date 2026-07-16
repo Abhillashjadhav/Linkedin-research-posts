@@ -47,7 +47,7 @@ Broad discovery targets seven viable clusters and four source-diverse clusters. 
 
 ### Writer
 
-Writer receives the committed reconstructed voice guide, aggregate performance-pattern anchors, selected brief, strategic goal, explicit proof metadata, and evidence map. It returns exactly three materially different entry angles.
+Writer receives the committed reconstructed voice guide, aggregate performance-pattern anchors, selected brief, strategic goal, explicit proof metadata, and evidence map. It returns exactly three materially different entry angles. An Opportunity candidate must mark `proof_id: supplied-proof` and materially use that proof; metadata alone cannot pass the candidate-specific proof gate.
 
 - Reach/humour: 100–190 words.
 - Authority: 190–300 words.
@@ -69,7 +69,7 @@ The recovered rubric scores five 1–5 axes: hook strength, middle escalation, e
 - Hook 3 or below: total capped at 18 and cannot proceed.
 - Citation or honesty failure: drop.
 
-Binary gates require authority conversion, Opportunity proof, honesty, relevance, and citation traceability. Python applies these gates even when Claude provides subjective review notes. Those notes and the model's advisory recommendation are preserved in `final-package.md` and `critic.json`, but cannot override deterministic eligibility or ranking. There is exactly one selected-candidate revision at most.
+Binary gates require authority conversion, candidate-used Opportunity proof, honesty, relevance, and citation traceability. Python applies these gates even when Claude provides subjective review notes. Unsupported first-person/plural ownership language fails without explicit ownership evidence; conservative named terms must occur in cited evidence or referenced proof. Those notes and the model's advisory recommendation are preserved in `final-package.md` and `critic.json`, but cannot override deterministic eligibility or ranking. There is exactly one selected-candidate revision at most.
 
 ### Human approval
 
@@ -91,7 +91,7 @@ Exact missing post text is never fabricated.
 
 ## Performance loop
 
-The SQLite `performance` table keys each observation by post, checkpoint, and `organic|paid` channel. It tracks impressions, non-follower reach, external comments, reactions, reposts, saves, sends, profile visits, relevant followers, repository/tool clicks, recruiter inbound, founder/advisor inbound, and speaking/podcast inbound.
+The SQLite `performance` table keys each observation by the printed `YYYY-MM-DD/slug` package ID, checkpoint, and `organic|paid` channel. It tracks impressions, non-follower reach, external comments, reactions, reposts, saves, sends, profile visits, relevant followers, repository/tool clicks, recruiter inbound, founder/advisor inbound, and speaking/podcast inbound. A legacy bare slug is used only when it identifies exactly one package; ambiguity is reported rather than guessed.
 
 Weekly review reports the strongest hook, narrative, authority conversion, weakest conversion point, and whether enough evidence exists to compare Critic expectations with reality. One post never changes the rubric.
 

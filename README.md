@@ -34,6 +34,8 @@ For a supplied topic and verified Opportunity proof:
   --proof-type repository --proof-value "https://github.com/OWNER/REPOSITORY"
 ```
 
+An Opportunity draft passes only when the candidate explicitly uses that supplied proof. Merely providing proof metadata cannot make an unrelated draft ready.
+
 The optional Claude executable is the only live model surface. Each call runs in Claude safe mode with an explicitly loaded canonical role prompt. Scout receives read-only `WebSearch` and `WebFetch`; Analyst, Writer, and Critic receive no tools. Python alone writes the private database and approval package.
 
 ## Commands
@@ -91,7 +93,7 @@ Record paid and organic observations separately at `2h`, `24h`, `72h`, and optio
 
 ```sh
 ./bin/linkedin-os record-performance \
-  --post agent-reliability-budgets --checkpoint 24h --channel organic \
+  --post 2026-07-16/agent-reliability-budgets --checkpoint 24h --channel organic \
   --impressions 1000 --profile-visits 30 --saves 12 --sends 5
 
 ./bin/linkedin-os record-performance --csv data/private/performance.csv
@@ -99,6 +101,8 @@ Record paid and organic observations separately at `2h`, `24h`, `72h`, and optio
 ```
 
 Use `data/samples/performance.csv` as a schema example only. Weekly review reports patterns and never changes the rubric automatically.
+
+`draft` prints the unique performance ID as `YYYY-MM-DD/slug`. Copy that full value into `--post`; a bare slug is accepted only when exactly one matching package exists.
 
 ## Approval package
 
@@ -114,5 +118,7 @@ outputs/YYYY-MM-DD/<slug>/
 ```
 
 `STATUS: READY FOR HUMAN APPROVAL` means only that structural checks passed. Abhillash must verify sources, edit, approve, and publish manually.
+
+For Opportunity work, the package also displays the supplied proof metadata and the selected draft's `supplied-proof` reference for human verification.
 
 See [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md), [RECOVERY_MANIFEST.md](RECOVERY_MANIFEST.md), and [docs/WORKFLOW.md](docs/WORKFLOW.md) for boundaries and provenance.
