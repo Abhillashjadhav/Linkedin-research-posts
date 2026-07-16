@@ -1,0 +1,19 @@
+# Local/private inputs and databases
+data/private/**
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+.env
+.env.*
+
+# Generated approval packages
+outputs/**
+!outputs/.gitkeep
+
+# Local tool mirrors and Python state
+.agents/
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
