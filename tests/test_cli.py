@@ -118,6 +118,7 @@ class MinimalCliTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.count("Candidate "), 3)
                 self.assertEqual(result.stdout.count("Critic score: id="), 3)
+                self.assertEqual(result.stdout.count("Gate result: id="), 3)
                 self.assertIn("Three draft candidates scored", result.stdout)
                 self.assertIn("Critic ranking:", result.stdout)
                 expected_revisions = 1 if goal == "authority" else 0
@@ -129,8 +130,11 @@ class MinimalCliTests(unittest.TestCase):
                     "score=",
                     "ready for human approval",
                     "package path",
+                    "recommended winner",
                 ):
                     self.assertNotIn(deferred, lowered)
+                self.assertIn("manual_fact_verification_required=yes", result.stdout)
+                self.assertIn("No winner was selected", result.stdout)
 
     def test_fixture_drafting_never_invokes_any_model(self) -> None:
         args = SimpleNamespace(
@@ -169,7 +173,12 @@ class MinimalCliTests(unittest.TestCase):
     def test_fixture_mode_rejects_private_input_and_egress_flags(self) -> None:
         egress = run_cli("draft", "--dry-run", "--allow-model-egress")
         self.assertEqual(egress.returncode, 2)
-        self.assertIn("does not accept strategy files or model-egress", egress.stderr)
+        self.assertIn("does not accept strategy files, proof files", egress.stderr)
+        proof = run_cli(
+            "draft", "--dry-run", "--proof-manifest", "data/private/proof.json"
+        )
+        self.assertEqual(proof.returncode, 2)
+        self.assertIn("does not accept strategy files, proof files", proof.stderr)
 
     def test_draft_analysis_receives_only_unique_fixture_rows(self) -> None:
         fixture = cli.workflow.load_fixture()
@@ -221,12 +230,61 @@ class MinimalCliTests(unittest.TestCase):
         self.assertIn("strong current incident or launch", rejected.stderr)
         self.assertEqual(accepted.returncode, 0, accepted.stderr)
         self.assertIn("weekly_slot=5", accepted.stdout)
-        self.assertIn("proof is required later", accepted.stdout)
+        self.assertIn("validated local proof manifest", accepted.stdout)
+        self.assertIn("proof=PASS", accepted.stdout)
+
+    def test_opportunity_fixture_has_one_proof_pass_and_two_proof_failures(self) -> None:
+        result = run_cli("draft", "--dry-run", "--goal", "opportunity")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        gate_lines = [
+            line for line in result.stdout.splitlines() if line.startswith("Gate result:")
+        ]
+        self.assertEqual(len(gate_lines), 3)
+        self.assertIn("id=opportunity-1", gate_lines[0])
+        self.assertIn("proof=PASS", gate_lines[0])
+        self.assertIn("passes_required_gates=yes", gate_lines[0])
+        self.assertEqual(sum("proof=FAIL" in line for line in gate_lines), 2)
+        self.assertNotIn("synthetic-proof.md", result.stdout + result.stderr)
 
     def test_live_drafting_requires_explicit_strategy_input(self) -> None:
         result = run_cli("draft")
         self.assertEqual(result.returncode, 2)
         self.assertIn("requires --strategy-input", result.stderr)
+
+    def test_live_opportunity_requires_proof_before_writer_invocation(self) -> None:
+        fixture = cli.workflow.load_fixture()
+        items = cli.workflow.prepare_research_items(fixture["research_items"])
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "authority.sqlite"
+            database.touch()
+            strategy = root / "strategy.json"
+            strategy.write_text(json.dumps(fixture["strategy_inputs"]), encoding="utf-8")
+            args = SimpleNamespace(
+                dry_run=False,
+                topic="agent reliability budgets",
+                goal="opportunity",
+                output_format=None,
+                week_slot=None,
+                strong_current_signal=False,
+                strategy_input=strategy,
+                allow_model_egress=True,
+                proof_manifest=None,
+                db=database,
+            )
+            with (
+                patch.object(cli.storage, "list_research_items", return_value=items),
+                patch.object(
+                    cli.workflow,
+                    "invoke_writer",
+                    side_effect=AssertionError("Writer must not run without proof"),
+                ) as writer,
+            ):
+                with self.assertRaisesRegex(
+                    cli.workflow.WorkflowError, "requires --proof-manifest"
+                ):
+                    cli.command_draft(args)
+            writer.assert_not_called()
 
     def test_model_egress_help_names_the_remote_provider_boundary(self) -> None:
         result = run_cli("draft", "--help")
@@ -234,7 +292,72 @@ class MinimalCliTests(unittest.TestCase):
         rendered = " ".join(result.stdout.split())
         self.assertIn("leave this machine", rendered)
         self.assertIn("configured Claude service", rendered)
+        self.assertIn("public proof claim or attestation text", rendered)
         self.assertNotIn("local Writer model", rendered)
+
+    def test_live_reach_may_use_optional_proof_for_exact_attestations(self) -> None:
+        fixture = cli.workflow.load_fixture()
+        items = cli.workflow.prepare_research_items(fixture["research_items"])
+        cli.workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            tempfile.TemporaryDirectory(
+                dir=cli.workflow.DEFAULT_PRIVATE_DATA
+            ) as private_temporary,
+        ):
+            root = Path(temporary)
+            database = root / "authority.sqlite"
+            database.touch()
+            strategy = root / "strategy.json"
+            strategy.write_text(
+                json.dumps(fixture["strategy_inputs"]), encoding="utf-8"
+            )
+            artifact = Path(private_temporary) / "proof.txt"
+            artifact.write_text("private proof", encoding="utf-8")
+            proof = cli.workflow.LoadedProof(
+                proof_id="proof-reach-attestation",
+                proof_type="artifact",
+                artifact_path=artifact,
+                fixture_mode=False,
+                public_claim="A local workflow artifact exists.",
+                attested_personal_sentences=("I built the workflow.",),
+            )
+            args = SimpleNamespace(
+                dry_run=False,
+                topic="agent reliability budgets",
+                goal="reach",
+                output_format=None,
+                week_slot=None,
+                strong_current_signal=False,
+                strategy_input=strategy,
+                allow_model_egress=True,
+                proof_manifest=Path(private_temporary) / "proof.json",
+                db=database,
+            )
+            candidates = fixture["draft_candidates"]["reach"]
+            critic_scores = [
+                {
+                    "candidate_id": draft["id"],
+                    **{axis: 5 for axis in cli.workflow.CRITIC_AXES},
+                }
+                for draft in candidates
+            ]
+            with (
+                patch.object(cli.storage, "list_research_items", return_value=items),
+                patch.object(
+                    cli.workflow, "load_proof_manifest", return_value=proof
+                ) as load_proof,
+                patch.object(
+                    cli.workflow, "invoke_writer", return_value=candidates
+                ) as writer,
+                patch.object(
+                    cli.workflow, "invoke_critic", return_value=critic_scores
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(cli.command_draft(args), 0)
+            load_proof.assert_called_once_with(args.proof_manifest)
+            self.assertIs(writer.call_args.kwargs["proof"], proof)
 
     def test_live_drafting_requires_egress_consent_before_ledger_access(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
