@@ -22,6 +22,11 @@ This manifest uses repository evidence, not filenames or embedded version labels
 | `.claude/agents/critic.md` | RECOVERED AND MODIFIED | The five-axis 25-point rubric comes from `21e04d5:.claude/agents/critic.v4.bak.md`; thresholds and v6 binary gates follow the supplied brief. |
 | Voice guide and performance-pattern anchors | RECONSTRUCTED | The originals are absent. Only user-supplied aggregate patterns and voice rules are recorded; missing post text is never fabricated. |
 | `.gitignore` | NEW | Protects private inputs, databases, credentials, generated packages, and the local `.agents/` mirror. |
+| `bin/linkedin-os`, `src/authority_os/*` | NEW | Minimal offline CLI and fixture-validation runtime; no historical executable exists. |
+| `data/samples/dry-run.json` | NEW | Visibly synthetic offline fixture data. |
+| `Makefile`, `requirements.txt` | NEW | Zero-download setup and verification commands. |
+| `ARCHITECTURE_DECISION.md` | NEW | Records the deliberately small current runtime boundary. |
+| `tests/test_cli.py` | NEW | Setup, diagnostics, fixture, failure, and no-publishing tests. |
 | `tests/test_recovery.py` | NEW | Validates the asset inventory, provenance labels, exclusions, and private-path ignore boundary. |
 | `.github/workflows/test.yml` | NEW | Runs the recovery validation on pushes and pull requests; it has no schedule. |
 | `RECOVERY_MANIFEST.md` | NEW | This evidence-backed provenance record. |
