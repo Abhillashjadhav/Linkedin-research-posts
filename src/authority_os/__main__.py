@@ -41,7 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = subparsers.add_parser("doctor", help="Check local setup without printing secrets.")
     _add_common(doctor)
 
-    draft = subparsers.add_parser("draft", help="Validate the offline workflow fixture.")
+    draft = subparsers.add_parser(
+        "draft",
+        help="Generate three unscored drafts from a fixture or consented stored evidence.",
+    )
     draft.add_argument(
         "--topic", type=_nonblank, help="Optional topic substituted into the fixture."
     )
@@ -65,6 +68,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--strong-current-signal",
         action="store_true",
         help="Confirm that optional slot 5 has a strong current incident or launch.",
+    )
+    draft.add_argument(
+        "--strategy-input",
+        type=_path,
+        help="Private JSON object containing the five explicit strategy fields.",
+    )
+    draft.add_argument(
+        "--allow-model-egress",
+        action="store_true",
+        help=(
+            "Explicitly allow selected evidence and strategy text to leave this machine "
+            "for the configured Claude service."
+        ),
     )
     draft.add_argument("--dry-run", action="store_true", help="Use the offline safe fixture.")
     _add_common(draft)
@@ -140,31 +156,96 @@ def command_doctor(args: argparse.Namespace) -> int:
 
 
 def command_draft(args: argparse.Namespace) -> int:
-    if not args.dry_run:
-        raise workflow.WorkflowError(
-            "Live drafting is not available in this runtime foundation; use --dry-run."
+    strategy_input = getattr(args, "strategy_input", None)
+    allow_model_egress = bool(getattr(args, "allow_model_egress", False))
+    fixture: dict[str, object] | None = None
+    if args.dry_run:
+        if strategy_input or allow_model_egress:
+            raise workflow.WorkflowError(
+                "Fixture drafting does not accept strategy files or model-egress consent."
+            )
+        fixture = workflow.load_fixture(topic=args.topic)
+        items = workflow.prepare_research_items(fixture["research_items"])
+        analysis_items, _combined = workflow.deduplicate_analysis_items(items, ())
+        analysis = workflow.analyse_research(
+            analysis_items,
+            topic=args.topic,
+            as_of=workflow.parse_published_at(str(fixture["as_of"])),
         )
-    fixture = workflow.load_fixture(topic=args.topic)
-    items = workflow.prepare_research_items(fixture["research_items"])
-    analysis_items, _combined = workflow.deduplicate_analysis_items(items, ())
-    analysis = workflow.analyse_research(
-        analysis_items,
-        topic=args.topic,
-        as_of=workflow.parse_published_at(str(fixture["as_of"])),
-    )
+        strategy_inputs = fixture.get("strategy_inputs")
+        strategy_input_origin = "synthetic-fixture"
+    else:
+        if not strategy_input:
+            raise workflow.WorkflowError(
+                "Live drafting requires --strategy-input with explicit reader and decision fields."
+            )
+        if not allow_model_egress:
+            raise workflow.WorkflowError(
+                "Live drafting requires --allow-model-egress before private text reaches the Writer."
+            )
+        if not args.db.is_file():
+            raise workflow.WorkflowError(
+                "Live drafting needs an existing private research ledger; run research first."
+            )
+        strategy_inputs = workflow.load_strategy_inputs_file(strategy_input)
+        # Apply the bounded query after boundary-safe topic matching, rather than
+        # hiding an older match behind 200 unrelated newer rows or materialising
+        # an unbounded ledger in memory.
+        items = storage.list_research_items(
+            args.db,
+            topic_terms=(
+                workflow.topic_prefilter_terms(args.topic) if args.topic else None
+            ),
+        )
+        if not items:
+            raise workflow.WorkflowError(
+                "Live drafting needs stored research evidence; nothing was invented."
+            )
+        analysis = workflow.analyse_research(items, topic=args.topic)
+        strategy_input_origin = "explicit-input"
+
+    selected = analysis["pass_2"]["selected"]
     brief = workflow.build_strategy_brief(
-        analysis["pass_2"]["selected"],
-        strategy_inputs=fixture.get("strategy_inputs"),
-        strategy_input_origin="synthetic-fixture",
+        selected,
+        strategy_inputs=strategy_inputs,
+        strategy_input_origin=strategy_input_origin,
         goal=args.goal,
         output_format=args.output_format,
         week_slot=args.week_slot,
         strong_current_signal=args.strong_current_signal,
     )
-    print(
-        f"Fixture envelope validated: topic={fixture['topic']}; "
-        f"research_items={len(fixture['research_items'])}."
+    evidence = workflow.build_drafting_evidence(
+        items,
+        topic_slug=str(brief["topic_slug"]),
     )
+    if fixture is not None:
+        candidate_sets = fixture.get("draft_candidates")
+        if not isinstance(candidate_sets, dict):
+            raise workflow.WorkflowError("Fixture needs goal-specific draft candidates.")
+        raw_candidates = candidate_sets.get(str(brief["goal"]))
+        if not isinstance(raw_candidates, list):
+            raise workflow.WorkflowError(
+                f"Fixture needs three {brief['goal']} draft candidates."
+            )
+        candidates = workflow.validate_draft_candidates(
+            raw_candidates,
+            brief=brief,
+            evidence=evidence,
+        )
+        print(
+            f"Fixture envelope validated: topic={fixture['topic']}; "
+            f"research_items={len(fixture['research_items'])}."
+        )
+    else:
+        candidates = workflow.invoke_writer(
+            brief=brief,
+            evidence=evidence,
+            allow_model_egress=allow_model_egress,
+        )
+        print(
+            f"Stored evidence selected for Writer: topic={brief['topic_slug']}; "
+            f"sources={len(evidence)}."
+        )
     output_format = brief["output_format"] or "not-selected"
     route = " -> ".join(brief["narrative_route"])
     print(
@@ -198,6 +279,14 @@ def command_draft(args: argparse.Namespace) -> int:
     )
     if brief["proof_required"]:
         print("Opportunity route: proof is required later; no proof was invented or gated here.")
+    for index, candidate in enumerate(candidates, start=1):
+        claim_ids = ",".join(candidate["claim_ids"])
+        print(
+            f"Candidate {index}: id={candidate['id']}; angle={candidate['angle']}; "
+            f"claim_ids={claim_ids}."
+        )
+        print(candidate["text"])
+    print("Three unscored draft candidates generated. No winner was selected.")
     print("No approval package was generated. No LinkedIn action was taken.")
     return 0
 

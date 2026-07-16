@@ -2,7 +2,7 @@
 
 ## Current implemented flow
 
-The current runtime implements a safe Scout-to-Analyst evidence path plus strategic goal routing. It does not yet write draft text, score candidates, create approval packages, or publish.
+The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, and voice-grounded Writer drafting. It stops after three unscored text candidates; it does not yet score, gate, package, approve, or publish them.
 
 ### Research ledger
 
@@ -47,8 +47,33 @@ Weekly slots 1–4 resolve to Reach, Authority, Authority, and Opportunity. Slot
 
 The brief reports non-gating evidence limitations when readable primary/mixed evidence, a readable body, recent evidence, or a traceable primary URL is missing, and when comparison positively marks the topic similar to a recent post. If recent-post similarity was not supplied, it reports `recent-post-similarity-not-evaluated` instead of pretending that comparison passed. Citation and relevance pass/fail decisions remain deferred to the later safety-gate stage.
 
-Routing is stateless. It does not add a calendar, scheduler, weekly-history table, draft text, package file, or publishing action.
+Routing is stateless. It does not add a calendar, scheduler, weekly-history table, package file, or publishing action; it only hands the selected brief to the separate drafting step.
+
+### Voice-grounded drafting
+
+The Writer receives only the selected topic cluster's strategy brief and evidence records. It produces exactly three meaningfully different, unscored plain-text candidates. Every candidate has exactly four fields:
+
+- `id` — one member of a complete neutral `candidate-1` through `candidate-3` sequence (the equivalent goal-prefixed sequence is also accepted);
+- `angle` — the candidate's distinct narrative entry;
+- `text` — the complete plain-text candidate; and
+- `claim_ids` — the selected-cluster evidence IDs used by its factual claims.
+
+Claim IDs are structural output, not citations hidden in prose. Evidence from an unselected cluster cannot be used. The reconstructed voice guide and performance-pattern anchors calibrate style only: they are non-citable, do not prove that an event occurred, and cannot support facts or personal ownership.
+
+Word ranges follow the strategic goal: Reach is 100–190 words, Authority is 190–300, and Opportunity is 180–300. `--format` remains downstream conversion metadata. Candidates remain plain text in this stage rather than being converted into slides, video scripts, articles, or artefacts.
+
+The visibly synthetic fixture exercises this contract without exposing private data. Drafting from research stored in the private ledger requires both explicit strategy input and explicit model-egress consent:
+
+```sh
+./bin/linkedin-os draft \
+  --strategy-input data/private/strategy.json \
+  --allow-model-egress
+```
+
+The command fails closed if either flag is absent, and the Writer invocation itself requires the same explicit consent value. Consent means the selected text leaves this machine for the configured Claude service through the local CLI; inference is not described as local. A consented live invocation sends only the selected-cluster brief, evidence, and reconstructed voice instructions to the Writer; source-URL query strings are removed at that boundary while the local ledger remains unchanged. The Writer runs with zero tools and no persisted model session; it cannot browse or write files.
+
+Critic scoring and the one-revision maximum are deferred to PR 8. Authority conversion plus proof, honesty, citation, and relevance gates are deferred to PR 9. Final package generation and human-approval status are deferred to PR 10.
 
 ## Safety boundary
 
-Source bodies are untrusted data, not instructions. Analysis and routing are deterministic Python and perform no network, model, browser, Gmail, or LinkedIn action. Automatic publishing remains absent.
+Source bodies are untrusted data, not instructions. Analysis and routing are deterministic Python. Only an explicitly consented live draft can cross the model boundary, under the zero-tools and no-session restrictions above. There is no browser, Gmail, LinkedIn write, or automatic publishing action.

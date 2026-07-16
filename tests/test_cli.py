@@ -111,6 +111,50 @@ class MinimalCliTests(unittest.TestCase):
                 )
                 self.assertIn("No LinkedIn action was taken", result.stdout)
 
+    def test_fixture_drafting_emits_three_unscored_candidates_for_each_goal(self) -> None:
+        for goal in cli.workflow.STRATEGIC_GOALS:
+            with self.subTest(goal=goal):
+                result = run_cli("draft", "--dry-run", "--goal", goal)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.count("Candidate "), 3)
+                self.assertIn("Three unscored draft candidates generated", result.stdout)
+                lowered = result.stdout.casefold()
+                for deferred in (
+                    "critic score",
+                    "score=",
+                    "ready for human approval",
+                    "revision count",
+                    "package path",
+                ):
+                    self.assertNotIn(deferred, lowered)
+
+    def test_fixture_drafting_never_invokes_the_writer_model(self) -> None:
+        args = SimpleNamespace(
+            dry_run=True,
+            topic=None,
+            goal="reach",
+            output_format=None,
+            week_slot=None,
+            strong_current_signal=False,
+            strategy_input=None,
+            allow_model_egress=False,
+        )
+        with (
+            patch.object(
+                cli.workflow,
+                "invoke_writer",
+                side_effect=AssertionError("fixture mode crossed the model boundary"),
+            ) as writer,
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(cli.command_draft(args), 0)
+        writer.assert_not_called()
+
+    def test_fixture_mode_rejects_private_input_and_egress_flags(self) -> None:
+        egress = run_cli("draft", "--dry-run", "--allow-model-egress")
+        self.assertEqual(egress.returncode, 2)
+        self.assertIn("does not accept strategy files or model-egress", egress.stderr)
+
     def test_draft_analysis_receives_only_unique_fixture_rows(self) -> None:
         fixture = cli.workflow.load_fixture()
         fixture["research_items"].append(dict(fixture["research_items"][0]))
@@ -163,10 +207,108 @@ class MinimalCliTests(unittest.TestCase):
         self.assertIn("weekly_slot=5", accepted.stdout)
         self.assertIn("proof is required later", accepted.stdout)
 
-    def test_live_drafting_fails_honestly_until_implemented(self) -> None:
+    def test_live_drafting_requires_explicit_strategy_input(self) -> None:
         result = run_cli("draft")
         self.assertEqual(result.returncode, 2)
-        self.assertIn("Live drafting is not available", result.stderr)
+        self.assertIn("requires --strategy-input", result.stderr)
+
+    def test_model_egress_help_names_the_remote_provider_boundary(self) -> None:
+        result = run_cli("draft", "--help")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rendered = " ".join(result.stdout.split())
+        self.assertIn("leave this machine", rendered)
+        self.assertIn("configured Claude service", rendered)
+        self.assertNotIn("local Writer model", rendered)
+
+    def test_live_drafting_requires_egress_consent_before_ledger_access(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            strategy = root / "strategy.json"
+            database = root / "missing.sqlite"
+            strategy.write_text(
+                json.dumps(cli.workflow.load_fixture()["strategy_inputs"]),
+                encoding="utf-8",
+            )
+            missing_consent = run_cli(
+                "draft",
+                "--strategy-input",
+                str(strategy),
+                "--db",
+                str(database),
+            )
+            consented_without_ledger = run_cli(
+                "draft",
+                "--strategy-input",
+                str(strategy),
+                "--allow-model-egress",
+                "--db",
+                str(database),
+            )
+            self.assertEqual(missing_consent.returncode, 2)
+            self.assertIn("requires --allow-model-egress", missing_consent.stderr)
+            self.assertEqual(consented_without_ledger.returncode, 2)
+            self.assertIn("existing private research ledger", consented_without_ledger.stderr)
+            self.assertFalse(database.exists())
+
+    def test_consented_live_draft_projects_only_safe_selected_evidence(self) -> None:
+        fixture = cli.workflow.load_fixture()
+        items = cli.workflow.prepare_research_items(fixture["research_items"])
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "authority.sqlite"
+            strategy = root / "strategy.json"
+            database.touch()
+            strategy.write_text(
+                json.dumps(fixture["strategy_inputs"]),
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                dry_run=False,
+                topic="agent reliability budgets",
+                goal="authority",
+                output_format="carousel",
+                week_slot=None,
+                strong_current_signal=False,
+                strategy_input=strategy,
+                allow_model_egress=True,
+                db=database,
+            )
+            candidates = fixture["draft_candidates"]["authority"]
+            with (
+                patch.object(
+                    cli.storage, "list_research_items", return_value=items
+                ) as listed,
+                patch.object(
+                    cli.workflow, "invoke_writer", return_value=candidates
+                ) as writer,
+                redirect_stdout(io.StringIO()) as output,
+            ):
+                self.assertEqual(cli.command_draft(args), 0)
+            brief = writer.call_args.kwargs["brief"]
+            evidence = writer.call_args.kwargs["evidence"]
+            self.assertIs(writer.call_args.kwargs["allow_model_egress"], True)
+            self.assertEqual(brief["strategy_input_origin"], "explicit-input")
+            self.assertEqual(brief["output_format"], "carousel")
+            self.assertEqual(len(evidence), 2)
+            self.assertEqual(
+                set(evidence[0]),
+                {"id", "title", "claim", "source", "source_quality", "body_read"},
+            )
+            rendered = json.dumps(evidence)
+            for private_field in ("content_hash", "author", "fetched_at", '"id": 1'):
+                self.assertNotIn(private_field, rendered)
+            listed.assert_called_once_with(
+                database,
+                topic_terms=(
+                    "agent",
+                    "budgets",
+                    "failure",
+                    "reliab*",
+                    "reliability",
+                    "workflow",
+                ),
+            )
+            self.assertIn("No LinkedIn action was taken", output.getvalue())
 
     def test_fixture_research_is_persisted_and_deduplicated(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, Sequence
 
 
 SCHEMA_VERSION = 1
@@ -88,16 +89,70 @@ def insert_research_items(
 
 
 def list_research_items(
-    db_path: Path | str, *, limit: int = 200, topic: str | None = None
+    db_path: Path | str,
+    *,
+    limit: int = 200,
+    topic: str | None = None,
+    topic_terms: Sequence[str] | None = None,
 ) -> list[dict[str, object]]:
     if limit < 1:
         raise ValueError("limit must be positive")
+    if topic and topic_terms:
+        raise ValueError("use topic or topic_terms, not both")
     query = "SELECT * FROM research_items"
     parameters: list[object] = []
+    required_terms = {
+        term.casefold()
+        for term in (topic_terms or ())
+        if isinstance(term, str) and term.strip()
+    }
+    if topic_terms is not None and not required_terms:
+        raise ValueError("topic_terms must contain at least one non-blank term")
+    if len(required_terms) > 24 or any(
+        not re.fullmatch(r"[a-z0-9]+\*?", term) for term in required_terms
+    ):
+        raise ValueError("topic_terms must contain at most 24 lexical terms")
     if topic:
         query += " WHERE lower(title || ' ' || body) LIKE ?"
         parameters.append(f"%{topic.lower()}%")
     query += " ORDER BY published_at DESC, id DESC LIMIT ?"
     parameters.append(limit)
     with closing(connect(db_path)) as connection:
+        if required_terms:
+            connection.create_function(
+                "title_has_topic_term",
+                2,
+                lambda value, term: int(
+                    any(
+                        token.startswith(str(term)[:-1])
+                        if str(term).endswith("*")
+                        else token == str(term)
+                        for token in re.findall(
+                            r"[a-z0-9]+", str(value).casefold()
+                        )
+                    )
+                ),
+                deterministic=True,
+            )
+            # Query each term independently so a rare term cannot be crowded out
+            # by the limit on a common term. This matches the Analyst's title-only
+            # metadata pass and bounds materialized full bodies to terms * limit.
+            rows_by_id: dict[int, dict[str, object]] = {}
+            for term in sorted(required_terms):
+                rows = connection.execute(
+                    """
+                    SELECT * FROM research_items
+                    WHERE title_has_topic_term(title, ?) = 1
+                    ORDER BY published_at DESC, id DESC LIMIT ?
+                    """,
+                    (term, limit),
+                )
+                for row in rows:
+                    converted = dict(row)
+                    rows_by_id[int(converted["id"])] = converted
+            return sorted(
+                rows_by_id.values(),
+                key=lambda row: (str(row["published_at"]), int(row["id"])),
+                reverse=True,
+            )
         return [dict(row) for row in connection.execute(query, parameters)]
