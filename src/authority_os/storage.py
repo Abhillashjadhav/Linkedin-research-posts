@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -39,7 +40,7 @@ def initialise(db_path: Path | str) -> Path:
     """Create the idempotent two-table schema without deleting existing data."""
 
     path = Path(db_path)
-    with connect(path) as connection:
+    with closing(connect(path)) as connection, connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         if version not in (0, SCHEMA_VERSION):
             raise RuntimeError(
@@ -104,7 +105,7 @@ def insert_research_items(
 
     rows = list(items)
     inserted = 0
-    with connect(db_path) as connection:
+    with closing(connect(db_path)) as connection, connection:
         for item in rows:
             cursor = connection.execute(
                 """
@@ -141,13 +142,11 @@ def list_research_items(
         parameters.append(f"%{topic.lower()}%")
     query += " ORDER BY published_at DESC, id DESC LIMIT ?"
     parameters.append(limit)
-    with connect(db_path) as connection:
+    with closing(connect(db_path)) as connection:
         return [dict(row) for row in connection.execute(query, parameters)]
 
 
-def record_performance(db_path: Path | str, record: Mapping[str, object]) -> None:
-    """Insert or update one explicit post/checkpoint/channel observation."""
-
+def _performance_values(record: Mapping[str, object]) -> list[object]:
     post_id = str(record.get("post_id", "")).strip()
     checkpoint = str(record.get("checkpoint", ""))
     channel = str(record.get("channel", ""))
@@ -163,16 +162,28 @@ def record_performance(db_path: Path | str, record: Mapping[str, object]) -> Non
 
     values: list[int] = []
     for metric in METRICS:
-        value = int(record.get(metric, 0))
+        raw = record.get(metric, 0)
+        value = 0 if raw in (None, "") else int(raw)
         if value < 0:
             raise ValueError(f"{metric} cannot be negative")
         values.append(value)
+    return [post_id, checkpoint, channel, observed_at, *values]
+
+
+def record_performance_many(
+    db_path: Path | str, records: Iterable[Mapping[str, object]]
+) -> None:
+    """Validate a whole import, then write it in one transaction."""
+
+    rows = [_performance_values(record) for record in records]
+    if not rows:
+        return
 
     columns = ", ".join(METRICS)
     placeholders = ", ".join("?" for _ in METRICS)
     updates = ", ".join(f"{metric}=excluded.{metric}" for metric in METRICS)
-    with connect(db_path) as connection:
-        connection.execute(
+    with closing(connect(db_path)) as connection, connection:
+        connection.executemany(
             f"""
             INSERT INTO performance (
                 post_id, checkpoint, channel, observed_at, {columns}
@@ -180,12 +191,18 @@ def record_performance(db_path: Path | str, record: Mapping[str, object]) -> Non
             ON CONFLICT(post_id, checkpoint, channel) DO UPDATE SET
                 observed_at=excluded.observed_at, {updates}
             """,
-            [post_id, checkpoint, channel, observed_at, *values],
+            rows,
         )
 
 
+def record_performance(db_path: Path | str, record: Mapping[str, object]) -> None:
+    """Insert or update one explicit post/checkpoint/channel observation."""
+
+    record_performance_many(db_path, [record])
+
+
 def list_performance(db_path: Path | str) -> list[dict[str, object]]:
-    with connect(db_path) as connection:
+    with closing(connect(db_path)) as connection:
         rows = connection.execute(
             """
             SELECT * FROM performance

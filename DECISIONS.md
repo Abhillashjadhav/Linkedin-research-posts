@@ -32,3 +32,13 @@ Check: `git diff --check`.
 - Preserved the unrelated `prd-first` skill unchanged and kept generated/private state ignored.
 
 Checks: `make setup`, `make doctor`, Python compilation, fixture JSON validation, all six CLI surfaces, two complete dry-run packages (including Opportunity), performance recording, weekly review, and `git diff --check`.
+
+## 2026-07-16 — Milestone 4: tests and privacy validation
+
+- Added 35 standard-library tests covering all 13 mandated acceptance cases plus candidate distinctness, the one-revision ceiling, source-diversity shortfall, path traversal, prompt-injection inertness, package collisions, idempotent setup, transactional metric imports, score arithmetic, redaction, and rubric stability.
+- Added a tracked/intended-file privacy check for ignored private paths, database/environment files, credential patterns, scheduled workflows, and LinkedIn/browser write surfaces.
+- Added a minimal GitHub Actions workflow triggered only by pushes and pull requests.
+- Tightened content deduplication to hash normalised bodies (title fallback), made CSV performance imports transactional, and made runtime stale checks compare the actual recommended winner rather than an entire package.
+- Kept fixture mode model/network-free and verified that failed proof, honesty, citation, authority, relevance, or stale gates cannot produce a ready status.
+
+Checks: `make test` (35 passed), privacy scan passed, Python compilation passed, and `git diff --check` passed.

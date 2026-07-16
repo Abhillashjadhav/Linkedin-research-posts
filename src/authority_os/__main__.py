@@ -206,18 +206,14 @@ def command_draft(args: argparse.Namespace) -> int:
     return 0 if completed["status"] == "READY FOR HUMAN APPROVAL" else 2
 
 
-def _record_from_mapping(args: argparse.Namespace, row: dict[str, object]) -> None:
-    row.setdefault("observed_at", args.observed_at or workflow.now_iso())
-    storage.record_performance(args.db, row)
-
-
 def command_record_performance(args: argparse.Namespace) -> int:
     initialise_paths(args.db)
     if args.csv:
         with args.csv.open(newline="", encoding="utf-8-sig") as handle:
             rows = list(csv.DictReader(handle))
         for row in rows:
-            _record_from_mapping(args, row)
+            row.setdefault("observed_at", args.observed_at or workflow.now_iso())
+        storage.record_performance_many(args.db, rows)
         print(f"Recorded {len(rows)} explicit channel checkpoints from private CSV input.")
         return 0
     if not args.post_id:

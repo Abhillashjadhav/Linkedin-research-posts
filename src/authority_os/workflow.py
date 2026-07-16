@@ -64,6 +64,7 @@ BANNED_LANGUAGE = (
     "furthermore",
     "moreover",
     "agree or disagree",
+    "what do you think",
     "drop your thoughts below",
 )
 GENERIC_OPENING = re.compile(
@@ -134,7 +135,9 @@ canonicalize_url = canonicalise_url
 
 
 def normalise_content(title: str, body: str) -> str:
-    text = f"{title}\n{body}" if body.strip() else title
+    # The body is the content-deduplication unit; title is the honest fallback
+    # when a source exposes metadata only.
+    text = body if body.strip() else title
     text = unicodedata.normalize("NFKC", text).casefold()
     return re.sub(r"\s+", " ", text).strip()
 
@@ -652,6 +655,7 @@ def _render_package_files(payload: Mapping[str, object]) -> dict[str, str]:
             "# Brief",
             "",
             fixture_banner.rstrip(),
+            "",
             f"- **Strategic goal:** {payload['goal']}",
             f"- **Target reader:** {payload['target_reader']}",
             f"- **Reader problem:** {payload['reader_problem']}",
@@ -665,7 +669,7 @@ def _render_package_files(payload: Mapping[str, object]) -> dict[str, str]:
             "",
         ]
     )
-    candidate_lines = ["# Candidates", "", fixture_banner.rstrip()]
+    candidate_lines = ["# Candidates", "", fixture_banner.rstrip(), ""]
     for index, candidate in enumerate(candidates, start=1):
         candidate_lines.extend(
             [
@@ -705,6 +709,7 @@ def _render_package_files(payload: Mapping[str, object]) -> dict[str, str]:
         "# Human approval package",
         "",
         fixture_banner.rstrip(),
+        "",
         "## Strategic goal",
         "",
         str(payload["goal"]),
@@ -1083,7 +1088,14 @@ def recent_post_texts(output_root: Path | str = DEFAULT_OUTPUTS, *, limit: int =
     if not root.exists():
         return []
     packages = sorted(root.glob("*/*/final-package.md"), reverse=True)[:limit]
-    return [path.read_text(encoding="utf-8") for path in packages]
+    recent: list[str] = []
+    for path in packages:
+        package = path.read_text(encoding="utf-8")
+        match = re.search(
+            r"## Recommended winner\s*\n+(.*?)(?=\n## |\nSTATUS:)", package, re.S
+        )
+        recent.append(match.group(1).strip() if match else package)
+    return recent
 
 
 def weekly_review_markdown(

@@ -11,6 +11,7 @@ doctor:
 
 test:
 	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -v
+	$(PYTHON) scripts/check_privacy.py
 
 privacy:
 	$(PYTHON) scripts/check_privacy.py

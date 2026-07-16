@@ -30,6 +30,11 @@ This manifest uses repository evidence, not filenames or embedded version labels
 | `bin/linkedin-os`, `Makefile`, `requirements.txt` | NEW | Zero-download setup and the single CLI entry point. |
 | `data/samples/dry-run.json` | NEW | Synthetic offline evidence, drafts, and a small proof framework; visibly not live content. |
 | `data/samples/performance.csv` | NEW | Synthetic import-schema example. |
+| `scripts/check_privacy.py` | NEW | Public-boundary and no-publishing invariant check. |
+| `tests/test_workflow.py` | NEW | Rubric, gates, stale detection, one-revision, atomic-output, and honest-failure tests. |
+| `tests/test_storage.py` | NEW | Schema, deduplication, idempotence, transactional validation, and paid/organic tests. |
+| `tests/test_cli.py` | NEW | Offline integration, redaction, command allowlist, ignore, and CI-trigger tests. |
+| `.github/workflows/test.yml` | NEW | Push/pull-request test workflow only; no schedule. |
 | `outputs/.gitkeep` | NEW | Preserves the ignored generated-output root. |
 | `.gitignore` | NEW | Protects private inputs, databases, credentials, generated packages, and the local `.agents/` mirror. |
 | `ARCHITECTURE_DECISION.md`, `RECOVERY_MANIFEST.md`, `DECISIONS.md` | NEW | Governance records produced by the required review process. |
