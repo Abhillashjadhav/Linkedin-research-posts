@@ -2,7 +2,7 @@
 
 ## Current implemented flow
 
-The current runtime implements a safe Scout-to-Analyst evidence path. It does not yet route strategic goals, draft posts, score candidates, create approval packages, or publish.
+The current runtime implements a safe Scout-to-Analyst evidence path plus strategic goal routing. It does not yet write draft text, score candidates, create approval packages, or publish.
 
 ### Research ledger
 
@@ -33,6 +33,22 @@ Staleness is `not-evaluated` unless the user explicitly supplies a private JSON 
 ./bin/linkedin-os research --dry-run --recent-posts data/private/recent-posts.json
 ```
 
+### Strategic routing
+
+`draft --dry-run` turns the selected analysis and explicit strategy inputs into a small strategy brief. It carries the target reader, reader problem, core hypothesis, product decision, authority statement, and traceable primary-source URLs forward rather than asking the Writer to reconstruct them. The visibly synthetic fixture supplies these inputs and a fixed validated analysis timestamp for deterministic offline execution; its provenance is labelled `synthetic-fixture`, not explicit user input. Fixture analysis is isolated from newer live rows already present in the private ledger, while persistence still applies the same durable URL/hash deduplication. The router does not infer personal experience, ownership, or credentials. The strategic goals are:
+
+- Reach — earn attention from relevant non-followers;
+- Authority — demonstrate differentiated GenAI product judgement; and
+- Opportunity — convert credibility into relevant profile, tool, and inbound interest.
+
+Each goal uses its configured v6 narrative route from the supplied brief. Output format remains a separate optional choice among `text`, `carousel`, `vertical-video`, `article`, and `artifact-demo`; no goal implies a format. When no goal is supplied the safe default is Authority, while format remains unselected.
+
+Weekly slots 1–4 resolve to Reach, Authority, Authority, and Opportunity. Slot 5 is optional and requires both an explicit goal and `--strong-current-signal`; the runtime does not infer that an incident or launch is strong. Opportunity is labelled as requiring proof, but proof enforcement belongs to the later safety-gate stage and no proof is invented here.
+
+The brief reports non-gating evidence limitations when readable primary/mixed evidence, a readable body, recent evidence, or a traceable primary URL is missing, and when comparison positively marks the topic similar to a recent post. If recent-post similarity was not supplied, it reports `recent-post-similarity-not-evaluated` instead of pretending that comparison passed. Citation and relevance pass/fail decisions remain deferred to the later safety-gate stage.
+
+Routing is stateless. It does not add a calendar, scheduler, weekly-history table, draft text, package file, or publishing action.
+
 ## Safety boundary
 
-Source bodies are untrusted data, not instructions. Analysis is deterministic Python and performs no network, model, browser, Gmail, or LinkedIn action. Automatic publishing remains absent.
+Source bodies are untrusted data, not instructions. Analysis and routing are deterministic Python and perform no network, model, browser, Gmail, or LinkedIn action. Automatic publishing remains absent.

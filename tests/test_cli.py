@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import sqlite3
 import subprocess
 import tempfile
 import unittest
-from contextlib import closing
+from contextlib import closing, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from authority_os import __main__ as cli
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,7 +70,98 @@ class MinimalCliTests(unittest.TestCase):
         result = run_cli("draft", "--dry-run", "--topic", "PM agent OS", env=environment)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Fixture envelope validated: topic=PM agent OS", result.stdout)
+        self.assertIn("Strategy brief: goal=authority; format=not-selected", result.stdout)
+        self.assertIn("Reader: AI product leaders", result.stdout)
+        self.assertIn("Core hypothesis:", result.stdout)
+        self.assertIn("Product decision:", result.stdout)
+        self.assertIn("Authority statement:", result.stdout)
+        self.assertIn("Strategy input origin: synthetic-fixture", result.stdout)
+        self.assertIn(
+            "Evidence status: source_quality=sufficient; body=sufficient; "
+            "recency=sufficient; stale=not-evaluated; primary_sources=1; "
+            "limitations=recent-post-similarity-not-evaluated",
+            result.stdout,
+        )
         self.assertIn("No approval package was generated", result.stdout)
+
+    def test_draft_accepts_an_arbitrary_short_explicit_topic(self) -> None:
+        result = run_cli("draft", "--dry-run", "--topic", "Go")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Fixture envelope validated: topic=Go", result.stdout)
+        self.assertIn("Strategy brief: goal=authority", result.stdout)
+
+    def test_goal_and_format_route_independently_in_fixture_mode(self) -> None:
+        cases = (
+            ("reach", "artifact-demo"),
+            ("opportunity", "text"),
+        )
+        for goal, output_format in cases:
+            with self.subTest(goal=goal, output_format=output_format):
+                result = run_cli(
+                    "draft",
+                    "--dry-run",
+                    "--goal",
+                    goal,
+                    "--format",
+                    output_format,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(
+                    f"Strategy brief: goal={goal}; format={output_format}", result.stdout
+                )
+                self.assertIn("No LinkedIn action was taken", result.stdout)
+
+    def test_draft_analysis_receives_only_unique_fixture_rows(self) -> None:
+        fixture = cli.workflow.load_fixture()
+        fixture["research_items"].append(dict(fixture["research_items"][0]))
+        args = SimpleNamespace(
+            dry_run=True,
+            topic=None,
+            goal=None,
+            output_format=None,
+            week_slot=None,
+            strong_current_signal=False,
+        )
+        with (
+            patch.object(cli.workflow, "load_fixture", return_value=fixture),
+            patch.object(
+                cli.workflow,
+                "analyse_research",
+                wraps=cli.workflow.analyse_research,
+            ) as analyse,
+            redirect_stdout(io.StringIO()),
+        ):
+            result = cli.command_draft(args)
+        self.assertEqual(result, 0)
+        self.assertEqual(len(analyse.call_args.args[0]), 2)
+
+    def test_cli_enforces_the_default_weekly_mix_and_guarded_fifth_slot(self) -> None:
+        expected = ("reach", "authority", "authority", "opportunity")
+        for slot, goal in enumerate(expected, start=1):
+            with self.subTest(slot=slot):
+                result = run_cli("draft", "--dry-run", "--week-slot", str(slot))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(
+                    f"Strategy brief: goal={goal}; format=not-selected; weekly_slot={slot}",
+                    result.stdout,
+                )
+        rejected = run_cli(
+            "draft", "--dry-run", "--week-slot", "5", "--goal", "opportunity"
+        )
+        accepted = run_cli(
+            "draft",
+            "--dry-run",
+            "--week-slot",
+            "5",
+            "--goal",
+            "opportunity",
+            "--strong-current-signal",
+        )
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("strong current incident or launch", rejected.stderr)
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertIn("weekly_slot=5", accepted.stdout)
+        self.assertIn("proof is required later", accepted.stdout)
 
     def test_live_drafting_fails_honestly_until_implemented(self) -> None:
         result = run_cli("draft")
@@ -82,6 +178,36 @@ class MinimalCliTests(unittest.TestCase):
             self.assertIn("inserted=2; duplicates=0", first.stdout)
             self.assertIn("inserted=0; duplicates=2", second.stdout)
             self.assertIn("stale=not-evaluated", first.stdout)
+
+    def test_fixture_analysis_is_isolated_from_newer_stored_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "authority.sqlite"
+            initialised = run_cli("init", "--db", str(database))
+            self.assertEqual(initialised.returncode, 0, initialised.stderr)
+            with closing(sqlite3.connect(database)) as connection, connection:
+                connection.execute(
+                    """
+                    INSERT INTO research_items (
+                        canonical_url, title, body, source, author, published_at,
+                        source_quality, content_hash, fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "https://example.net/newer-live-row",
+                        "Newer live evidence",
+                        "A valid stored body that is newer than the fixture snapshot.",
+                        "Live source",
+                        "",
+                        "2030-01-01T00:00:00+00:00",
+                        "primary",
+                        "a" * 64,
+                        "2030-01-01T00:00:00+00:00",
+                    ),
+                )
+            result = run_cli("research", "--dry-run", "--db", str(database))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("implausibly in the future", result.stderr)
+            self.assertIn("Selected cluster: agent-reliability", result.stdout)
 
     def test_short_ai_topic_is_supported(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -29,6 +29,29 @@ def evidence(
 
 
 class TwoPassAnalysisTests(unittest.TestCase):
+    def test_current_analysis_rows_are_deduplicated_before_fixture_isolation(self) -> None:
+        first = {
+            "canonical_url": "https://example.com/first",
+            "content_hash": "hash-one",
+        }
+        duplicate_url = {
+            "canonical_url": "https://example.com/first",
+            "content_hash": "hash-two",
+        }
+        duplicate_hash = {
+            "canonical_url": "https://example.com/second",
+            "content_hash": "hash-one",
+        }
+        stored = {
+            "canonical_url": "https://example.com/stored",
+            "content_hash": "hash-stored",
+        }
+        current, combined = workflow.deduplicate_analysis_items(
+            [first, duplicate_url, duplicate_hash], [stored]
+        )
+        self.assertEqual(current, [first])
+        self.assertEqual(combined, [first, stored])
+
     def test_empty_evidence_fails_without_manufacturing_topics(self) -> None:
         with self.assertRaisesRegex(workflow.WorkflowError, "nothing was manufactured"):
             workflow.analyse_research([])
@@ -184,6 +207,39 @@ class TwoPassAnalysisTests(unittest.TestCase):
         ]
         analysis = workflow.analyse_research(items, topic="RAG")
         self.assertEqual(analysis["pass_2"]["selected"]["slug"], "rag")
+
+    def test_explicit_topic_matching_preserves_arbitrary_short_tokens(self) -> None:
+        analysis = workflow.analyse_research(
+            [evidence("Go runtime decision", body="A concrete runtime mechanism.")],
+            topic="Go",
+        )
+        self.assertEqual(analysis["pass_2"]["selected"]["slug"], "go-runtime-decision")
+
+    def test_short_topic_matching_uses_token_boundaries(self) -> None:
+        with self.assertRaisesRegex(workflow.WorkflowError, "No research cluster matches"):
+            workflow.analyse_research(
+                [evidence("Google runtime decision", body="A concrete mechanism.")],
+                topic="Go",
+            )
+
+    def test_explicit_topic_requires_all_meaningful_tokens(self) -> None:
+        items = [
+            evidence("MCP platform design", body="A protocol mechanism.", suffix="mcp"),
+            evidence(
+                "Healthcare product systems",
+                body="A healthcare mechanism.",
+                suffix="healthcare",
+            ),
+        ]
+        with self.assertRaisesRegex(workflow.WorkflowError, "No research cluster matches"):
+            workflow.analyse_research(items, topic="MCP for healthcare")
+
+    def test_connector_only_topic_fails_honestly(self) -> None:
+        with self.assertRaisesRegex(workflow.WorkflowError, "meaningful token"):
+            workflow.analyse_research(
+                [evidence("Agent reliability", body="A concrete mechanism.")],
+                topic="for the",
+            )
 
     def test_unmatched_requested_topic_fails_instead_of_selecting_unrelated_cluster(self) -> None:
         with self.assertRaisesRegex(workflow.WorkflowError, "No research cluster matches"):
