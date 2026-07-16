@@ -27,6 +27,7 @@ This manifest uses repository evidence, not filenames or embedded version labels
 | `data/samples/dry-run.json` | NEW | Visibly synthetic offline fixture data. |
 | `Makefile`, `requirements.txt` | NEW | Zero-download setup and verification commands. |
 | `ARCHITECTURE_DECISION.md` | NEW | Records the deliberately small current runtime boundary. |
+| `docs/WORKFLOW.md` | RECONSTRUCTED | Documents the implemented evidence and two-pass analysis boundary without claiming missing stages. |
 | `tests/test_cli.py`, `tests/test_storage.py` | NEW | Setup, diagnostics, fixture, research persistence, failure, and no-publishing tests. |
 | `tests/test_recovery.py` | NEW | Validates the asset inventory, provenance labels, exclusions, and private-path ignore boundary. |
 | `.github/workflows/test.yml` | NEW | Runs the recovery validation on pushes and pull requests; it has no schedule. |

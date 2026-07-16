@@ -92,6 +92,25 @@ class ResearchStorageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             workflow.prepare_research_items([raw])
 
+    def test_invalid_source_timestamp_is_rejected_before_storage(self) -> None:
+        raw = item("https://example.com/item")
+        raw["published_at"] = "not-a-date"
+        with self.assertRaisesRegex(ValueError, "invalid source timestamp"):
+            workflow.prepare_research_items([raw])
+
+    def test_null_required_fields_are_rejected(self) -> None:
+        for field in ("title", "source", "published_at", "url"):
+            raw = item("https://example.com/item")
+            raw[field] = None
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                workflow.prepare_research_items([raw])
+
+    def test_json_object_without_items_list_is_rejected(self) -> None:
+        source = Path(self.temporary.name) / "malformed.json"
+        source.write_text('{"research_items": []}', encoding="utf-8")
+        with self.assertRaisesRegex(workflow.WorkflowError, "must contain an items"):
+            workflow.load_research_file(source)
+
     def test_non_object_research_item_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "must be a JSON object"):
             workflow.prepare_research_items(["bad"])

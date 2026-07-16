@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
+import sqlite3
 import subprocess
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 
@@ -78,6 +81,145 @@ class MinimalCliTests(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertIn("inserted=2; duplicates=0", first.stdout)
             self.assertIn("inserted=0; duplicates=2", second.stdout)
+            self.assertIn("stale=not-evaluated", first.stdout)
+
+    def test_short_ai_topic_is_supported(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "authority.sqlite"
+            result = run_cli(
+                "research", "--dry-run", "--topic", "AI", "--db", str(database)
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Selected cluster:", result.stdout)
+
+    def test_new_fixture_topic_is_analysed_before_stored_duplicates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "authority.sqlite"
+            first = run_cli("research", "--dry-run", "--db", str(database))
+            second = run_cli(
+                "research", "--dry-run", "--topic", "AI", "--db", str(database)
+            )
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertIn("Selected cluster:", second.stdout)
+            self.assertIn("inserted=0; duplicates=2", second.stdout)
+
+    def test_explicit_blank_topic_is_rejected_consistently(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            for value in ("", "   "):
+                database = Path(temporary) / f"authority-{len(value)}.sqlite"
+                result = run_cli(
+                    "research", "--dry-run", "--topic", value, "--db", str(database)
+                )
+                with self.subTest(value=value):
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn("value must not be blank", result.stderr)
+                    self.assertFalse(database.exists())
+
+    def test_cli_topic_selection_does_not_require_exact_word_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "research.json"
+            database = root / "authority.sqlite"
+            source.write_text(
+                json.dumps(
+                    [
+                        {
+                            "url": "https://example.com/agent",
+                            "title": "Agent reliability methods",
+                            "body": "A primary reliability mechanism.",
+                            "source": "Primary source",
+                            "published_at": "2026-07-16T00:00:00Z",
+                            "source_quality": "primary",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            result = run_cli(
+                "research",
+                "--input",
+                str(source),
+                "--topic",
+                "reliability agent",
+                "--db",
+                str(database),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Selected cluster: agent-reliability", result.stdout)
+
+    def test_unmatched_topic_does_not_commit_research_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "research.json"
+            database = root / "authority.sqlite"
+            source.write_text(
+                json.dumps(
+                    [
+                        {
+                            "url": "https://example.com/agent",
+                            "title": "Agent reliability methods",
+                            "body": "A primary reliability mechanism.",
+                            "source": "Primary source",
+                            "published_at": "2026-07-16T00:00:00Z",
+                            "source_quality": "primary",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            result = run_cli(
+                "research",
+                "--input",
+                str(source),
+                "--topic",
+                "quantum networking",
+                "--db",
+                str(database),
+            )
+            self.assertEqual(result.returncode, 2)
+            with closing(sqlite3.connect(database)) as connection:
+                count = connection.execute("SELECT count(*) FROM research_items").fetchone()[0]
+            self.assertEqual(count, 0)
+
+    def test_explicit_recent_posts_make_stale_status_real(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "research.json"
+            recent = root / "recent.json"
+            database = root / "authority.sqlite"
+            title = "Agent reliability failure"
+            body = "Reliability budgets compound across workflow steps. Supporting detail."
+            source.write_text(
+                json.dumps(
+                    [
+                        {
+                            "url": "https://example.com/agent",
+                            "title": title,
+                            "body": body,
+                            "source": "Primary source",
+                            "published_at": "2026-07-16T00:00:00Z",
+                            "source_quality": "primary",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            recent.write_text(
+                json.dumps([f"{title} Reliability budgets compound across workflow steps"]),
+                encoding="utf-8",
+            )
+            result = run_cli(
+                "research",
+                "--input",
+                str(source),
+                "--recent-posts",
+                str(recent),
+                "--db",
+                str(database),
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("stale=yes", result.stdout)
 
     def test_research_missing_input_and_live_mode_fail_honestly(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -115,6 +257,16 @@ class MinimalCliTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 2)
                     self.assertIn("database is unavailable or corrupt", result.stderr)
                     self.assertNotIn("Traceback", result.stderr)
+
+    def test_unsupported_database_schema_is_a_safe_cli_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "authority.sqlite"
+            with closing(sqlite3.connect(database)) as connection:
+                connection.execute("PRAGMA user_version = 99")
+            result = run_cli("init", "--db", str(database))
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Unsupported database schema 99", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
 
     def test_no_publish_surface_exists(self) -> None:
         help_result = run_cli("--help")
