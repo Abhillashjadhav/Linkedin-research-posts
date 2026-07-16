@@ -5,10 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import sqlite3
 import sys
 from pathlib import Path
 
-from . import __version__, workflow
+from . import __version__, storage, workflow
 
 
 def _path(value: str) -> Path:
@@ -37,17 +38,24 @@ def build_parser() -> argparse.ArgumentParser:
     draft.add_argument("--topic", help="Optional topic substituted into the fixture.")
     draft.add_argument("--dry-run", action="store_true", help="Use the offline safe fixture.")
     _add_common(draft)
+
+    research = subparsers.add_parser("research", help="Import or validate research signals.")
+    research.add_argument("--topic", help="Optional topic substituted into the fixture.")
+    research.add_argument("--input", type=_path, help="Private JSON or JSONL research import.")
+    research.add_argument("--dry-run", action="store_true", help="Use the offline safe fixture.")
+    _add_common(research)
     return parser
 
 
 def initialise_paths(db_path: Path) -> None:
     workflow.DEFAULT_OUTPUTS.mkdir(parents=True, exist_ok=True)
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    storage.initialise(db_path)
 
 
 def command_init(args: argparse.Namespace) -> int:
     initialise_paths(args.db)
-    print(f"Prepared private state directory: {args.db.parent}")
+    print(f"Initialised private research database: {args.db}")
     print("Publishing remains disabled.")
     return 0
 
@@ -76,8 +84,11 @@ def command_doctor(args: argparse.Namespace) -> int:
     ignore_file = workflow.REPO_ROOT / ".gitignore"
     ignore_lines = set(ignore_file.read_text(encoding="utf-8").splitlines())
     checks.append(("privacy ignore rules", required_ignores <= ignore_lines, "configured"))
-    initialise_paths(args.db)
-    checks.append(("private state directory", args.db.parent.is_dir(), "ready"))
+    try:
+        initialise_paths(args.db)
+        checks.append(("private research ledger", True, "ready"))
+    except Exception:
+        checks.append(("private research ledger", False, "unavailable"))
     checks.append(("optional Claude CLI", shutil.which("claude") is not None, "optional"))
 
     failures: list[str] = []
@@ -105,10 +116,33 @@ def command_draft(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_research(args: argparse.Namespace) -> int:
+    if args.dry_run and args.input:
+        raise workflow.WorkflowError("Choose either --dry-run or --input, not both.")
+    if args.dry_run:
+        fixture = workflow.load_fixture(topic=args.topic)
+        items = workflow.prepare_research_items(fixture["research_items"])
+        mode = "fixture"
+    elif args.input:
+        items = workflow.load_research_file(args.input)
+        mode = "private import"
+    else:
+        raise workflow.WorkflowError(
+            "Live research is not available yet; use --dry-run or --input."
+        )
+    initialise_paths(args.db)
+    inserted, duplicates = storage.insert_research_items(args.db, items)
+    print(f"Research mode: {mode}; inserted={inserted}; duplicates={duplicates}.")
+    if not items:
+        print("No defensible research items were supplied; nothing was invented.")
+    return 0
+
+
 COMMANDS = {
     "init": command_init,
     "doctor": command_doctor,
     "draft": command_draft,
+    "research": command_research,
 }
 
 
@@ -117,6 +151,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return COMMANDS[args.command](args)
+    except sqlite3.Error:
+        print("ERROR: private research database is unavailable or corrupt.", file=sys.stderr)
+        return 2
     except (workflow.WorkflowError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

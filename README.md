@@ -11,11 +11,20 @@ Requires Python 3.11 or newer and no third-party packages.
 ```sh
 make setup
 make doctor
+./bin/linkedin-os research --dry-run
 ./bin/linkedin-os draft --dry-run
 make test
 ```
 
-The dry run validates the envelope of visibly synthetic fixture data; research-item validation follows with ingestion. It does not generate an approval package. Live drafting fails with an actionable message until the research, analysis, drafting, Critic, and packaging outcomes land.
+`research --dry-run` validates and stores the visibly synthetic fixture in the ignored SQLite research ledger. Canonical URL and normalized body hash are independent uniqueness keys, so rerunning the command is safe. `draft --dry-run` currently validates the fixture envelope but does not generate an approval package.
+
+Private JSON, JSONL, and NDJSON imports belong under ignored `data/private/`:
+
+```sh
+./bin/linkedin-os research --input data/private/research.jsonl
+```
+
+Each item needs a public HTTP(S) URL, title, publisher/source, timestamp, and `primary|secondary|mixed` quality; body and author are optional. Live source collection fails honestly until the safe model boundary is added.
 
 See [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md) for the current boundary and [RECOVERY_MANIFEST.md](RECOVERY_MANIFEST.md) for provenance.
 

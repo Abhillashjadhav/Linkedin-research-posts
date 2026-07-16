@@ -9,4 +9,4 @@ doctor:
 	./bin/linkedin-os doctor
 
 test:
-	$(PYTHON) -m unittest discover -s tests -v
+	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -v
