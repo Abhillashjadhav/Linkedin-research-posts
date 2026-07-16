@@ -9,7 +9,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from . import __version__, storage, workflow
+from . import __version__, package as approval_package, storage, workflow
 
 
 def _path(value: str) -> Path:
@@ -98,6 +98,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     draft.add_argument("--dry-run", action="store_true", help="Use the offline safe fixture.")
+    draft.add_argument(
+        "--package",
+        action="store_true",
+        help="Write an ignored local package for explicit human review.",
+    )
     _add_common(draft)
 
     research = subparsers.add_parser("research", help="Import or validate research signals.")
@@ -185,14 +190,16 @@ def command_draft(args: argparse.Namespace) -> int:
         fixture = workflow.load_fixture(topic=args.topic)
         items = workflow.prepare_research_items(fixture["research_items"])
         analysis_items, _combined = workflow.deduplicate_analysis_items(items, ())
+        package_created_at = workflow.parse_published_at(str(fixture["as_of"]))
         analysis = workflow.analyse_research(
             analysis_items,
             topic=args.topic,
-            as_of=workflow.parse_published_at(str(fixture["as_of"])),
+            as_of=package_created_at,
         )
         strategy_inputs = fixture.get("strategy_inputs")
         strategy_input_origin = "synthetic-fixture"
     else:
+        package_created_at = None
         if not strategy_input:
             raise workflow.WorkflowError(
                 "Live drafting requires --strategy-input with explicit reader and decision fields."
@@ -205,6 +212,7 @@ def command_draft(args: argparse.Namespace) -> int:
             raise workflow.WorkflowError(
                 "Live drafting needs an existing private research ledger; run research first."
             )
+        storage.initialise(args.db)
         strategy_inputs = workflow.load_strategy_inputs_file(strategy_input)
         # Apply the bounded query after boundary-safe topic matching, rather than
         # hiding an older match behind 200 unrelated newer rows or materialising
@@ -214,10 +222,12 @@ def command_draft(args: argparse.Namespace) -> int:
             topic_terms=(
                 workflow.topic_prefilter_terms(args.topic) if args.topic else None
             ),
+            evidence_origins=("private-import",),
         )
         if not items:
             raise workflow.WorkflowError(
-                "Live drafting needs stored research evidence; nothing was invented."
+                "Live drafting needs explicitly imported private research evidence; "
+                "fixture and unverified rows are ineligible, so nothing was invented."
             )
         analysis = workflow.analyse_research(items, topic=args.topic)
         strategy_input_origin = "explicit-input"
@@ -436,9 +446,46 @@ def command_draft(args: argparse.Namespace) -> int:
             f"passes_required_gates={'yes' if result['passes_required_gates'] else 'no'}; "
             f"manual_fact_verification_required=yes; reasons={reasons}."
         )
-    print("Three draft candidates scored and gated. No winner was selected.")
-    print("A gate pass is not approval, recommendation, scheduling, or permission to publish.")
-    print("No approval package was generated. No LinkedIn action was taken.")
+    if not bool(getattr(args, "package", False)):
+        print("Three draft candidates scored and gated. No winner was selected.")
+        print(
+            "A gate pass is not approval, recommendation, scheduling, or permission to publish."
+        )
+        print("No approval package was generated. No LinkedIn action was taken.")
+        return 0
+    generated = approval_package.write_human_approval_package(
+        brief=brief,
+        evidence=evidence,
+        review=review,
+        proof=proof,
+        mode="fixture" if fixture is not None else "live",
+        created_at=package_created_at,
+    )
+    manifest = generated["manifest"]
+    package_path = generated["path"]
+    if not isinstance(manifest, dict) or not isinstance(package_path, Path):
+        raise workflow.WorkflowError("Approval package returned an invalid result.")
+    try:
+        display_path = package_path.relative_to(workflow.REPO_ROOT).as_posix()
+    except ValueError as exc:
+        raise workflow.WorkflowError(
+            "Approval package path escaped the local repository."
+        ) from exc
+    print("Three final draft candidates were scored, gated, and packaged for human review.")
+    print(
+        "A gate pass alone is not approval, recommendation, scheduling, or permission to publish."
+    )
+    print(f"Content package: {display_path}")
+    recommended_id = manifest["recommended_candidate_id"]
+    if recommended_id is None and manifest["mode"] == "fixture":
+        print("Recommendation: none; synthetic fixture output is review-only.")
+    elif recommended_id is None:
+        print("Recommendation: none; the package is blocked.")
+    else:
+        print(f"Recommended candidate for human review: {recommended_id}")
+    print(f"Review status: {manifest['review_status']}.")
+    print("Human approval status: NOT_APPROVED; manual fact verification required.")
+    print("Publishing status: DISABLED. No LinkedIn action was taken.")
     return 0
 
 
@@ -462,7 +509,13 @@ def command_research(args: argparse.Namespace) -> int:
         workflow.load_recent_posts_file(args.recent_posts) if args.recent_posts else None
     )
     initialise_paths(args.db)
-    existing = storage.list_research_items(args.db)
+    existing = (
+        []
+        if args.dry_run
+        else storage.list_research_items(
+            args.db, evidence_origins=("private-import",)
+        )
+    )
     # Analyse the current invocation's representation when it collides with a
     # stored URL/hash. Persistence still applies its own durable deduplication.
     current_unique, prospective = workflow.deduplicate_analysis_items(items, existing)
@@ -476,7 +529,11 @@ def command_research(args: argparse.Namespace) -> int:
             as_of=analysis_as_of,
         )
 
-    inserted, duplicates = storage.insert_research_items(args.db, items)
+    inserted, duplicates = storage.insert_research_items(
+        args.db,
+        items,
+        evidence_origin=("synthetic-fixture" if args.dry_run else "private-import"),
+    )
     print(f"Research mode: {mode}; inserted={inserted}; duplicates={duplicates}.")
     if analysis:
         selected = analysis["pass_2"]["selected"]

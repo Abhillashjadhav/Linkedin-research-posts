@@ -1,6 +1,6 @@
 # LinkedIn Authority OS v6
 
-This repository preserves the evidence-backed role, voice, and rubric assets recovered for LinkedIn Authority OS v6 and provides a deliberately small research, analysis, strategic-routing, voice-grounded drafting, Critic-scoring, and deterministic safety-gate runtime.
+This repository preserves the evidence-backed role, voice, and rubric assets recovered for LinkedIn Authority OS v6 and provides a deliberately small research, analysis, strategic-routing, voice-grounded drafting, Critic-scoring, deterministic safety-gate, and local human-review-package runtime.
 
 The intended workflow boundary is Scout → Analyst → Writer → Critic → human approval. Historical Gmail ingestion, authenticated browser analytics, schedulers, messaging, and publishing-adjacent components are deliberately excluded.
 
@@ -13,10 +13,11 @@ make setup
 make doctor
 ./bin/linkedin-os research --dry-run
 ./bin/linkedin-os draft --dry-run
+./bin/linkedin-os draft --dry-run --package
 make test
 ```
 
-`research --dry-run` validates and stores the visibly synthetic fixture in the ignored SQLite research ledger. Canonical URL and normalized body hash are independent uniqueness keys, so rerunning the command is safe. `draft --dry-run` analyses the fixture, builds the strategy brief, emits exactly three text candidates, applies deterministic fixture scorecards, and evaluates the five local gates. Fixture execution is offline: it invokes neither Writer nor Critic models. It does not approve a candidate, create a final package, or publish.
+`research --dry-run` validates and stores the visibly synthetic fixture in the ignored SQLite research ledger. Every row retains `synthetic-fixture`, `private-import`, or quarantined `legacy-unverified` provenance. Live drafting reads only explicitly private-imported rows, so fixture research cannot become a live recommendation. An exact private re-import can promote the same stored URL/body pair; a fixture import can never demote private evidence. Canonical URL and normalized body hash remain independent uniqueness keys, so rerunning the command is safe. `draft --dry-run` analyses the fixture, builds the strategy brief, emits exactly three text candidates, applies deterministic fixture scorecards, and evaluates the five local gates without writing files. Fixture execution is offline: it invokes neither Writer nor Critic models. Add the explicit `--package` flag to create one ignored, review-only local package. Synthetic data can exercise eligibility, but fixture packages never recommend a candidate, record approval, or publish.
 
 After ingestion, the command performs two-pass topic analysis: metadata-only clustering first, then strongest full-body interpretation. It prints broad-discovery, recency, and source-quality status without manufacturing missing evidence. Staleness is clearly `not-evaluated` unless `--recent-posts data/private/recent-posts.json` supplies a JSON list of prior post text.
 
@@ -99,7 +100,30 @@ Every final candidate is evaluated independently, without a model, in this fixed
 - `citation` — requires known body-read research evidence, rejects Reddit/Hacker News-only factual support, and checks that numbers, named factual markers, attributed quotations, directional relationships, and URL/domain references coexist with matching support in one cited claim rather than being laundered across sources; and
 - `relevance` — requires one recovered target-audience family and material reader-problem overlap.
 
-Factual matching preserves clause-level polarity, ordered associations, structurally named entities, and the exact canonical query of query-addressed citations. A closed set of simple acquisition, hiring, and ownership statements is canonicalised across active and passive voice so equivalent wording passes while reversed actors do not. Source queries stay local and are still removed from model prompts. A bare sentence-leading Titlecase subject is linguistically ambiguous, so the gate fails closed unless it has high-confidence entity syntax or belongs to the small audited generic-discourse vocabulary used by this product. These bounded heuristics are intentionally conservative, not natural-language proof. Each gate returns only `PASS`, `FAIL`, or `NOT_REQUIRED` plus static reason codes. `passes_required_gates` is not approval or a recommendation. Structural traceability cannot prove truth, so `manual_fact_verification_required` is always true. Final package generation and human-approval status remain separate and are not implemented here.
+Factual matching preserves clause-level polarity, ordered associations, structurally named entities, and the exact canonical query of query-addressed citations. A closed set of simple acquisition, hiring, and ownership statements is canonicalised across active and passive voice so equivalent wording passes while reversed actors do not. Source queries stay local and are still removed from model prompts. A bare sentence-leading Titlecase subject is linguistically ambiguous, so the gate fails closed unless it has high-confidence entity syntax or belongs to the small audited generic-discourse vocabulary used by this product. These bounded heuristics are intentionally conservative, not natural-language proof. Each gate returns only `PASS`, `FAIL`, or `NOT_REQUIRED` plus static reason codes. `passes_required_gates` alone is not approval or a recommendation. Structural traceability cannot prove truth, so `manual_fact_verification_required` is always true.
+
+## Human-review package
+
+Package generation is an explicit local side effect:
+
+```sh
+./bin/linkedin-os draft --dry-run --package
+```
+
+A live candidate is eligible only when its final Critic band is `advance-to-gates` **and** every required local gate passes. Eligible candidates retain the existing deterministic Critic order; the first is recommended for human review. A lower-ranked candidate may therefore be recommended when a higher-ranked candidate fails a gate. If none qualify, a complete `BLOCKED` package is still written so the failure is inspectable. A recommendation is not a winner, approval, schedule, or publishing instruction.
+
+Fixture packages are always `FIXTURE_REVIEW_ONLY` and suppress the recommendation even when mechanical eligibility exists. Every manifest keeps `human_approval_status` at `NOT_APPROVED`, `publishing_status` at `DISABLED`, and `manual_fact_verification_required` at `true`.
+
+Packages live under ignored `outputs/YYYY-MM-DD/<topic-slug>[-N]/` and contain exactly:
+
+- `manifest.json` — schema, provenance, statuses, inventory, and optional live recommendation;
+- `brief.md` — the selected strategic brief and evidence limitations;
+- `candidates.md` — all three final candidates and their claim IDs;
+- `evaluation.json` — Critic scores/ranking, revision metadata, gate results, and eligibility;
+- `sources.md` — query-free public source metadata and optional public-safe proof only; and
+- `final-package.md` — the recommendation or blocked/fixture explanation plus a human verification checklist.
+
+The runtime atomically reserves a new topic directory under a per-date lock, renders all six files in a private hidden directory, and publishes each completed file with a no-clobber hard link. `manifest.json` is published last and is the commit marker. Existing entries are never replaced; suffixes preserve prior packages even when another local writer claims a name concurrently. Directories use mode `0700` and files `0600`. Raw evidence bodies/claims, source queries, proof paths and artifact contents are excluded. A hidden `.stage-*` directory, or a topic directory without `manifest.json`, is incomplete internal state and must never be consumed as a package.
 
 Private JSON, JSONL, and NDJSON imports belong under ignored `data/private/`:
 

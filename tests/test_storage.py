@@ -29,7 +29,7 @@ class ResearchStorageTests(unittest.TestCase):
         self.database = Path(self.temporary.name) / "private" / "authority.sqlite"
         storage.initialise(self.database)
 
-    def test_schema_contains_only_the_current_research_table(self) -> None:
+    def test_schema_contains_research_table_and_provenance_column(self) -> None:
         with closing(sqlite3.connect(self.database)) as connection:
             tables = {
                 row[0]
@@ -37,7 +37,171 @@ class ResearchStorageTests(unittest.TestCase):
                     "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
                 )
             }
+            columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(research_items)")
+            }
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
         self.assertEqual(tables, {"research_items"})
+        self.assertIn("evidence_origin", columns)
+        self.assertEqual(version, 2)
+
+    def test_v1_rows_are_quarantined_until_exact_private_reimport(self) -> None:
+        legacy = Path(self.temporary.name) / "legacy.sqlite"
+        prepared = workflow.prepare_research_items(
+            [item("https://example.com/legacy")],
+            fetched_at="2026-07-16T01:00:00Z",
+        )[0]
+        with closing(sqlite3.connect(legacy)) as connection, connection:
+            connection.executescript(
+                """
+                CREATE TABLE research_items (
+                    id INTEGER PRIMARY KEY,
+                    canonical_url TEXT NOT NULL UNIQUE,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    author TEXT NOT NULL DEFAULT '',
+                    published_at TEXT NOT NULL,
+                    source_quality TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE,
+                    fetched_at TEXT NOT NULL
+                );
+                PRAGMA user_version = 1;
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO research_items (
+                    canonical_url, title, body, source, author, published_at,
+                    source_quality, content_hash, fetched_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    prepared["canonical_url"],
+                    prepared["title"],
+                    prepared["body"],
+                    prepared["source"],
+                    prepared["author"],
+                    prepared["published_at"],
+                    prepared["source_quality"],
+                    prepared["content_hash"],
+                    prepared["fetched_at"],
+                ),
+            )
+
+        storage.initialise(legacy)
+        self.assertEqual(
+            storage.list_research_items(legacy)[0]["evidence_origin"],
+            "legacy-unverified",
+        )
+        self.assertEqual(
+            storage.list_research_items(
+                legacy, evidence_origins=("private-import",)
+            ),
+            [],
+        )
+
+        inserted, duplicates = storage.insert_research_items(
+            legacy, [prepared], evidence_origin="private-import"
+        )
+        self.assertEqual((inserted, duplicates), (0, 1))
+        promoted = storage.list_research_items(
+            legacy, evidence_origins=("private-import",)
+        )
+        self.assertEqual(len(promoted), 1)
+
+    def test_fixture_rows_are_isolated_and_cannot_demote_private_rows(self) -> None:
+        fixture_raw = item(
+            "https://example.com/provenance",
+            title="Synthetic title",
+            body="Shared body",
+        )
+        private_raw = item(
+            "https://example.com/provenance",
+            title="Private title",
+            body="  shared   BODY  ",
+        )
+        private_raw.update(
+            {
+                "source": "Explicit private source",
+                "author": "Private author",
+                "published_at": "2025-01-02T00:00:00Z",
+                "source_quality": "secondary",
+            }
+        )
+        fixture = workflow.prepare_research_items(
+            [fixture_raw], fetched_at="2026-07-16T01:00:00Z"
+        )
+        private = workflow.prepare_research_items(
+            [private_raw], fetched_at="2026-07-16T02:00:00Z"
+        )
+        storage.insert_research_items(
+            self.database, fixture, evidence_origin="synthetic-fixture"
+        )
+        self.assertEqual(
+            storage.list_research_items(
+                self.database, evidence_origins=("private-import",)
+            ),
+            [],
+        )
+        storage.insert_research_items(
+            self.database, private, evidence_origin="private-import"
+        )
+        promoted = storage.list_research_items(self.database)[0]
+        for field in (
+            "title",
+            "body",
+            "source",
+            "author",
+            "published_at",
+            "source_quality",
+            "fetched_at",
+        ):
+            self.assertEqual(promoted[field], private[0][field])
+        self.assertEqual(promoted["evidence_origin"], "private-import")
+        storage.insert_research_items(
+            self.database, fixture, evidence_origin="synthetic-fixture"
+        )
+        preserved = storage.list_research_items(self.database)[0]
+        self.assertEqual(preserved["evidence_origin"], "private-import")
+        self.assertEqual(preserved["source"], "Explicit private source")
+        self.assertEqual(preserved["source_quality"], "secondary")
+
+    def test_one_key_collision_does_not_promote_fixture_body(self) -> None:
+        cases = (
+            (
+                item("https://example.com/collision", body="Fixture body"),
+                item("https://example.com/collision", body="Different private body"),
+            ),
+            (
+                item("https://example.com/fixture-url", body="Shared body"),
+                item("https://example.com/private-url", body="Shared body"),
+            ),
+        )
+        for index, (fixture_raw, private_raw) in enumerate(cases):
+            with self.subTest(index=index):
+                database = Path(self.temporary.name) / f"collision-{index}.sqlite"
+                storage.initialise(database)
+                fixture_item = workflow.prepare_research_items([fixture_raw])
+                private_item = workflow.prepare_research_items([private_raw])
+                storage.insert_research_items(
+                    database,
+                    fixture_item,
+                    evidence_origin="synthetic-fixture",
+                )
+                storage.insert_research_items(
+                    database,
+                    private_item,
+                    evidence_origin="private-import",
+                )
+                rows = storage.list_research_items(database)
+                self.assertEqual(rows[0]["evidence_origin"], "synthetic-fixture")
+                self.assertEqual(
+                    storage.list_research_items(
+                        database, evidence_origins=("private-import",)
+                    ),
+                    [],
+                )
 
     def test_research_deduplicates_url_and_normalized_content(self) -> None:
         prepared = workflow.prepare_research_items(
@@ -48,7 +212,9 @@ class ResearchStorageTests(unittest.TestCase):
             ],
             fetched_at="2026-07-16T01:00:00Z",
         )
-        inserted, duplicates = storage.insert_research_items(self.database, prepared)
+        inserted, duplicates = storage.insert_research_items(
+            self.database, prepared, evidence_origin="private-import"
+        )
         self.assertEqual((inserted, duplicates), (1, 2))
         rows = storage.list_research_items(self.database)
         self.assertEqual(len(rows), 1)
@@ -56,7 +222,9 @@ class ResearchStorageTests(unittest.TestCase):
 
     def test_initialise_is_idempotent_and_preserves_rows(self) -> None:
         prepared = workflow.prepare_research_items([item("https://example.com/one")])
-        storage.insert_research_items(self.database, prepared)
+        storage.insert_research_items(
+            self.database, prepared, evidence_origin="private-import"
+        )
         storage.initialise(self.database)
         self.assertEqual(len(storage.list_research_items(self.database)), 1)
 
@@ -122,7 +290,9 @@ class ResearchStorageTests(unittest.TestCase):
                 item("https://example.com/two", title="RAG evaluation", body="Second body"),
             ]
         )
-        storage.insert_research_items(self.database, prepared)
+        storage.insert_research_items(
+            self.database, prepared, evidence_origin="private-import"
+        )
         self.assertEqual(len(storage.list_research_items(self.database, topic="RAG")), 1)
         with self.assertRaises(ValueError):
             storage.list_research_items(self.database, limit=0)
@@ -142,7 +312,9 @@ class ResearchStorageTests(unittest.TestCase):
                 for index in range(205)
             ]
         )
-        storage.insert_research_items(self.database, prepared)
+        storage.insert_research_items(
+            self.database, prepared, evidence_origin="private-import"
+        )
         self.assertEqual(len(storage.list_research_items(self.database)), 200)
         matches = storage.list_research_items(
             self.database, topic_terms=("go", "reliability")
@@ -167,7 +339,9 @@ class ResearchStorageTests(unittest.TestCase):
                 ),
             ]
         )
-        storage.insert_research_items(self.database, prepared)
+        storage.insert_research_items(
+            self.database, prepared, evidence_origin="private-import"
+        )
         rows = storage.list_research_items(
             self.database, topic_terms=("agent", "reliability")
         )
@@ -193,7 +367,9 @@ class ResearchStorageTests(unittest.TestCase):
                 )
             ]
         )
-        storage.insert_research_items(self.database, prepared)
+        storage.insert_research_items(
+            self.database, prepared, evidence_origin="private-import"
+        )
         rows = storage.list_research_items(
             self.database, topic_terms=("agent", "reliability")
         )
@@ -210,7 +386,9 @@ class ResearchStorageTests(unittest.TestCase):
                 )
             ]
         )
-        storage.insert_research_items(self.database, prepared)
+        storage.insert_research_items(
+            self.database, prepared, evidence_origin="private-import"
+        )
         rows = storage.list_research_items(
             self.database,
             topic_terms=workflow.topic_prefilter_terms("agent reliability"),
@@ -234,7 +412,9 @@ class ResearchStorageTests(unittest.TestCase):
                 ),
             ]
         )
-        storage.insert_research_items(self.database, prepared)
+        storage.insert_research_items(
+            self.database, prepared, evidence_origin="private-import"
+        )
         cases = (
             ("agent", "agent-reliability"),
             ("evaluations", "evaluations"),

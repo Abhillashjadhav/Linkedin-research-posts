@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
+import shutil
 import sqlite3
 import subprocess
 import tempfile
@@ -84,11 +86,145 @@ class MinimalCliTests(unittest.TestCase):
         )
         self.assertIn("No approval package was generated", result.stdout)
 
+    def test_fixture_research_cannot_feed_a_live_approval_package(self) -> None:
+        fixture = cli.workflow.load_fixture()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "authority.sqlite"
+            strategy = root / "strategy.json"
+            strategy.write_text(
+                json.dumps(fixture["strategy_inputs"]), encoding="utf-8"
+            )
+            imported = run_cli(
+                "research", "--dry-run", "--db", str(database)
+            )
+            attempted = run_cli(
+                "draft",
+                "--package",
+                "--strategy-input",
+                str(strategy),
+                "--allow-model-egress",
+                "--db",
+                str(database),
+            )
+        self.assertEqual(imported.returncode, 0, imported.stderr)
+        self.assertIn("Research mode: fixture", imported.stdout)
+        self.assertEqual(attempted.returncode, 2)
+        self.assertIn(
+            "fixture and unverified rows are ineligible",
+            attempted.stderr,
+        )
+        self.assertNotIn("READY_FOR_HUMAN_REVIEW", attempted.stdout)
+        self.assertNotIn("Recommended candidate", attempted.stdout)
+
+    def test_live_draft_migrates_and_quarantines_a_v1_ledger(self) -> None:
+        fixture = cli.workflow.load_fixture()
+        prepared = cli.workflow.prepare_research_items(fixture["research_items"])[0]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "legacy.sqlite"
+            strategy = root / "strategy.json"
+            strategy.write_text(
+                json.dumps(fixture["strategy_inputs"]), encoding="utf-8"
+            )
+            with closing(sqlite3.connect(database)) as connection, connection:
+                connection.executescript(
+                    """
+                    CREATE TABLE research_items (
+                        id INTEGER PRIMARY KEY,
+                        canonical_url TEXT NOT NULL UNIQUE,
+                        title TEXT NOT NULL,
+                        body TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        author TEXT NOT NULL DEFAULT '',
+                        published_at TEXT NOT NULL,
+                        source_quality TEXT NOT NULL,
+                        content_hash TEXT NOT NULL UNIQUE,
+                        fetched_at TEXT NOT NULL
+                    );
+                    PRAGMA user_version = 1;
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO research_items (
+                        canonical_url, title, body, source, author, published_at,
+                        source_quality, content_hash, fetched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    tuple(
+                        prepared[field]
+                        for field in (
+                            "canonical_url",
+                            "title",
+                            "body",
+                            "source",
+                            "author",
+                            "published_at",
+                            "source_quality",
+                            "content_hash",
+                            "fetched_at",
+                        )
+                    ),
+                )
+            attempted = run_cli(
+                "draft",
+                "--package",
+                "--strategy-input",
+                str(strategy),
+                "--allow-model-egress",
+                "--db",
+                str(database),
+            )
+            with closing(sqlite3.connect(database)) as connection:
+                version = connection.execute("PRAGMA user_version").fetchone()[0]
+                origin = connection.execute(
+                    "SELECT evidence_origin FROM research_items"
+                ).fetchone()[0]
+        self.assertEqual(attempted.returncode, 2)
+        self.assertIn("fixture and unverified rows are ineligible", attempted.stderr)
+        self.assertNotIn("unavailable or corrupt", attempted.stderr)
+        self.assertEqual(version, 2)
+        self.assertEqual(origin, "legacy-unverified")
+
     def test_draft_accepts_an_arbitrary_short_explicit_topic(self) -> None:
         result = run_cli("draft", "--dry-run", "--topic", "Go")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Fixture envelope validated: topic=Go", result.stdout)
         self.assertIn("Strategy brief: goal=authority", result.stdout)
+
+    def test_fixture_can_write_one_explicit_review_only_package(self) -> None:
+        result = run_cli(
+            "draft",
+            "--dry-run",
+            "--package",
+            "--topic",
+            "fixture package integration",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        match = re.search(r"(?m)^Content package: (outputs/[^\n]+)$", result.stdout)
+        self.assertIsNotNone(match)
+        assert match is not None
+        package_path = ROOT / match.group(1)
+        try:
+            self.assertTrue(package_path.is_dir())
+            manifest = json.loads((package_path / "manifest.json").read_text())
+            self.assertEqual(manifest["mode"], "fixture")
+            self.assertEqual(manifest["review_status"], "FIXTURE_REVIEW_ONLY")
+            self.assertEqual(manifest["human_approval_status"], "NOT_APPROVED")
+            self.assertEqual(manifest["publishing_status"], "DISABLED")
+            self.assertIsNone(manifest["recommended_candidate_id"])
+            self.assertEqual(len(list(package_path.iterdir())), 6)
+            self.assertIn("Recommendation: none; synthetic fixture", result.stdout)
+            self.assertIn("Publishing status: DISABLED", result.stdout)
+            self.assertNotIn("Recommended candidate for human review:", result.stdout)
+        finally:
+            if package_path.is_dir() and not package_path.is_symlink():
+                shutil.rmtree(package_path)
+            try:
+                package_path.parent.rmdir()
+            except OSError:
+                pass
 
     def test_goal_and_format_route_independently_in_fixture_mode(self) -> None:
         cases = (
@@ -462,6 +598,7 @@ class MinimalCliTests(unittest.TestCase):
                     "reliability",
                     "workflow",
                 ),
+                evidence_origins=("private-import",),
             )
             self.assertIn("No LinkedIn action was taken", output.getvalue())
 
@@ -604,6 +741,51 @@ class MinimalCliTests(unittest.TestCase):
             with closing(sqlite3.connect(database)) as connection:
                 count = connection.execute("SELECT count(*) FROM research_items").fetchone()[0]
             self.assertEqual(count, 0)
+
+    def test_private_import_analysis_cannot_borrow_fixture_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "authority.sqlite"
+            source = root / "quantum.json"
+            source.write_text(
+                json.dumps(
+                    [
+                        {
+                            "url": "https://example.com/quantum",
+                            "title": "Quantum networking methods",
+                            "body": "A private import about an unrelated system.",
+                            "source": "Private import source",
+                            "published_at": "2026-07-16T00:00:00Z",
+                            "source_quality": "primary",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            fixture_import = run_cli(
+                "research", "--dry-run", "--db", str(database)
+            )
+            private_import = run_cli(
+                "research",
+                "--input",
+                str(source),
+                "--topic",
+                "agent reliability",
+                "--db",
+                str(database),
+            )
+            with closing(sqlite3.connect(database)) as connection:
+                origins = {
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT DISTINCT evidence_origin FROM research_items"
+                    )
+                }
+        self.assertEqual(fixture_import.returncode, 0, fixture_import.stderr)
+        self.assertEqual(private_import.returncode, 2)
+        self.assertIn("No research cluster matches requested topic", private_import.stderr)
+        self.assertNotIn("Selected cluster: agent-reliability", private_import.stdout)
+        self.assertEqual(origins, {"synthetic-fixture"})
 
     def test_explicit_recent_posts_make_stale_status_real(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
