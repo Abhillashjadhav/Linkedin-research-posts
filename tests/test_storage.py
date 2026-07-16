@@ -127,6 +127,129 @@ class ResearchStorageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             storage.list_research_items(self.database, limit=0)
 
+    def test_topic_terms_are_boundary_safe_and_filter_before_the_limit(self) -> None:
+        prepared = workflow.prepare_research_items(
+            [
+                item(
+                    f"https://example.com/item-{index}",
+                    title=(
+                        "Go reliability target"
+                        if index == 204
+                        else f"Governance research item {index}"
+                    ),
+                    body=f"Distinct body {index}",
+                )
+                for index in range(205)
+            ]
+        )
+        storage.insert_research_items(self.database, prepared)
+        self.assertEqual(len(storage.list_research_items(self.database)), 200)
+        matches = storage.list_research_items(
+            self.database, topic_terms=("go", "reliability")
+        )
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["title"], "Go reliability target")
+        with self.assertRaises(ValueError):
+            storage.list_research_items(self.database, topic_terms=())
+
+    def test_topic_terms_can_be_distributed_across_one_cluster(self) -> None:
+        prepared = workflow.prepare_research_items(
+            [
+                item(
+                    "https://example.com/agent",
+                    title="Agent workflows",
+                    body="An agent-focused body without the other requested term.",
+                ),
+                item(
+                    "https://example.com/reliability",
+                    title="Reliability methods",
+                    body="A reliability-focused body without the other requested term.",
+                ),
+            ]
+        )
+        storage.insert_research_items(self.database, prepared)
+        rows = storage.list_research_items(
+            self.database, topic_terms=("agent", "reliability")
+        )
+        self.assertEqual(len(rows), 2)
+        analysis = workflow.analyse_research(rows, topic="agent reliability")
+        self.assertEqual(analysis["pass_2"]["selected"]["slug"], "agent-reliability")
+
+    def test_body_only_matches_cannot_crowd_out_an_older_title_match(self) -> None:
+        prepared = workflow.prepare_research_items(
+            [
+                item(
+                    f"https://example.com/body-{index}",
+                    title=f"Unrelated title {index}",
+                    body="Agent reliability appears only in this full body.",
+                )
+                for index in range(205)
+            ]
+            + [
+                item(
+                    "https://example.com/title-match",
+                    title="Agent reliability evidence",
+                    body="A bounded full body.",
+                )
+            ]
+        )
+        storage.insert_research_items(self.database, prepared)
+        rows = storage.list_research_items(
+            self.database, topic_terms=("agent", "reliability")
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["title"], "Agent reliability evidence")
+
+    def test_prefilter_preserves_a_match_expressed_only_by_the_cluster_slug(self) -> None:
+        prepared = workflow.prepare_research_items(
+            [
+                item(
+                    "https://example.com/failure",
+                    title="Workflow failure methods",
+                    body="A distinct body about the mechanism.",
+                )
+            ]
+        )
+        storage.insert_research_items(self.database, prepared)
+        rows = storage.list_research_items(
+            self.database,
+            topic_terms=workflow.topic_prefilter_terms("agent reliability"),
+        )
+        self.assertEqual(len(rows), 1)
+        analysis = workflow.analyse_research(rows, topic="agent reliability")
+        self.assertEqual(analysis["pass_2"]["selected"]["slug"], "agent-reliability")
+
+    def test_prefilter_preserves_prefix_based_theme_matches(self) -> None:
+        prepared = workflow.prepare_research_items(
+            [
+                item(
+                    "https://example.com/reliability-prefix",
+                    title="Reliability methods",
+                    body="A distinct body about the mechanism.",
+                ),
+                item(
+                    "https://example.com/evaluation-prefix",
+                    title="Evaluation design",
+                    body="A distinct body about measurement.",
+                ),
+            ]
+        )
+        storage.insert_research_items(self.database, prepared)
+        cases = (
+            ("agent", "agent-reliability"),
+            ("evaluations", "evaluations"),
+        )
+        for topic, expected_slug in cases:
+            with self.subTest(topic=topic):
+                rows = storage.list_research_items(
+                    self.database,
+                    topic_terms=workflow.topic_prefilter_terms(topic),
+                )
+                analysis = workflow.analyse_research(rows, topic=topic)
+                self.assertEqual(
+                    analysis["pass_2"]["selected"]["slug"], expected_slug
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,12 +20,101 @@
       "source_quality": "primary"
     },
     {
-      "title": "Synthetic product decision note for {{topic}}",
+      "title": "Synthetic reliability product decision note for {{topic}}",
       "body": "Synthetic fixture text: a product team should set a reliability budget before adding more workflow steps.",
       "source": "Synthetic engineering fixture",
       "published_at": "2026-07-14T08:00:00Z",
       "url": "https://example.org/engineering/product-fixture",
       "source_quality": "secondary"
     }
-  ]
+  ],
+  "draft_candidates": {
+    "reach": [
+      {
+        "id": "reach-1",
+        "angle": "mechanism-first",
+        "text": "One dependable component does not make {{topic}} dependable.\n\nA multi-step workflow inherits the uncertainty of every component it connects. Checking each part in isolation is useful, but the decision lives at system level: combine those component estimates before deciding whether the workflow is ready to grow.\n\nThat changes the product conversation. The question is no longer whether the latest step works in a clean test. It is whether the complete path still fits an explicit reliability budget. A weak component can be improved. An unknown component should stay unknown in the estimate, not disappear behind a reassuring average.\n\nThe synthetic research notes point to a simple sequence: evaluate the components, estimate the end-to-end workflow, then compare that result with the budget. Only after that should another step enter the design.\n\nWorkflow complexity is visible in a diagram. Compounded reliability is visible only when the team chooses to calculate it.",
+        "claim_ids": [
+          "source-1",
+          "source-2"
+        ]
+      },
+      {
+        "id": "reach-2",
+        "angle": "decision-first",
+        "text": "Adding another step to {{topic}} can look like product progress. It can also add another place for the complete workflow to fall short.\n\nSo the useful decision comes before the expansion: what end-to-end reliability must this workflow preserve?\n\nThat threshold is the budget. It turns a vague ambition such as “make the workflow dependable” into a testable constraint. Each component is evaluated first. Those estimates are then considered together. If the combined view misses the budget, the next product move is not another capability. It is reducing uncertainty or improving the existing path.\n\nThe synthetic source notes are deliberately modest. They do not promise that a budget removes failure. They show why component checks and a system estimate belong in the same decision.\n\nA workflow earns another step when the whole path meets the standard set for it, not when the new step looks impressive on its own.",
+        "claim_ids": [
+          "source-1",
+          "source-2"
+        ]
+      },
+      {
+        "id": "reach-3",
+        "angle": "failure-mode-first",
+        "text": "The quiet failure mode in {{topic}} is not always a broken component. It is a collection of acceptable component checks hiding an unacceptable system result.\n\nThat gap appears when a team reviews each step, celebrates the local result, and never combines the estimates. The workflow can keep getting longer while its end-to-end reliability remains unexamined.\n\nA reliability budget makes that omission harder. It records the standard for the full path before another step is proposed. Component evaluations feed the combined estimate. The estimate is compared with the budget. The outcome informs the next product decision.\n\nThis is not a claim that one number captures every risk. The synthetic research supports a narrower point: assess the parts, assess the complete workflow, and decide on expansion with both views visible.\n\nThe dangerous dashboard is the one where every component is green and the system has no row.",
+        "claim_ids": [
+          "source-1",
+          "source-2"
+        ]
+      }
+    ],
+    "authority": [
+      {
+        "id": "authority-1",
+        "angle": "mechanism-first",
+        "text": "Reliability compounds across {{topic}}. That is the mechanism a component-by-component review can miss.\n\nA multi-step workflow is a system, not a folder of independent checks. Start by evaluating each component because those estimates reveal where uncertainty enters. Then combine the estimates into an end-to-end view. The combined result is what the product decision should use.\n\nWithout that second pass, a team can approve every step and still have no answer to the practical question: is the complete path reliable enough to expand?\n\nAn explicit reliability budget gives the answer a boundary. Set the required system outcome before adding another step. Compare the end-to-end estimate with that boundary. If the workflow falls short, improve an existing component or reduce uncertainty. If an estimate is missing, record the gap instead of treating it as success.\n\nThe two synthetic source notes support this sequence: evaluate components before combining a workflow estimate, and set the budget before increasing workflow depth. They do not supply a universal threshold, so the threshold remains a product choice that needs context and human review.\n\nThe resulting decision rule is compact: local evidence informs the estimate; the system estimate informs expansion, and its consequence should be recorded.\n\nA new step is valuable only when the full workflow can still meet the standard chosen for it.",
+        "claim_ids": [
+          "source-1",
+          "source-2"
+        ]
+      },
+      {
+        "id": "authority-2",
+        "angle": "decision-first",
+        "text": "Set the reliability budget for {{topic}} before approving the next workflow step.\n\nThis ordering matters because capability is easy to inspect locally. Reliability is a property of the path the user actually experiences. A new component may pass its own evaluation while the combined workflow remains below the standard required for the product.\n\nThe review therefore needs two passes. First, evaluate every component and record uncertainty rather than smoothing it away. Second, combine those estimates into an end-to-end view and compare it with the chosen budget. The output is not a decorative score. It is a decision: expand the workflow, improve the present path, or gather the evidence that is still missing.\n\nThe synthetic standards note supports component evaluation before a combined estimate. The synthetic engineering note supports setting a budget before adding steps. Neither source claims a universal target or a guaranteed outcome. Those limits matter. A reliability budget is useful because it makes the team’s assumption explicit, not because it makes uncertainty vanish.\n\nThis also separates two conversations that often blur together: “Can this step work?” and “Can this system meet its intended standard?” Both deserve evidence, but only the second can justify more workflow depth.\n\nExpansion should be the consequence of a carefully reviewed end-to-end result, not a substitute for one.",
+        "claim_ids": [
+          "source-1",
+          "source-2"
+        ]
+      },
+      {
+        "id": "authority-3",
+        "angle": "failure-mode-first",
+        "text": "A row of passing component checks can still leave {{topic}} without a system-level reliability answer.\n\nThat is the review failure to design around. Teams naturally inspect the visible pieces: each component, each hand-off, each new capability. But the product decision concerns the complete route. If the estimates are never combined, the evidence cannot answer whether another step belongs in the workflow.\n\nThe corrective artefact is a reliability budget tied to an end-to-end estimate. It should show the component evaluations, identify missing evidence, present the combined view, and state the decision that follows. The budget comes before expansion, because a threshold chosen after the result is simply a story about the result.\n\nThe synthetic research is intentionally bounded. One note says to evaluate components before combining a workflow estimate. The other says to set a budget before adding more steps. Neither establishes a universal calculation or threshold. Those must remain explicit product assumptions, reviewed by a human who understands the workflow context.\n\nUsed this way, the artefact does more than report reliability. It makes the trade-off inspectable: improve an existing component, reduce uncertainty, or accept that the next step must wait, with its rationale recorded.\n\nA reliable review does not end when every component has a result. It ends when the system has a defensible decision.",
+        "claim_ids": [
+          "source-1",
+          "source-2"
+        ]
+      }
+    ],
+    "opportunity": [
+      {
+        "id": "opportunity-1",
+        "angle": "mechanism-first",
+        "text": "The useful reliability question for {{topic}} is not whether every component can pass a test. It is whether the evidence from those components supports the complete workflow.\n\nA practical review can make that mechanism visible. Begin with the component evaluations and mark any unknowns. Combine the available estimates into an end-to-end view. Compare that view with an explicit reliability budget set before the workflow grows. Then record one decision: expand, improve the current path, or collect missing evidence.\n\nThis sequence gives product and engineering teams a shared artefact instead of separate impressions. Engineering can see which component or uncertainty shapes the system view. Product can see why a proposed step is being accepted or deferred. The budget does not remove judgement; it gives judgement a stated boundary.\n\nThe synthetic research supports two parts of this approach: components should be evaluated before a combined workflow estimate, and the budget should precede additional steps. It does not provide a universal target, calculation, or outcome. Those choices need the context of the real workflow and human approval.\n\nThe opportunity is a better expansion conversation: one where capability, evidence, and the system standard appear on the same page.\n\nMore workflow depth should follow a defensible end-to-end decision that remains auditable.",
+        "claim_ids": [
+          "source-1",
+          "source-2"
+        ]
+      },
+      {
+        "id": "opportunity-2",
+        "angle": "decision-first",
+        "text": "Before extending {{topic}}, write down the system result that would justify the extension.\n\nThat single decision creates the structure for a useful reliability review. The required result becomes the budget. Component evaluations provide the local evidence. A combined estimate provides the end-to-end view. The gap between that view and the budget determines whether the next step belongs in the workflow.\n\nThe review should not hide missing evidence behind a final score. An unknown component remains a visible uncertainty. If the workflow misses the budget, the response can be specific: improve the present path, simplify it, or gather the evidence needed for a decision. If it meets the budget, a human can assess whether expansion is appropriate for the product context.\n\nThe two synthetic notes establish the order, not a universal formula. They support evaluating components before combining estimates and setting a budget before adding steps. They make no claim about the right threshold or a guaranteed result.\n\nA compact decision artefact can therefore contain four things: component evidence, the end-to-end estimate, the chosen budget, and the recorded next action. That is enough to expose the assumption without pretending uncertainty has disappeared.\n\nThe strongest opportunity is not another workflow step. It is a clearer reason for adding one.",
+        "claim_ids": [
+          "source-1",
+          "source-2"
+        ]
+      },
+      {
+        "id": "opportunity-3",
+        "angle": "failure-mode-first",
+        "text": "A reliability review for {{topic}} can fail while every component has a neat status. The missing line is the decision for the complete workflow.\n\nThat line should connect evidence to action. Component evaluations show the local picture. Their combined estimate shows the system picture. An explicit budget, chosen before another step is added, gives the system picture a product boundary.\n\nA useful artefact would keep those elements together: the component results, unresolved evidence gaps, the end-to-end view, the budget, and the resulting choice. The choice may be to expand. It may be to improve the existing path or wait for stronger evidence. What matters is that the next action follows from the full workflow rather than the most attractive component result.\n\nThe synthetic source material supports this ordering and nothing broader. It says to evaluate components before combining a workflow estimate, and to set the budget before adding steps. It does not establish a universal threshold or claim that the method guarantees reliability. Real inputs and human review remain necessary.\n\nThis is the kind of artefact that can support a focused product-engineering conversation: specific evidence, an explicit assumption, and a decision that can be revisited.\n\nWhen the system has no result, another green component is not yet permission to grow.",
+        "claim_ids": [
+          "source-1",
+          "source-2"
+        ]
+      }
+    ]
+  }
 }
