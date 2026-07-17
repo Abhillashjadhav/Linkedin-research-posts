@@ -16,6 +16,7 @@ class RecoveryAssetTests(unittest.TestCase):
             ".claude/agents/analyst.md",
             ".claude/agents/writer.md",
             ".claude/agents/critic.md",
+            ".claude/skills/draft-post/SKILL.md",
             "data/voice/voice-guide.md",
             "data/voice/abhillash-best-posts.md",
         }
@@ -34,6 +35,7 @@ class RecoveryAssetTests(unittest.TestCase):
             ".claude/agents/analyst.md",
             ".claude/agents/writer.md",
             ".claude/agents/critic.md",
+            ".claude/skills/draft-post/SKILL.md",
             "Voice guide and performance-pattern anchors",
         ):
             with self.subTest(component=relative):
@@ -50,18 +52,41 @@ class RecoveryAssetTests(unittest.TestCase):
             with self.subTest(path=relative):
                 self.assertFalse((ROOT / relative).exists())
 
-    def test_runtime_coordinator_is_deferred_until_its_contract_exists(self) -> None:
-        self.assertFalse((ROOT / ".claude/skills/draft-post/SKILL.md").exists())
+    def test_runtime_coordinator_matches_the_completed_cli_contract(self) -> None:
+        skill = (ROOT / ".claude/skills/draft-post/SKILL.md").read_text(
+            encoding="utf-8"
+        )
         manifest = (ROOT / "RECOVERY_MANIFEST.md").read_text(encoding="utf-8")
-        self.assertIn("Safely deferred", manifest)
-        self.assertIn(".claude/skills/draft-post/SKILL.md", manifest)
+        self.assertIn("| `.claude/skills/draft-post/SKILL.md` | RECONSTRUCTED |", manifest)
+        self.assertNotIn("Safely deferred", manifest)
+        for current_flag in (
+            "--strategy-input",
+            "--allow-model-egress",
+            "--proof-manifest",
+            "--package",
+        ):
+            with self.subTest(flag=current_flag):
+                self.assertIn(current_flag, skill)
+        for obsolete_contract in (
+            "--proof-type",
+            "--proof-value",
+            "five-file",
+            "STATUS: READY FOR HUMAN APPROVAL",
+        ):
+            with self.subTest(obsolete=obsolete_contract):
+                self.assertNotIn(obsolete_contract, skill)
+        self.assertIn("human_approval_status` remains `NOT_APPROVED", skill)
+        self.assertIn("publishing_status` remains `DISABLED", skill)
+        self.assertIn("Never publish, schedule, comment, message", skill)
 
     def test_private_and_generated_paths_are_ignored(self) -> None:
         ignore_lines = set((ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
         required = {
             "data/private/**",
             "*.sqlite",
+            "*.sqlite-*",
             "*.db",
+            "*.db-*",
             ".env",
             ".env.*",
             "outputs/**",

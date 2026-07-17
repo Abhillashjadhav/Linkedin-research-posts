@@ -15,7 +15,7 @@ from contextlib import closing, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from authority_os import __main__ as cli
 
@@ -56,6 +56,7 @@ def performance_context(*, package_created_at: str = "2026-07-16T00:00:00Z") -> 
         "critic_band": "advance-to-gates",
         "critic_rank": 1,
         "is_recommended": True,
+        "learning_context_fingerprint": "a" * 64,
     }
 
 
@@ -89,19 +90,319 @@ class MinimalCliTests(unittest.TestCase):
                 cli._ensure_owner_only_directory(linked)
             self.assertEqual(target.stat().st_mode & 0o777, 0o755)
 
+    def test_private_directory_rejects_an_intermediate_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary) / "runtime"
+            base.mkdir(mode=0o700)
+            outside = Path(temporary) / "outside"
+            outside.mkdir(mode=0o755)
+            (base / "redirected").symlink_to(outside, target_is_directory=True)
+
+            with self.assertRaises(cli.workflow.WorkflowError):
+                cli._ensure_owner_only_directory(
+                    base / "redirected" / "private"
+                )
+
+            self.assertFalse((outside / "private").exists())
+            self.assertEqual(outside.stat().st_mode & 0o777, 0o755)
+            self.assertTrue((base / "redirected").is_symlink())
+
     def test_doctor_redacts_environment_values(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             secret = "sentinel-secret-that-must-not-appear"
             environment = dict(os.environ, ANTHROPIC_API_KEY=secret, LINKEDIN_TOKEN=secret)
+            database = Path(temporary) / "state" / "authority.sqlite"
+            initialised = run_cli("init", "--db", str(database), env=environment)
             result = run_cli(
                 "doctor",
                 "--db",
-                str(Path(temporary) / "state" / "authority.sqlite"),
+                str(database),
                 env=environment,
             )
+            self.assertEqual(initialised.returncode, 0, initialised.stderr)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn(secret, result.stdout + result.stderr)
             self.assertIn("values were not inspected", result.stdout)
+
+    def test_doctor_is_read_only_and_does_not_create_a_missing_database(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "missing" / "authority.sqlite"
+            result = run_cli("doctor", "--db", str(database))
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertFalse(database.exists())
+            self.assertFalse(database.parent.exists())
+            self.assertIn("private research and performance ledger: run init", result.stdout)
+            self.assertNotIn("Traceback", result.stdout + result.stderr)
+
+    def test_privacy_check_is_available_through_the_single_cli(self) -> None:
+        result = run_cli("privacy-check")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ignored private data was not read", result.stdout)
+        self.assertNotIn("data/private/", result.stdout)
+
+    def test_weekly_review_command_prints_only_private_summary_and_disabled_status(self) -> None:
+        report_path = cli.workflow.REPO_ROOT / "data/private/weekly-reviews/test.json"
+        generated = {
+            "path": report_path,
+            "report": {
+                "basis": {
+                    "canonical_posts": 2,
+                    "late_organic_72h_observations_excluded": 0,
+                    "organic_7d_followups": 1,
+                    "paid_descriptive_observations": 3,
+                },
+                "rubric_calibration": {"recommendations": []},
+                "safety": {"publishing_status": "DISABLED"},
+            },
+        }
+        rows = [
+            {
+                "package_id": "2026-07-16-agent-reliability",
+                "candidate_id": "candidate-1",
+                "checkpoint": "72h",
+                "channel": "organic",
+            }
+        ]
+        context = {
+            "package_id": "2026-07-16-agent-reliability",
+            "candidate_id": "candidate-1",
+            "hook_excerpt": "A bounded private hook.",
+            "hook_excerpt_truncated": False,
+            "candidate_angle": "A decision-led opening",
+            "structure": {
+                "planned_route": ["incident-or-problem", "mechanism", "decision"],
+                "paragraph_count": 6,
+            },
+        }
+        output = io.StringIO()
+        args = SimpleNamespace(db=Path("unused.sqlite"), as_of="2026-07-20T00:00:00Z")
+        with (
+            patch.object(cli.storage, "list_performance_readonly", return_value=rows),
+            patch.object(
+                cli.learning,
+                "winning_candidate_context_requests",
+                return_value=[
+                    (
+                        "2026-07-16-agent-reliability",
+                        "candidate-1",
+                        "a" * 64,
+                    )
+                ],
+            ) as select_contexts,
+            patch.object(
+                cli.performance,
+                "load_package_learning_context",
+                return_value=context,
+            ) as load_context,
+            patch.object(
+                cli.learning, "write_weekly_review", return_value=generated
+            ) as write_review,
+            redirect_stdout(output),
+        ):
+            result = cli.command_weekly_review(args)
+        self.assertEqual(result, 0)
+        rendered = output.getvalue()
+        self.assertIn("organic_72h=2", rendered)
+        self.assertIn("paid_descriptive=3", rendered)
+        self.assertIn("rubric_mutated=no", rendered)
+        self.assertIn("Publishing status: DISABLED", rendered)
+        self.assertNotIn("candidate text", rendered)
+        load_context.assert_called_once_with(
+            "2026-07-16-agent-reliability",
+            "candidate-1",
+            expected_fingerprint="a" * 64,
+        )
+        select_contexts.assert_called_once_with(
+            rows, as_of="2026-07-20T00:00:00Z"
+        )
+        self.assertEqual(
+            write_review.call_args.kwargs["candidate_contexts"],
+            {("2026-07-16-agent-reliability", "candidate-1"): context},
+        )
+
+    def test_weekly_review_records_oversized_candidate_context_as_a_gap(self) -> None:
+        rows = [{"package_id": "2026-07-16-agent-reliability"}]
+        generated = {
+            "path": cli.workflow.REPO_ROOT
+            / "data/private/weekly-reviews/oversized-context.json",
+            "report": {
+                "basis": {
+                    "canonical_posts": 1,
+                    "late_organic_72h_observations_excluded": 0,
+                    "organic_7d_followups": 0,
+                    "paid_descriptive_observations": 0,
+                },
+                "rubric_calibration": {"recommendations": []},
+                "safety": {"publishing_status": "DISABLED"},
+            },
+        }
+        args = SimpleNamespace(db=Path("unused.sqlite"), as_of="2026-07-20T00:00:00Z")
+
+        with (
+            patch.object(cli.storage, "list_performance_readonly", return_value=rows),
+            patch.object(
+                cli.learning,
+                "winning_candidate_context_requests",
+                return_value=[
+                    (
+                        "2026-07-16-agent-reliability",
+                        "candidate-1",
+                        "a" * 64,
+                    )
+                ],
+            ),
+            patch.object(
+                cli.performance,
+                "load_package_learning_context",
+                side_effect=cli.workflow.WorkflowError(
+                    "The performance package candidate has too many paragraphs for learning."
+                ),
+            ),
+            patch.object(
+                cli.learning, "write_weekly_review", return_value=generated
+            ) as write_review,
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(cli.command_weekly_review(args), 0)
+
+        self.assertEqual(write_review.call_args.kwargs["candidate_contexts"], {})
+
+    def test_weekly_review_opens_only_anchored_canonical_as_of_winners(self) -> None:
+        utc = timezone.utc
+
+        def text(moment: datetime) -> str:
+            return moment.isoformat().replace("+00:00", "Z")
+
+        def row(
+            slug: str,
+            *,
+            published: datetime,
+            reach: int,
+            fingerprint: str | None,
+            age_hours: int = 73,
+            updated_at: datetime | None = None,
+        ) -> dict[str, object]:
+            observed = published + timedelta(hours=age_hours)
+            values = {metric: 0 for metric in cli.storage.PERFORMANCE_METRICS}
+            values.update({"impressions": 1_000, "non_follower_reach": reach})
+            return {
+                **performance_context(
+                    package_created_at=text(published - timedelta(hours=1))
+                ),
+                "package_id": f"{published.date().isoformat()}-{slug}",
+                "goal": "reach",
+                "published_at": text(published),
+                "learning_context_fingerprint": fingerprint,
+                "checkpoint": "72h",
+                "channel": "organic",
+                "observed_at": text(observed),
+                **values,
+                "recorded_at": text(observed + timedelta(minutes=30)),
+                "updated_at": text(updated_at or observed + timedelta(hours=1)),
+            }
+
+        published = datetime(2026, 7, 1, 12, tzinfo=utc)
+        rows = [
+            row(
+                "winner-a",
+                published=published,
+                reach=500,
+                fingerprint="a" * 64,
+            ),
+            row(
+                "winner-b",
+                published=published + timedelta(days=1),
+                reach=500,
+                fingerprint="b" * 64,
+            ),
+            row(
+                "winner-unanchored",
+                published=published + timedelta(days=2),
+                reach=500,
+                fingerprint=None,
+            ),
+            row(
+                "nonleader",
+                published=published + timedelta(days=3),
+                reach=499,
+                fingerprint="c" * 64,
+            ),
+            row(
+                "late",
+                published=published + timedelta(days=4),
+                reach=999_999,
+                fingerprint="d" * 64,
+                age_hours=120,
+            ),
+            row(
+                "future",
+                published=published + timedelta(days=5),
+                reach=999_999,
+                fingerprint="e" * 64,
+                updated_at=datetime(2026, 8, 20, 12, tzinfo=utc),
+            ),
+        ]
+        generated = {
+            "path": cli.workflow.REPO_ROOT
+            / "data/private/weekly-reviews/test-winners.json",
+            "report": {
+                "basis": {
+                    "canonical_posts": 3,
+                    "late_organic_72h_observations_excluded": 1,
+                    "organic_7d_followups": 0,
+                    "paid_descriptive_observations": 0,
+                },
+                "rubric_calibration": {"recommendations": []},
+                "safety": {"publishing_status": "DISABLED"},
+            },
+        }
+
+        def context(
+            package_id: str,
+            candidate_id: str,
+            *,
+            expected_fingerprint: str,
+        ) -> dict[str, object]:
+            return {
+                "package_id": package_id,
+                "candidate_id": candidate_id,
+                "hook_excerpt": "A bounded winner hook.",
+                "hook_excerpt_truncated": False,
+                "candidate_angle": "A winner angle.",
+                "structure": {
+                    "planned_route": ["incident", "mechanism", "implication"],
+                    "paragraph_count": 3,
+                },
+            }
+
+        args = SimpleNamespace(db=Path("unused.sqlite"), as_of="2026-08-15T00:00:00Z")
+        with (
+            patch.object(cli.storage, "list_performance_readonly", return_value=rows),
+            patch.object(
+                cli.performance,
+                "load_package_learning_context",
+                side_effect=context,
+            ) as load_context,
+            patch.object(cli.learning, "write_weekly_review", return_value=generated),
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(cli.command_weekly_review(args), 0)
+
+        self.assertEqual(
+            load_context.call_args_list,
+            [
+                call(
+                    "2026-07-01-winner-a",
+                    "candidate-1",
+                    expected_fingerprint="a" * 64,
+                ),
+                call(
+                    "2026-07-02-winner-b",
+                    "candidate-1",
+                    expected_fingerprint="b" * 64,
+                ),
+            ],
+        )
 
     def test_offline_fixture_execution_needs_no_credentials(self) -> None:
         environment = {
@@ -224,7 +525,7 @@ class MinimalCliTests(unittest.TestCase):
         self.assertEqual(attempted.returncode, 2)
         self.assertIn("fixture and unverified rows are ineligible", attempted.stderr)
         self.assertNotIn("unavailable or corrupt", attempted.stderr)
-        self.assertEqual(version, 3)
+        self.assertEqual(version, cli.storage.SCHEMA_VERSION)
         self.assertEqual(origin, "legacy-unverified")
 
     def test_draft_accepts_an_arbitrary_short_explicit_topic(self) -> None:

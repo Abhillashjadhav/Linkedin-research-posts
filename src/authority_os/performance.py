@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import hmac
 import io
 import json
 import os
 import re
 import stat
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -18,6 +21,12 @@ from . import package as approval_package, storage, workflow
 MAX_PACKAGE_FILE_BYTES = 1_000_000
 MAX_CSV_BYTES = 1_000_000
 MAX_CSV_ROWS = 1_000
+MAX_LEARNING_HOOK_CHARS = 280
+MAX_LEARNING_ANGLE_CHARS = 500
+MAX_LEARNING_CANDIDATE_CHARS = 20_000
+MAX_LEARNING_PARAGRAPHS = 100
+MAX_LEARNING_ROUTE_STAGES = 8
+MAX_LEARNING_ROUTE_STAGE_CHARS = 80
 CSV_FIELDS = (
     "package_id",
     "candidate_id",
@@ -65,6 +74,9 @@ _GATE_RESULT_FIELDS = {
     "manual_fact_verification_required",
 }
 _GATE_FIELDS = {"status", "reason_codes"}
+_LEARNING_DOCUMENTS = frozenset(
+    {"manifest.json", "evaluation.json", "brief.md", "candidates.md"}
+)
 
 
 def _require_secure_local_reads() -> None:
@@ -114,7 +126,7 @@ def _open_regular_file(
     *,
     directory_fd: int,
     maximum_bytes: int,
-) -> tuple[int, int]:
+) -> tuple[int, os.stat_result]:
     descriptor = -1
     try:
         descriptor = os.open(
@@ -135,7 +147,7 @@ def _open_regular_file(
             raise workflow.WorkflowError(
                 "A required private performance file is unavailable or unsafe."
             )
-        return descriptor, int(metadata.st_size)
+        return descriptor, metadata
     except workflow.WorkflowError:
         if descriptor >= 0:
             os.close(descriptor)
@@ -148,38 +160,59 @@ def _open_regular_file(
         ) from exc
 
 
+def _metadata_token(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _read_open_regular_file(
+    descriptor: int,
+    metadata: os.stat_result,
+) -> str:
+    chunks: list[bytes] = []
+    remaining = int(metadata.st_size)
+    while remaining:
+        chunk = os.read(descriptor, min(65_536, remaining))
+        if not chunk:
+            raise workflow.WorkflowError(
+                "A required private performance file could not be read completely."
+            )
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    if os.read(descriptor, 1) or _metadata_token(os.fstat(descriptor)) != _metadata_token(
+        metadata
+    ):
+        raise workflow.WorkflowError(
+            "A required private performance file changed while it was read."
+        )
+    try:
+        return b"".join(chunks).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise workflow.WorkflowError(
+            "A required private performance file is not valid UTF-8."
+        ) from exc
+
+
 def _read_regular_file(
     filename: str,
     *,
     directory_fd: int,
     maximum_bytes: int,
 ) -> str:
-    descriptor, file_size = _open_regular_file(
+    descriptor, metadata = _open_regular_file(
         filename,
         directory_fd=directory_fd,
         maximum_bytes=maximum_bytes,
     )
     try:
-        chunks: list[bytes] = []
-        remaining = file_size
-        while remaining:
-            chunk = os.read(descriptor, min(65_536, remaining))
-            if not chunk:
-                raise workflow.WorkflowError(
-                    "A required private performance file could not be read completely."
-                )
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        if os.read(descriptor, 1):
-            raise workflow.WorkflowError(
-                "A required private performance file changed while it was read."
-            )
-        try:
-            return b"".join(chunks).decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise workflow.WorkflowError(
-                "A required private performance file is not valid UTF-8."
-            ) from exc
+        return _read_open_regular_file(descriptor, metadata)
     finally:
         os.close(descriptor)
 
@@ -205,7 +238,8 @@ def _load_package_documents(
     *,
     output_root: Path | str = workflow.DEFAULT_OUTPUTS,
     _allow_test_output_root: bool = False,
-) -> tuple[Mapping[str, object], Mapping[str, object]]:
+    include_learning_documents: bool = False,
+) -> tuple[Mapping[str, object], Mapping[str, object], dict[str, str]]:
     expected_id, date_name, directory_name = _package_parts(package_id)
     root = Path(output_root)
     if not root.is_absolute():
@@ -214,11 +248,16 @@ def _load_package_documents(
         raise workflow.WorkflowError(
             "Performance packages can only be read from the fixed local output root."
         )
+    if type(include_learning_documents) is not bool:
+        raise workflow.WorkflowError("Performance package read scope is invalid.")
     root_fd = date_fd = package_fd = -1
+    opened_files: dict[str, tuple[int, os.stat_result]] = {}
+    documents: dict[str, str] = {}
     try:
         root_fd = _open_directory(root)
         date_fd = _open_directory(date_name, directory_fd=root_fd)
         package_fd = _open_directory(directory_name, directory_fd=date_fd)
+        package_metadata = os.fstat(package_fd)
         expected_files = set(approval_package.PACKAGE_FILES.values())
         try:
             entries = set(os.listdir(package_fd))
@@ -230,31 +269,51 @@ def _load_package_documents(
             raise workflow.WorkflowError(
                 "The performance package is incomplete or has an invalid inventory."
             )
-        for filename in expected_files:
-            descriptor, _ = _open_regular_file(
+        for filename in sorted(expected_files):
+            opened_files[filename] = _open_regular_file(
                 filename,
                 directory_fd=package_fd,
                 maximum_bytes=MAX_PACKAGE_FILE_BYTES,
             )
-            os.close(descriptor)
-        manifest_text = _read_regular_file(
-            "manifest.json",
-            directory_fd=package_fd,
-            maximum_bytes=MAX_PACKAGE_FILE_BYTES,
+        read_names = (
+            _LEARNING_DOCUMENTS
+            if include_learning_documents
+            else frozenset({"manifest.json", "evaluation.json"})
         )
-        evaluation_text = _read_regular_file(
-            "evaluation.json",
-            directory_fd=package_fd,
-            maximum_bytes=MAX_PACKAGE_FILE_BYTES,
-        )
+        for filename in sorted(read_names):
+            descriptor, metadata = opened_files[filename]
+            documents[filename] = _read_open_regular_file(descriptor, metadata)
+        try:
+            entries_after = set(os.listdir(package_fd))
+        except OSError as exc:
+            raise workflow.WorkflowError(
+                "The performance package inventory could not be verified."
+            ) from exc
+        if entries_after != expected_files:
+            raise workflow.WorkflowError(
+                "The performance package changed while it was read."
+            )
+        if _metadata_token(os.fstat(package_fd)) != _metadata_token(package_metadata):
+            raise workflow.WorkflowError(
+                "The performance package changed while it was read."
+            )
+        if any(
+            _metadata_token(os.fstat(descriptor)) != _metadata_token(metadata)
+            for descriptor, metadata in opened_files.values()
+        ):
+            raise workflow.WorkflowError(
+                "The performance package changed while it was read."
+            )
     finally:
+        for descriptor, _metadata in opened_files.values():
+            os.close(descriptor)
         for descriptor in (package_fd, date_fd, root_fd):
             if descriptor >= 0:
                 os.close(descriptor)
     try:
-        manifest = json.loads(manifest_text)
-        evaluation = json.loads(evaluation_text)
-    except (json.JSONDecodeError, RecursionError, UnboundLocalError) as exc:
+        manifest = json.loads(documents["manifest.json"])
+        evaluation = json.loads(documents["evaluation.json"])
+    except (json.JSONDecodeError, RecursionError, KeyError) as exc:
         raise workflow.WorkflowError(
             "The performance package contains invalid JSON."
         ) from exc
@@ -262,23 +321,23 @@ def _load_package_documents(
         raise workflow.WorkflowError("The performance package schema is invalid.")
     if manifest.get("package_id") != expected_id:
         raise workflow.WorkflowError("The performance package ID does not match its path.")
-    return manifest, evaluation
+    learning_documents = {
+        filename: documents[filename]
+        for filename in ("brief.md", "candidates.md")
+        if filename in documents
+    }
+    return manifest, evaluation, learning_documents
 
 
-def load_package_context(
+def _validate_package_context(
     package_id: object,
     candidate_id: object,
     *,
-    output_root: Path | str = workflow.DEFAULT_OUTPUTS,
-    _allow_test_output_root: bool = False,
+    manifest: Mapping[str, object],
+    evaluation: Mapping[str, object],
 ) -> dict[str, object]:
-    """Load a committed live package and snapshot one explicit eligible candidate."""
+    """Validate one explicit candidate against an already anchored package snapshot."""
 
-    manifest, evaluation = _load_package_documents(
-        package_id,
-        output_root=output_root,
-        _allow_test_output_root=_allow_test_output_root,
-    )
     if set(manifest) != _MANIFEST_FIELDS or set(evaluation) != _EVALUATION_FIELDS:
         raise workflow.WorkflowError("The performance package schema is invalid.")
     if (
@@ -453,6 +512,351 @@ def load_package_context(
         "critic_band": selected["band"],
         "critic_rank": ranking.index(candidate_id) + 1,
         "is_recommended": candidate_id == recommended_id,
+    }
+
+
+def _bounded_learning_text(value: str, *, label: str, maximum: int) -> str:
+    if (
+        not value
+        or value != value.strip()
+        or len(value) > maximum
+        or any(
+            unicodedata.category(character) in {"Cc", "Cf", "Cs", "Zl", "Zp"}
+            and character not in "\n\t"
+            for character in value
+        )
+    ):
+        raise workflow.WorkflowError(
+            f"The performance package {label} is invalid or unsafe."
+        )
+    return value
+
+
+def _expect_markdown_line(lines: Sequence[str], cursor: int, expected: str) -> int:
+    if cursor >= len(lines) or lines[cursor] != expected:
+        raise workflow.WorkflowError("The performance package Markdown is malformed.")
+    return cursor + 1
+
+
+def _literal_markdown_block(
+    lines: Sequence[str], cursor: int, *, label: str, maximum: int
+) -> tuple[str, int]:
+    literal: list[str] = []
+    while cursor < len(lines) and lines[cursor].startswith("    "):
+        literal.append(lines[cursor][4:])
+        cursor += 1
+    if not literal:
+        raise workflow.WorkflowError("The performance package Markdown is malformed.")
+    return (
+        _bounded_learning_text("\n".join(literal), label=label, maximum=maximum),
+        cursor,
+    )
+
+
+def _parse_candidate_markdown(
+    text: str, *, expected_candidate_ids: Sequence[str]
+) -> dict[str, tuple[str, str]]:
+    if "\r" in text or not text.endswith("\n"):
+        raise workflow.WorkflowError("The performance package Markdown is malformed.")
+    lines = text.splitlines()
+    cursor = _expect_markdown_line(lines, 0, "# Final candidate set")
+    cursor = _expect_markdown_line(lines, cursor, "")
+    candidates: dict[str, tuple[str, str]] = {}
+    for index in range(1, 4):
+        if cursor >= len(lines):
+            raise workflow.WorkflowError("The performance package Markdown is malformed.")
+        header = re.fullmatch(
+            rf"## Candidate {index}: `([A-Za-z0-9][A-Za-z0-9._-]{{0,63}})`",
+            lines[cursor],
+        )
+        if header is None or header.group(1) in candidates:
+            raise workflow.WorkflowError("The performance package Markdown is malformed.")
+        candidate_id = header.group(1)
+        cursor += 1
+        cursor = _expect_markdown_line(lines, cursor, "")
+        cursor = _expect_markdown_line(lines, cursor, "Angle:")
+        cursor = _expect_markdown_line(lines, cursor, "")
+        angle, cursor = _literal_markdown_block(
+            lines,
+            cursor,
+            label="candidate angle",
+            maximum=MAX_LEARNING_ANGLE_CHARS,
+        )
+        cursor = _expect_markdown_line(lines, cursor, "")
+        if cursor >= len(lines):
+            raise workflow.WorkflowError("The performance package Markdown is malformed.")
+        claims = re.fullmatch(r"Claim IDs: `([^`\r\n]+)`", lines[cursor])
+        if claims is None:
+            raise workflow.WorkflowError("The performance package Markdown is malformed.")
+        claim_ids = claims.group(1).split(", ")
+        if (
+            not claim_ids
+            or len(claim_ids) != len(set(claim_ids))
+            or any(
+                re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", claim_id)
+                is None
+                for claim_id in claim_ids
+            )
+        ):
+            raise workflow.WorkflowError("The performance package Markdown is malformed.")
+        cursor += 1
+        cursor = _expect_markdown_line(lines, cursor, "")
+        cursor = _expect_markdown_line(lines, cursor, "Text:")
+        cursor = _expect_markdown_line(lines, cursor, "")
+        candidate_text, cursor = _literal_markdown_block(
+            lines,
+            cursor,
+            label="candidate text",
+            maximum=MAX_LEARNING_CANDIDATE_CHARS,
+        )
+        candidates[candidate_id] = (angle, candidate_text)
+        if index < 3:
+            cursor = _expect_markdown_line(lines, cursor, "")
+    if cursor != len(lines) or set(candidates) != set(expected_candidate_ids):
+        raise workflow.WorkflowError(
+            "The performance package candidates do not match its evaluation."
+        )
+    return candidates
+
+
+def _brief_field(text: str, label: str) -> str:
+    matches = re.findall(rf"(?m)^- {re.escape(label)}: `([^`\r\n]+)`$", text)
+    if len(matches) != 1:
+        raise workflow.WorkflowError("The performance package Markdown is malformed.")
+    return matches[0]
+
+
+def _parse_planned_route(
+    text: str,
+    *,
+    package_id: object,
+    goal: object,
+    topic_slug: object,
+) -> list[str]:
+    if "\r" in text or not text.endswith("\n") or not text.startswith(
+        "# Strategy brief\n\n"
+    ):
+        raise workflow.WorkflowError("The performance package Markdown is malformed.")
+    if (
+        _brief_field(text, "Package ID") != package_id
+        or _brief_field(text, "Strategic goal") != goal
+        or _brief_field(text, "Topic") != topic_slug
+    ):
+        raise workflow.WorkflowError(
+            "The performance package brief does not match its manifest."
+        )
+    route = _brief_field(text, "Narrative route").split(" -> ")
+    if (
+        not 2 <= len(route) <= MAX_LEARNING_ROUTE_STAGES
+        or len(route) != len(set(route))
+        or any(
+            len(stage) > MAX_LEARNING_ROUTE_STAGE_CHARS
+            or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", stage) is None
+            for stage in route
+        )
+    ):
+        raise workflow.WorkflowError(
+            "The performance package narrative route is invalid or unsafe."
+        )
+    if (
+        not isinstance(goal, str)
+        or goal not in workflow.GOAL_ROUTES
+        or route != list(workflow.GOAL_ROUTES[goal]["narrative_route"])
+    ):
+        raise workflow.WorkflowError(
+            "The performance package narrative route does not match its goal."
+        )
+    return route
+
+
+def _learning_context_fingerprint(documents: Mapping[str, str]) -> str:
+    """Hash the exact brief/candidate snapshot held by the secure package read."""
+
+    try:
+        snapshot = {
+            "brief.md": documents["brief.md"],
+            "candidates.md": documents["candidates.md"],
+        }
+    except KeyError as exc:
+        raise workflow.WorkflowError(
+            "The performance package learning context is incomplete."
+        ) from exc
+    payload = json.dumps(
+        snapshot,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _validate_learning_snapshot(
+    *,
+    manifest: Mapping[str, object],
+    evaluation: Mapping[str, object],
+    validated: Mapping[str, object],
+    documents: Mapping[str, str],
+) -> tuple[dict[str, tuple[str, str]], list[str]]:
+    """Validate both hashed documents from the same held package snapshot."""
+
+    try:
+        brief_text = documents["brief.md"]
+        candidate_markdown = documents["candidates.md"]
+    except KeyError as exc:
+        raise workflow.WorkflowError(
+            "The performance package learning context is incomplete."
+        ) from exc
+    ranking = evaluation["ranking"]
+    if not isinstance(ranking, list) or any(
+        not isinstance(item, str) for item in ranking
+    ):
+        raise workflow.WorkflowError("The performance package ranking is invalid.")
+    candidates = _parse_candidate_markdown(
+        candidate_markdown,
+        expected_candidate_ids=ranking,
+    )
+    route = _parse_planned_route(
+        brief_text,
+        package_id=validated["package_id"],
+        goal=validated["goal"],
+        topic_slug=manifest["topic_slug"],
+    )
+    return candidates, route
+
+
+def _candidate_paragraphs(candidate_text: str) -> list[str]:
+    paragraphs: list[str] = []
+    current: list[str] = []
+    for line in candidate_text.splitlines():
+        if line.strip():
+            current.append(line)
+        elif current:
+            paragraphs.append("\n".join(current))
+            current = []
+    if current:
+        paragraphs.append("\n".join(current))
+    if not paragraphs:
+        raise workflow.WorkflowError("The performance package candidate text is invalid.")
+    return paragraphs
+
+
+def _hook_excerpt(first_paragraph: str) -> tuple[str, bool]:
+    if len(first_paragraph) <= MAX_LEARNING_HOOK_CHARS:
+        return first_paragraph, False
+    boundary = MAX_LEARNING_HOOK_CHARS
+    while boundary > MAX_LEARNING_HOOK_CHARS // 2 and not first_paragraph[
+        boundary - 1
+    ].isspace():
+        boundary -= 1
+    if boundary <= MAX_LEARNING_HOOK_CHARS // 2:
+        boundary = MAX_LEARNING_HOOK_CHARS
+    excerpt = first_paragraph[:boundary].rstrip()
+    if not excerpt:
+        raise workflow.WorkflowError("The performance package candidate hook is invalid.")
+    return excerpt, True
+
+
+def load_package_context(
+    package_id: object,
+    candidate_id: object,
+    *,
+    output_root: Path | str = workflow.DEFAULT_OUTPUTS,
+    _allow_test_output_root: bool = False,
+) -> dict[str, object]:
+    """Load a committed live package and snapshot one explicit eligible candidate."""
+
+    manifest, evaluation, documents = _load_package_documents(
+        package_id,
+        output_root=output_root,
+        _allow_test_output_root=_allow_test_output_root,
+        include_learning_documents=True,
+    )
+    context = _validate_package_context(
+        package_id,
+        candidate_id,
+        manifest=manifest,
+        evaluation=evaluation,
+    )
+    _validate_learning_snapshot(
+        manifest=manifest,
+        evaluation=evaluation,
+        validated=context,
+        documents=documents,
+    )
+    context["learning_context_fingerprint"] = _learning_context_fingerprint(
+        documents
+    )
+    return context
+
+
+def load_package_learning_context(
+    package_id: object,
+    candidate_id: object,
+    *,
+    expected_fingerprint: object,
+    output_root: Path | str = workflow.DEFAULT_OUTPUTS,
+    _allow_test_output_root: bool = False,
+) -> dict[str, object]:
+    """Return only bounded hook and structure context from one validated package read."""
+
+    if not isinstance(expected_fingerprint, str) or re.fullmatch(
+        r"[0-9a-f]{64}", expected_fingerprint
+    ) is None:
+        raise workflow.WorkflowError(
+            "The performance package learning context is not provenance-anchored."
+        )
+
+    manifest, evaluation, documents = _load_package_documents(
+        package_id,
+        output_root=output_root,
+        _allow_test_output_root=_allow_test_output_root,
+        include_learning_documents=True,
+    )
+    validated = _validate_package_context(
+        package_id,
+        candidate_id,
+        manifest=manifest,
+        evaluation=evaluation,
+    )
+    if not hmac.compare_digest(
+        expected_fingerprint, _learning_context_fingerprint(documents)
+    ):
+        raise workflow.WorkflowError(
+            "The performance package learning context no longer matches its provenance anchor."
+        )
+    candidates, route = _validate_learning_snapshot(
+        manifest=manifest,
+        evaluation=evaluation,
+        validated=validated,
+        documents=documents,
+    )
+    selected_id = str(validated["candidate_id"])
+    try:
+        angle, candidate_text = candidates[selected_id]
+    except KeyError as exc:
+        raise workflow.WorkflowError(
+            "The performance package candidate does not match its evaluation."
+        ) from exc
+    paragraphs = _candidate_paragraphs(candidate_text)
+    if len(paragraphs) > MAX_LEARNING_PARAGRAPHS:
+        raise workflow.WorkflowError(
+            "The performance package candidate has too many paragraphs for learning."
+        )
+    hook_excerpt, hook_truncated = _hook_excerpt(paragraphs[0])
+    if hook_excerpt == candidate_text or angle == candidate_text:
+        raise workflow.WorkflowError(
+            "The performance package cannot expose a privacy-bounded learning context."
+        )
+    return {
+        "package_id": validated["package_id"],
+        "candidate_id": selected_id,
+        "hook_excerpt": hook_excerpt,
+        "hook_excerpt_truncated": hook_truncated,
+        "candidate_angle": angle,
+        "structure": {
+            "planned_route": route,
+            "paragraph_count": len(paragraphs),
+        },
     }
 
 

@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
+from unittest.mock import patch
 
 from authority_os import package as approval_package
 from authority_os import performance, storage, workflow
@@ -107,13 +108,84 @@ def package_documents() -> tuple[dict[str, object], dict[str, object]]:
     return manifest, evaluation
 
 
+def markdown_literal(value: str) -> str:
+    return "\n".join(f"    {line}" for line in value.splitlines())
+
+
+def learning_markdown(
+    *,
+    candidate_texts: tuple[str, str, str] | None = None,
+    candidate_angles: tuple[str, str, str] | None = None,
+    brief_suffix: str = "",
+) -> tuple[str, str]:
+    texts = candidate_texts or (
+        (
+            "Reliability failures usually begin with a decision nobody made explicit.\n\n"
+            "The visible model error is often only the final symptom.\n\n"
+            "Teams need an evaluation boundary before they need another framework."
+        ),
+        (
+            "A polished agent demo can hide an unowned product decision.\n\n"
+            "That gap becomes expensive when the workflow meets real users."
+        ),
+        (
+            "The useful reliability question is who can stop the system.\n\n"
+            "A bounded escalation path turns that answer into product behavior."
+        ),
+    )
+    angles = candidate_angles or (
+        "Lead with the missing decision boundary.",
+        "Contrast demo quality with operational ownership.",
+        "Frame escalation as a product design choice.",
+    )
+    brief = f"""# Strategy brief
+
+- Package ID: `2026-07-16-agent-reliability`
+- Topic: `agent-reliability`
+- Strategic goal: `authority`
+- Output format: `not-selected`
+- Weekly slot: `2`
+- Narrative route: `incident-or-problem -> mechanism -> decision`
+- Strategy provenance: `explicit-input`
+- Evidence limitations: `none`
+
+## Goal purpose
+
+    Show differentiated product judgement.
+{brief_suffix}"""
+    sections: list[str] = ["# Final candidate set\n"]
+    for index, (angle, candidate_text) in enumerate(
+        zip(angles, texts, strict=True), start=1
+    ):
+        sections.append(
+            f"""## Candidate {index}: `candidate-{index}`
+
+Angle:
+
+{markdown_literal(angle)}
+
+Claim IDs: `evidence-{index}`
+
+Text:
+
+{markdown_literal(candidate_text)}
+"""
+        )
+    return brief.rstrip() + "\n", "\n".join(sections).rstrip() + "\n"
+
+
 def write_package(
     output_root: Path,
     *,
     manifest: dict[str, object] | None = None,
     evaluation: dict[str, object] | None = None,
+    brief: str | None = None,
+    candidates: str | None = None,
+    sources: str = "sources\n",
+    final_package: str = "final\n",
 ) -> Path:
     default_manifest, default_evaluation = package_documents()
+    default_brief, default_candidates = learning_markdown()
     package_dir = output_root / "2026-07-16" / "agent-reliability"
     package_dir.mkdir(parents=True, exist_ok=True)
     output_root.chmod(0o700)
@@ -122,10 +194,10 @@ def write_package(
     documents = {
         "manifest.json": json.dumps(manifest or default_manifest, sort_keys=True),
         "evaluation.json": json.dumps(evaluation or default_evaluation, sort_keys=True),
-        "brief.md": "brief\n",
-        "candidates.md": "candidates\n",
-        "sources.md": "sources\n",
-        "final-package.md": "final\n",
+        "brief.md": brief if brief is not None else default_brief,
+        "candidates.md": candidates if candidates is not None else default_candidates,
+        "sources.md": sources,
+        "final-package.md": final_package,
     }
     for filename, contents in documents.items():
         destination = package_dir / filename
@@ -153,6 +225,35 @@ class PerformancePackageTests(unittest.TestCase):
             _allow_test_output_root=True,
         )
 
+    def load_learning(
+        self,
+        candidate_id: str = "candidate-1",
+        *,
+        expected_fingerprint: object = "",
+    ) -> dict[str, object]:
+        if expected_fingerprint == "":
+            package_dir = self.root / "2026-07-16" / "agent-reliability"
+            try:
+                expected_fingerprint = performance._learning_context_fingerprint(
+                    {
+                        "brief.md": (package_dir / "brief.md").read_text(
+                            encoding="utf-8"
+                        ),
+                        "candidates.md": (package_dir / "candidates.md").read_text(
+                            encoding="utf-8"
+                        ),
+                    }
+                )
+            except OSError:
+                expected_fingerprint = "0" * 64
+        return performance.load_package_learning_context(
+            "2026-07-16-agent-reliability",
+            candidate_id,
+            expected_fingerprint=expected_fingerprint,
+            output_root=self.root,
+            _allow_test_output_root=True,
+        )
+
     def test_live_package_snapshots_recommended_and_human_override_candidates(self) -> None:
         recommended = self.load("candidate-1")
         override = self.load("candidate-2")
@@ -163,6 +264,233 @@ class PerformancePackageTests(unittest.TestCase):
         self.assertEqual(override["critic_rank"], 2)
         self.assertIs(override["was_revised"], True)
         self.assertEqual(override["critic_effective_total"], 24)
+        self.assertRegex(
+            str(recommended["learning_context_fingerprint"]),
+            r"^[0-9a-f]{64}$",
+        )
+        self.assertEqual(
+            recommended["learning_context_fingerprint"],
+            override["learning_context_fingerprint"],
+        )
+
+    def test_learning_context_returns_only_exact_bounded_hook_and_structure(self) -> None:
+        context = self.load_learning("candidate-1")
+
+        self.assertEqual(
+            context,
+            {
+                "package_id": "2026-07-16-agent-reliability",
+                "candidate_id": "candidate-1",
+                "hook_excerpt": (
+                    "Reliability failures usually begin with a decision nobody made "
+                    "explicit."
+                ),
+                "hook_excerpt_truncated": False,
+                "candidate_angle": "Lead with the missing decision boundary.",
+                "structure": {
+                    "planned_route": [
+                        "incident-or-problem",
+                        "mechanism",
+                        "decision",
+                    ],
+                    "paragraph_count": 3,
+                },
+            },
+        )
+
+    def test_learning_context_rejects_more_than_one_hundred_paragraphs(self) -> None:
+        oversized_candidate = "\n\n".join(
+            ["Decision boundary."] * 89 + ["Decision."] * 12
+        )
+        brief, candidates = learning_markdown(
+            candidate_texts=(
+                oversized_candidate,
+                "A second safe hook.\n\nA second private body.",
+                "A third safe hook.\n\nA third private body.",
+            )
+        )
+        write_package(self.root, brief=brief, candidates=candidates)
+
+        with self.assertRaisesRegex(workflow.WorkflowError, "too many paragraphs"):
+            self.load_learning()
+
+    def test_learning_context_missing_tampered_and_mismatched_markdown_fails(self) -> None:
+        package_dir = self.root / "2026-07-16" / "agent-reliability"
+        candidates_path = package_dir / "candidates.md"
+        brief_path = package_dir / "brief.md"
+
+        with self.assertRaisesRegex(workflow.WorkflowError, "not eligible"):
+            self.load_learning("candidate-3")
+        with self.assertRaisesRegex(workflow.WorkflowError, "not eligible"):
+            self.load_learning("missing-candidate")
+
+        candidates_path.unlink()
+        with self.assertRaisesRegex(workflow.WorkflowError, "inventory"):
+            self.load_learning()
+
+        write_package(self.root)
+        candidates_path.write_text(
+            candidates_path.read_text(encoding="utf-8").replace(
+                "Angle:\n", "Entry:\n", 1
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(workflow.WorkflowError, "Markdown"):
+            self.load_learning()
+
+        write_package(self.root)
+        candidates_path.write_text(
+            candidates_path.read_text(encoding="utf-8").replace(
+                "## Candidate 1: `candidate-1`",
+                "## Candidate 1: `candidate-x`",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(workflow.WorkflowError, "do not match"):
+            self.load_learning()
+
+        write_package(self.root)
+        brief_path.write_text(
+            brief_path.read_text(encoding="utf-8").replace(
+                "Strategic goal: `authority`", "Strategic goal: `reach`", 1
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(workflow.WorkflowError, "does not match"):
+            self.load_learning()
+
+        write_package(self.root)
+        brief_path.write_text(
+            brief_path.read_text(encoding="utf-8").replace(
+                "incident-or-problem -> mechanism -> decision",
+                "incident -> mechanism -> implication",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(workflow.WorkflowError, "does not match its goal"):
+            self.load()
+        with self.assertRaisesRegex(workflow.WorkflowError, "does not match its goal"):
+            self.load_learning()
+
+    def test_learning_context_requires_and_matches_the_recorded_anchor(self) -> None:
+        anchor = self.load()["learning_context_fingerprint"]
+        self.load_learning(expected_fingerprint=anchor)
+
+        with self.assertRaisesRegex(workflow.WorkflowError, "not provenance-anchored"):
+            self.load_learning(expected_fingerprint=None)
+
+        candidates_path = (
+            self.root / "2026-07-16" / "agent-reliability" / "candidates.md"
+        )
+        candidates_path.write_text(
+            candidates_path.read_text(encoding="utf-8").replace(
+                "The visible model error is often only the final symptom.",
+                "The visible workflow error is often only the final symptom.",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(workflow.WorkflowError, "provenance anchor"):
+            self.load_learning(expected_fingerprint=anchor)
+
+    def test_learning_context_never_returns_body_source_proof_or_private_path(self) -> None:
+        private_body = "PRIVATE-BODY-SENTINEL"
+        private_brief = "PRIVATE-BRIEF-SENTINEL"
+        private_source = "PRIVATE-SOURCE-SENTINEL"
+        private_proof_path = "/private/proof/PRIVATE-PATH-SENTINEL.pdf"
+        long_hook = (
+            "A concrete reliability decision should be visible before launch. "
+            + "Bounded evidence keeps the learning context useful. " * 10
+        ).strip()
+        texts = (
+            (
+                f"{long_hook}\n\n"
+                f"{private_body} remains outside the learning context."
+            ),
+            "A second safe hook.\n\nA second private body.",
+            "A third safe hook.\n\nA third private body.",
+        )
+        brief, candidates = learning_markdown(
+            candidate_texts=texts,
+            brief_suffix=f"\n\n## Private detail\n\n    {private_brief}\n",
+        )
+        write_package(
+            self.root,
+            brief=brief,
+            candidates=candidates,
+            sources=f"{private_source}\n",
+            final_package=f"Proof: {private_proof_path}\n",
+        )
+
+        context = self.load_learning()
+        serialized = json.dumps(context, sort_keys=True)
+
+        self.assertEqual(
+            set(context),
+            {
+                "package_id",
+                "candidate_id",
+                "hook_excerpt",
+                "hook_excerpt_truncated",
+                "candidate_angle",
+                "structure",
+            },
+        )
+        for sentinel in (
+            private_body,
+            private_brief,
+            private_source,
+            private_proof_path,
+        ):
+            with self.subTest(sentinel=sentinel):
+                self.assertNotIn(sentinel, serialized)
+        self.assertNotEqual(context["hook_excerpt"], texts[0])
+        self.assertIs(context["hook_excerpt_truncated"], True)
+        self.assertTrue(long_hook.startswith(str(context["hook_excerpt"])))
+        self.assertLessEqual(
+            len(str(context["hook_excerpt"])),
+            performance.MAX_LEARNING_HOOK_CHARS,
+        )
+
+    def test_learning_context_opens_each_package_file_once_and_detects_a_race(self) -> None:
+        package_filenames = set(approval_package.PACKAGE_FILES.values())
+        opened: list[str] = []
+        real_open = performance.os.open
+
+        def tracked_open(path: object, *args: object, **kwargs: object) -> int:
+            if isinstance(path, str) and path in package_filenames:
+                opened.append(path)
+            return real_open(path, *args, **kwargs)  # type: ignore[arg-type]
+
+        with patch.object(performance.os, "open", side_effect=tracked_open):
+            self.load_learning()
+        self.assertEqual(sorted(opened), sorted(package_filenames))
+
+        candidates_path = (
+            self.root / "2026-07-16" / "agent-reliability" / "candidates.md"
+        )
+        original_reader = performance._read_open_regular_file
+        changed = False
+
+        def racing_reader(descriptor: int, metadata: os.stat_result) -> str:
+            nonlocal changed
+            result = original_reader(descriptor, metadata)
+            if not changed:
+                changed = True
+                candidates_path.write_text(
+                    candidates_path.read_text(encoding="utf-8") + " ",
+                    encoding="utf-8",
+                )
+            return result
+
+        with patch.object(
+            performance,
+            "_read_open_regular_file",
+            side_effect=racing_reader,
+        ), self.assertRaisesRegex(workflow.WorkflowError, "changed while it was read"):
+            self.load_learning()
 
     def test_fixture_blocked_unknown_and_ineligible_packages_fail_closed(self) -> None:
         manifest, evaluation = package_documents()

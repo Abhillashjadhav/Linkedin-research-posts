@@ -13,8 +13,10 @@ from pathlib import Path
 
 from . import (
     __version__,
+    learning,
     package as approval_package,
     performance,
+    privacy,
     storage,
     workflow,
 )
@@ -63,6 +65,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = subparsers.add_parser("doctor", help="Check local setup without printing secrets.")
     _add_common(doctor)
+
+    subparsers.add_parser(
+        "privacy-check",
+        help="Scan tracked and prospective public files without reading ignored private data.",
+    )
 
     draft = subparsers.add_parser(
         "draft",
@@ -182,7 +189,67 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replace an existing checkpoint with an equal-or-newer complete snapshot.",
     )
     _add_common(performance_parser)
+
+    weekly = subparsers.add_parser(
+        "weekly-review",
+        help="Build a private observation-only learning report from trusted checkpoints.",
+    )
+    weekly.add_argument(
+        "--as-of",
+        type=_nonblank,
+        help="Optional whole-second timezone-aware boundary for a reproducible review.",
+    )
+    _add_common(weekly)
     return parser
+
+
+def _private_directory_plan(path: Path) -> tuple[Path, tuple[str, ...]]:
+    if path.is_absolute():
+        anchor = Path(path.anchor)
+        components = path.parts[1:]
+        # Resolve only the exact root-owned aliases exposed by macOS. Arbitrary
+        # symlinks remain invalid path components.
+        if components and components[0] in {"tmp", "var"}:
+            alias = Path(path.anchor) / components[0]
+            try:
+                metadata = os.lstat(alias)
+                target = os.readlink(alias)
+            except OSError:
+                pass
+            else:
+                if (
+                    stat.S_ISLNK(metadata.st_mode)
+                    and metadata.st_uid == 0
+                    and target == f"private/{components[0]}"
+                ):
+                    components = ("private", components[0], *components[1:])
+    else:
+        anchor = Path(".")
+        components = path.parts
+    cleaned = tuple(part for part in components if part not in {"", "."})
+    if not cleaned or any(part == ".." for part in cleaned):
+        raise workflow.WorkflowError(
+            "A private runtime directory is unavailable or unsafe."
+        )
+    return anchor, cleaned
+
+
+def _directory_identity(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+    )
+
+
+def _safe_directory_component(metadata: os.stat_result) -> bool:
+    permissions = stat.S_IMODE(metadata.st_mode)
+    return (
+        stat.S_ISDIR(metadata.st_mode)
+        and metadata.st_uid in {0, os.geteuid()}
+        and (permissions & 0o022 == 0 or permissions & stat.S_ISVTX != 0)
+    )
 
 
 def _ensure_owner_only_directory(path: Path) -> None:
@@ -192,29 +259,116 @@ def _ensure_owner_only_directory(path: Path) -> None:
             getattr(os, "O_NOFOLLOW", 0),
             hasattr(os, "geteuid"),
             hasattr(os, "fchmod"),
+            os.open in getattr(os, "supports_dir_fd", ()),
+            os.mkdir in getattr(os, "supports_dir_fd", ()),
+            os.stat in getattr(os, "supports_dir_fd", ()),
+            os.stat in getattr(os, "supports_follow_symlinks", ()),
         )
     ):
         raise workflow.WorkflowError("Secure private directory operations are unavailable.")
-    descriptor = -1
+    descriptors: list[int] = []
+    identities: list[tuple[int, ...]] = []
+    edges: list[tuple[int, str, tuple[int, ...]]] = []
     try:
-        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        anchor, components = _private_directory_plan(path)
         descriptor = os.open(
-            path,
+            anchor,
             os.O_RDONLY
             | os.O_DIRECTORY
             | os.O_NOFOLLOW
             | getattr(os, "O_CLOEXEC", 0),
         )
         metadata = os.fstat(descriptor)
-        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid():
-            raise workflow.WorkflowError("A private runtime directory is unavailable or unsafe.")
-        os.fchmod(descriptor, 0o700)
+        if not _safe_directory_component(metadata):
+            raise workflow.WorkflowError(
+                "A private runtime directory is unavailable or unsafe."
+            )
+        descriptors.append(descriptor)
+        identities.append(_directory_identity(metadata))
+        for index, component in enumerate(components):
+            parent_descriptor = descriptors[-1]
+            created = False
+            try:
+                descriptor = os.open(
+                    component,
+                    os.O_RDONLY
+                    | os.O_DIRECTORY
+                    | os.O_NOFOLLOW
+                    | getattr(os, "O_CLOEXEC", 0),
+                    dir_fd=parent_descriptor,
+                )
+            except FileNotFoundError:
+                try:
+                    os.mkdir(component, 0o700, dir_fd=parent_descriptor)
+                    created = True
+                except FileExistsError:
+                    pass
+                descriptor = os.open(
+                    component,
+                    os.O_RDONLY
+                    | os.O_DIRECTORY
+                    | os.O_NOFOLLOW
+                    | getattr(os, "O_CLOEXEC", 0),
+                    dir_fd=parent_descriptor,
+                )
+            descriptors.append(descriptor)
+            metadata = os.fstat(descriptor)
+            is_final = index == len(components) - 1
+            if is_final:
+                if (
+                    not stat.S_ISDIR(metadata.st_mode)
+                    or metadata.st_uid != os.geteuid()
+                ):
+                    raise workflow.WorkflowError(
+                        "A private runtime directory is unavailable or unsafe."
+                    )
+                os.fchmod(descriptor, 0o700)
+                metadata = os.fstat(descriptor)
+            elif not _safe_directory_component(metadata):
+                raise workflow.WorkflowError(
+                    "A private runtime directory is unavailable or unsafe."
+                )
+            if created and metadata.st_uid != os.geteuid():
+                raise workflow.WorkflowError(
+                    "A private runtime directory is unavailable or unsafe."
+                )
+            identity = _directory_identity(metadata)
+            current = os.stat(
+                component,
+                dir_fd=parent_descriptor,
+                follow_symlinks=False,
+            )
+            if _directory_identity(current) != identity:
+                raise workflow.WorkflowError(
+                    "A private runtime directory is unavailable or unsafe."
+                )
+            identities.append(identity)
+            edges.append((parent_descriptor, component, identity))
+
+        if (
+            _directory_identity(os.stat(anchor, follow_symlinks=False))
+            != identities[0]
+            or any(
+                _directory_identity(os.fstat(opened)) != expected
+                for opened, expected in zip(descriptors, identities, strict=True)
+            )
+            or any(
+                _directory_identity(
+                    os.stat(name, dir_fd=parent, follow_symlinks=False)
+                )
+                != expected
+                for parent, name, expected in edges
+            )
+        ):
+            raise workflow.WorkflowError(
+                "A private runtime directory is unavailable or unsafe."
+            )
     except OSError as exc:
         raise workflow.WorkflowError(
             "A private runtime directory is unavailable or unsafe."
         ) from exc
     finally:
-        if descriptor >= 0:
+        for descriptor in reversed(descriptors):
             os.close(descriptor)
 
 
@@ -231,10 +385,42 @@ def command_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_privacy_check(_args: argparse.Namespace) -> int:
+    findings = privacy.scan_repository(workflow.REPO_ROOT)
+    if findings:
+        for finding in findings:
+            print(f"PRIVACY FAIL: {finding}", file=sys.stderr)
+        return 1
+    print(
+        "Privacy check passed: ignored private data was not read; no tracked secret, "
+        "schedule, database, browser, or LinkedIn write surface was found."
+    )
+    return 0
+
+
 def command_doctor(args: argparse.Namespace) -> int:
+    secure_posix = bool(
+        all(
+            (
+                getattr(os, "O_DIRECTORY", 0),
+                getattr(os, "O_NOFOLLOW", 0),
+                getattr(os, "O_NONBLOCK", 0),
+                hasattr(os, "geteuid"),
+                hasattr(os, "fchmod"),
+            )
+        )
+    )
     checks: list[tuple[str, bool, str]] = [
         ("Python 3.11+", sys.version_info >= (3, 11), sys.version.split()[0]),
+        ("secure POSIX filesystem", secure_posix, "available" if secure_posix else "unavailable"),
     ]
+    entrypoint = workflow.REPO_ROOT / "bin/linkedin-os"
+    try:
+        metadata = entrypoint.lstat()
+        entrypoint_ok = stat.S_ISREG(metadata.st_mode) and os.access(entrypoint, os.X_OK)
+    except OSError:
+        entrypoint_ok = False
+    checks.append(("single CLI entry point", entrypoint_ok, "executable" if entrypoint_ok else "unavailable"))
     for relative in (
         "data/voice/voice-guide.md",
         "data/voice/abhillash-best-posts.md",
@@ -243,26 +429,68 @@ def command_doctor(args: argparse.Namespace) -> int:
         "data/samples/synthetic-proof.md",
     ):
         path = workflow.REPO_ROOT / relative
-        checks.append((relative, path.exists() and path.stat().st_size > 0, "present"))
-    required_ignores = {
-        "data/private/**",
-        "*.sqlite",
-        "*.db",
-        ".env",
-        ".env.*",
-        "outputs/**",
-        "!outputs/.gitkeep",
-        ".agents/",
-    }
-    ignore_file = workflow.REPO_ROOT / ".gitignore"
-    ignore_lines = set(ignore_file.read_text(encoding="utf-8").splitlines())
-    checks.append(("privacy ignore rules", required_ignores <= ignore_lines, "configured"))
+        try:
+            metadata = path.lstat()
+            present = stat.S_ISREG(metadata.st_mode) and metadata.st_size > 0
+        except OSError:
+            present = False
+        checks.append((relative, present, "present" if present else "unavailable"))
     try:
-        initialise_paths(args.db)
-        checks.append(("private research and performance ledger", True, "ready"))
-    except Exception:
-        checks.append(("private research and performance ledger", False, "unavailable"))
+        privacy_findings = privacy.scan_repository(workflow.REPO_ROOT)
+        privacy_ok = not privacy_findings
+        ignores_ok = not any(
+            finding.startswith(".gitignore:") for finding in privacy_findings
+        )
+    except (ValueError, OSError):
+        privacy_ok = False
+        ignores_ok = False
+    checks.append(
+        (
+            "privacy ignore rules",
+            ignores_ok,
+            "configured" if ignores_ok else "unavailable",
+        )
+    )
+    try:
+        storage.inspect_database_health(args.db)
+        database_ok = True
+    except (ValueError, sqlite3.Error, OSError):
+        database_ok = False
+    checks.append(
+        (
+            "private research and performance ledger",
+            database_ok,
+            "ready" if database_ok else "run init",
+        )
+    )
+    checks.append(
+        (
+            "repository privacy scan",
+            privacy_ok,
+            "passed" if privacy_ok else "run privacy-check",
+        )
+    )
     checks.append(("optional Claude CLI", shutil.which("claude") is not None, "optional"))
+
+    forbidden_actions = {
+        "publish",
+        "schedule",
+        "approve",
+        "message",
+        "comment",
+        "post",
+        "send",
+    }
+    no_external_action = all(
+        forbidden_actions.isdisjoint(command.split("-")) for command in COMMANDS
+    )
+    checks.append(
+        (
+            "LinkedIn publishing command",
+            no_external_action,
+            "absent" if no_external_action else "unsafe",
+        )
+    )
 
     failures: list[str] = []
     for name, passed, detail in checks:
@@ -271,7 +499,6 @@ def command_doctor(args: argparse.Namespace) -> int:
         if not passed and name != "optional Claude CLI":
             failures.append(name)
     print("[OK] credential handling: values were not inspected or printed")
-    print("[OK] LinkedIn publishing: no command exists")
     return 1 if failures else 0
 
 
@@ -669,6 +896,69 @@ def command_record_performance(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_weekly_review(args: argparse.Namespace) -> int:
+    try:
+        rows = storage.list_performance_readonly(args.db)
+    except ValueError as exc:
+        raise workflow.WorkflowError(
+            "Weekly review needs a current private ledger; run init first."
+        ) from exc
+    as_of = args.as_of or workflow.now_iso()
+    candidate_contexts: dict[tuple[str, str], dict[str, object]] = {}
+    for package_id, candidate_id, fingerprint in (
+        learning.winning_candidate_context_requests(rows, as_of=as_of)
+    ):
+        key = (package_id, candidate_id)
+        try:
+            candidate_contexts[key] = performance.load_package_learning_context(
+                package_id,
+                candidate_id,
+                expected_fingerprint=fingerprint,
+            )
+        except workflow.WorkflowError:
+            # Performance evidence remains usable when its private package is
+            # unavailable, changed, or outside the bounded learning contract;
+            # the report records an explicit context gap.
+            continue
+    generated = learning.write_weekly_review(
+        rows,
+        as_of=as_of,
+        candidate_contexts=candidate_contexts,
+    )
+    report = generated.get("report")
+    report_path = generated.get("path")
+    if not isinstance(report, dict) or not isinstance(report_path, Path):
+        raise workflow.WorkflowError("Weekly review returned an invalid result.")
+    try:
+        relative = report_path.relative_to(workflow.REPO_ROOT).as_posix()
+    except ValueError as exc:
+        raise workflow.WorkflowError(
+            "Weekly review path escaped the private repository boundary."
+        ) from exc
+    basis = report.get("basis")
+    calibration = report.get("rubric_calibration")
+    safety = report.get("safety")
+    if not all(isinstance(value, dict) for value in (basis, calibration, safety)):
+        raise workflow.WorkflowError("Weekly review returned an invalid result.")
+    recommendations = calibration.get("recommendations")  # type: ignore[union-attr]
+    if not isinstance(recommendations, list):
+        raise workflow.WorkflowError("Weekly review returned an invalid result.")
+    print(f"Private weekly review: {relative}")
+    print(
+        "Learning evidence: "
+        f"organic_72h={basis['canonical_posts']}; "  # type: ignore[index]
+        f"late_72h_excluded={basis['late_organic_72h_observations_excluded']}; "  # type: ignore[index]
+        f"organic_7d_followup={basis['organic_7d_followups']}; "  # type: ignore[index]
+        f"paid_descriptive={basis['paid_descriptive_observations']}; "  # type: ignore[index]
+        f"package_contexts={len(candidate_contexts)}."
+    )
+    print(
+        f"Rubric review suggestions: {len(recommendations)}; rubric_mutated=no."
+    )
+    print("Publishing status: DISABLED. No LinkedIn action was taken.")
+    return 0
+
+
 def command_research(args: argparse.Namespace) -> int:
     if args.dry_run and args.input:
         raise workflow.WorkflowError("Choose either --dry-run or --input, not both.")
@@ -739,9 +1029,11 @@ def command_research(args: argparse.Namespace) -> int:
 COMMANDS = {
     "init": command_init,
     "doctor": command_doctor,
+    "privacy-check": command_privacy_check,
     "draft": command_draft,
     "research": command_research,
     "record-performance": command_record_performance,
+    "weekly-review": command_weekly_review,
 }
 
 
