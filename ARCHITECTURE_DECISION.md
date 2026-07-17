@@ -2,7 +2,7 @@
 
 Status: **accepted**
 
-LinkedIn Authority OS starts with one fixed `linkedin-os` entry point and a standard-library runtime. It supports idempotent local setup, secret-safe diagnostics, deterministic fixture analysis, stateless strategic routing, a narrow voice-grounded Writer boundary, a score-only Critic boundary, deterministic local authority/safety gates, and explicit local human-review package generation. Ordinary drafting stops after gating; `draft --package` adds a bounded local output without approval or publishing authority.
+LinkedIn Authority OS starts with one fixed `linkedin-os` entry point and a standard-library runtime. It supports idempotent local setup, secret-safe diagnostics, deterministic fixture analysis, stateless strategic routing, a narrow voice-grounded Writer boundary, a score-only Critic boundary, deterministic local authority/safety gates, explicit local human-review package generation, and package-linked manual performance recording. Ordinary drafting stops after gating; `draft --package` adds a bounded local output without approval or publishing authority.
 
 ## Current boundary
 
@@ -11,7 +11,7 @@ LinkedIn Authority OS starts with one fixed `linkedin-os` entry point and a stan
 - `src/authority_os/__main__.py` owns fixed command routing.
 - `src/authority_os/workflow.py` owns the synthetic fixture contract.
 - Private state and generated outputs are ignored from Git.
-- `src/authority_os/storage.py` owns one ignored SQLite research table with direct parameterized queries and fail-closed synthetic/private evidence provenance; no ORM or migration framework is needed.
+- `src/authority_os/storage.py` owns the ignored SQLite research, published-candidate snapshot, and channel-separated observation tables with direct parameterized queries and fail-closed migrations; no ORM or migration framework is needed.
 - Research import validates public URLs and source quality, then deduplicates by canonical URL and normalized content hash without fetching.
 - `workflow.py` performs deterministic two-pass analysis in place: metadata clustering followed by strongest-body interpretation and stale comparison. A separate analytics service, embedding index, or clustering dependency is not justified.
 - The same module routes analysis plus explicit reader/decision inputs to Reach, Authority, or Opportunity, carries primary-source and input provenance, reports evidence limitations, and implements the four-post weekly mix. Goal and format are independent values; optional slot 5 requires an explicit human assertion of a strong incident or launch. A calendar, scheduler, routing service, or weekly-history table is not justified.
@@ -23,6 +23,8 @@ LinkedIn Authority OS starts with one fixed `linkedin-os` entry point and a stan
 - The model-facing Critic prompt is derived only from the recovered scoring rubric. It excludes authority, proof, honesty, citation, and relevance policy. Python applies those five gates afterward with exact statuses and static reason codes. It validates proof with descriptor-anchored traversal to a distinct local non-empty regular file, uses exact personal/ownership attestations, checks high-risk factual markers per cited record, and always requires human fact verification. Gate evaluation never changes Critic ranking.
 - `src/authority_os/package.py` is the one package boundary. It revalidates Critic output, recomputes gates, and recommends the first ranked live candidate that both has the `advance-to-gates` band and passes every required gate. Fixture recommendations are suppressed and an empty eligible set becomes a useful `BLOCKED` package.
 - Package output has one schema and six fixed files under ignored `outputs/`. A private descriptor-relative stage, fixed-root validation, query-free public source projection, restrictive modes, fsync, a per-date lock, exclusive directory reservation, no-clobber hard links, and a manifest-last commit marker are sufficient; a template engine, object store, package service, or approval database is not justified.
+- `src/authority_os/performance.py` resolves only canonical package IDs under the fixed output root, reconstructs eligibility from strict Critic/gate records, snapshots package creation plus an explicitly selected eligible candidate after an external manual publication assertion, and validates strict direct or private-CSV checkpoint inputs. Descriptor-opened owner-only files, whole-second timestamps, and no-follow private database creation preserve the local provenance boundary. Paid and organic observations use separate keys. Existing observations are immutable unless a complete equal-or-newer correction is explicit; no analytics service or event pipeline is justified.
+- Recovered free-form performance rows cannot prove which package or candidate was published. The migration preserves an exact legacy table as `legacy_performance_unverified` but never promotes it into learning evidence.
 - `human_approval_status` remains `NOT_APPROVED`, `publishing_status` remains `DISABLED`, and manual fact verification remains required in every package. Neither a Critic score, gate pass, nor recommendation is approval.
 - There is no network research fetch, scheduler, browser automation, LinkedIn write surface, or automatic publishing in this snapshot.
 

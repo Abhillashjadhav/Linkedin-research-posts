@@ -1,6 +1,6 @@
 # LinkedIn Authority OS v6
 
-This repository preserves the evidence-backed role, voice, and rubric assets recovered for LinkedIn Authority OS v6 and provides a deliberately small research, analysis, strategic-routing, voice-grounded drafting, Critic-scoring, deterministic safety-gate, and local human-review-package runtime.
+This repository preserves the evidence-backed role, voice, and rubric assets recovered for LinkedIn Authority OS v6 and provides a deliberately small research, analysis, strategic-routing, voice-grounded drafting, Critic-scoring, deterministic safety-gate, local human-review-package, and manual performance-recording runtime.
 
 The intended workflow boundary is Scout → Analyst → Writer → Critic → human approval. Historical Gmail ingestion, authenticated browser analytics, schedulers, messaging, and publishing-adjacent components are deliberately excluded.
 
@@ -124,6 +124,41 @@ Packages live under ignored `outputs/YYYY-MM-DD/<topic-slug>[-N]/` and contain e
 - `final-package.md` — the recommendation or blocked/fixture explanation plus a human verification checklist.
 
 The runtime atomically reserves a new topic directory under a per-date lock, renders all six files in a private hidden directory, and publishes each completed file with a no-clobber hard link. `manifest.json` is published last and is the commit marker. Existing entries are never replaced; suffixes preserve prior packages even when another local writer claims a name concurrently. Directories use mode `0700` and files `0600`. Raw evidence bodies/claims, source queries, proof paths and artifact contents are excluded. A hidden `.stage-*` directory, or a topic directory without `manifest.json`, is incomplete internal state and must never be consumed as a package.
+
+## Manual performance recording
+
+After a human independently verifies, approves, and publishes an eligible live candidate, record a private checkpoint with the package ID printed by `draft --package`:
+
+```sh
+./bin/linkedin-os record-performance \
+  --package-id 2026-07-16-agent-reliability \
+  --candidate candidate-1 \
+  --manually-published-at 2026-07-16T09:00:00+05:30 \
+  --checkpoint 24h --channel organic \
+  --observed-at 2026-07-17T09:15:00+05:30 \
+  --impressions 1000 --profile-visits 30 --relevant-followers 8 \
+  --saves 12 --sends 5 --reposts 2 \
+  --confirm-manual-publication
+```
+
+The command accepts only a committed `live` package in `READY_FOR_HUMAN_REVIEW` state and an explicitly named eligible candidate. It does not infer the candidate from the recommendation. The package remains byte-for-byte unchanged with `human_approval_status=NOT_APPROVED` and `publishing_status=DISABLED`; the timestamp and confirmation flag assert that a separate human-controlled publication already happened. Publication cannot predate package creation.
+
+Checkpoints are `2h`, `24h`, `72h`, and optional `7d`. Their observation windows are `[2h,24h)`, `[24h,72h)`, `[72h,7d)`, and `[7d,∞)`. All timestamps must be timezone-aware and use whole-second precision. Paid and organic rows have separate keys and are never combined; a missing paid row means unobserved, not zero. The ledger keeps impressions, non-follower reach, external comments, reactions, reposts, saves, sends, profile visits, relevant followers, GitHub/tool clicks, and recruiter, founder/advisor, and speaking/podcast inbound counts.
+
+Omitted direct-entry metrics default to zero only for a new checkpoint. A differing existing checkpoint fails unless `--replace` is explicit; replacement requires all thirteen metrics and cannot use an older observation timestamp. Exact repeats are idempotent. Exact-schema CSV batches under `data/private/` are supported with `--csv` and validated completely before one transaction, so one bad or duplicate row writes nothing. The required header order is:
+
+```text
+package_id,candidate_id,published_at,checkpoint,channel,observed_at,impressions,non_follower_reach,external_comments,reactions,reposts,saves,sends,profile_visits,relevant_followers,github_clicks,recruiter_inbound,founder_advisor_inbound,speaking_podcast_inbound
+```
+
+Run `./bin/linkedin-os init` before the first import. Private input directories and files are deliberately owner-only; if a CSV was created by another editor or in a nested directory, enforce that boundary before import:
+
+```sh
+chmod 700 data/private
+chmod 600 data/private/performance.csv
+./bin/linkedin-os record-performance --csv data/private/performance.csv \
+  --confirm-manual-publication
+```
 
 Private JSON, JSONL, and NDJSON imports belong under ignored `data/private/`:
 

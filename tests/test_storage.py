@@ -22,6 +22,45 @@ def item(url: str, *, title: str = "Reliability note", body: str = "Stable body"
     }
 
 
+def performance_record(
+    *,
+    channel: str = "organic",
+    checkpoint: str = "24h",
+    observed_at: str = "2026-07-17T12:00:00Z",
+    impressions: int = 1_000,
+) -> dict[str, object]:
+    return {
+        "package_id": "2026-07-16-agent-reliability",
+        "candidate_id": "candidate-1",
+        "package_created_at": "2026-07-16T00:00:00Z",
+        "published_at": "2026-07-16T00:00:00Z",
+        "goal": "authority",
+        "output_format": None,
+        "weekly_slot": 2,
+        "revision_count": 0,
+        "was_revised": False,
+        "hook_strength": 5,
+        "middle_escalation": 5,
+        "earned_closer": 5,
+        "specificity_and_source_quality": 5,
+        "voice_fidelity": 5,
+        "critic_raw_total": 25,
+        "critic_effective_total": 25,
+        "critic_hook_cap_applied": False,
+        "critic_band": "advance-to-gates",
+        "critic_rank": 1,
+        "is_recommended": True,
+        "checkpoint": checkpoint,
+        "channel": channel,
+        "observed_at": observed_at,
+        **{
+            metric: impressions if metric == "impressions" else index
+            for index, metric in enumerate(storage.PERFORMANCE_METRICS)
+        },
+        "recorded_at": "2026-07-25T00:00:00Z",
+    }
+
+
 class ResearchStorageTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -41,9 +80,12 @@ class ResearchStorageTests(unittest.TestCase):
                 row[1] for row in connection.execute("PRAGMA table_info(research_items)")
             }
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(tables, {"research_items"})
+        self.assertEqual(
+            tables,
+            {"research_items", "published_posts", "performance_observations"},
+        )
         self.assertIn("evidence_origin", columns)
-        self.assertEqual(version, 2)
+        self.assertEqual(version, 3)
 
     def test_v1_rows_are_quarantined_until_exact_private_reimport(self) -> None:
         legacy = Path(self.temporary.name) / "legacy.sqlite"
@@ -429,6 +471,233 @@ class ResearchStorageTests(unittest.TestCase):
                 self.assertEqual(
                     analysis["pass_2"]["selected"]["slug"], expected_slug
                 )
+
+
+class PerformanceStorageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.database = Path(self.temporary.name) / "private" / "authority.sqlite"
+        storage.initialise(self.database)
+
+    def test_all_metrics_round_trip_and_channels_remain_separate(self) -> None:
+        organic = performance_record(channel="organic", impressions=1_000)
+        paid = performance_record(channel="paid", impressions=250)
+        result = storage.record_performance_many(self.database, [organic, paid])
+        self.assertEqual(result, {"inserted": 2, "replaced": 0, "unchanged": 0})
+        rows = storage.list_performance(self.database)
+        by_channel = {str(row["channel"]): row for row in rows}
+        self.assertEqual(set(by_channel), {"organic", "paid"})
+        self.assertEqual(by_channel["organic"]["impressions"], 1_000)
+        self.assertEqual(by_channel["paid"]["impressions"], 250)
+        for metric in storage.PERFORMANCE_METRICS:
+            self.assertIn(metric, by_channel["organic"])
+
+    def test_idempotence_explicit_replace_and_older_snapshot_guard(self) -> None:
+        original = performance_record()
+        first = storage.record_performance(self.database, original)
+        repeated = storage.record_performance(self.database, original)
+        self.assertEqual(first["inserted"], 1)
+        self.assertEqual(repeated["unchanged"], 1)
+
+        corrected = dict(original, impressions=1_200)
+        with self.assertRaisesRegex(ValueError, "--replace"):
+            storage.record_performance(self.database, corrected)
+        replaced = storage.record_performance(
+            self.database, corrected, replace=True
+        )
+        self.assertEqual(replaced["replaced"], 1)
+        self.assertEqual(
+            storage.list_performance(self.database)[0]["impressions"], 1_200
+        )
+
+        older = dict(
+            corrected,
+            observed_at="2026-07-17T10:00:00Z",
+            impressions=1_300,
+        )
+        with self.assertRaisesRegex(ValueError, "older"):
+            storage.record_performance(self.database, older, replace=True)
+        self.assertEqual(
+            storage.list_performance(self.database)[0]["impressions"], 1_200
+        )
+
+    def test_organic_replacement_never_changes_paid(self) -> None:
+        organic = performance_record(channel="organic", impressions=1_000)
+        paid = performance_record(channel="paid", impressions=250)
+        storage.record_performance_many(self.database, [organic, paid])
+        storage.record_performance(
+            self.database,
+            dict(organic, impressions=1_500),
+            replace=True,
+        )
+        rows = storage.list_performance(self.database)
+        by_channel = {str(row["channel"]): row for row in rows}
+        self.assertEqual(by_channel["organic"]["impressions"], 1_500)
+        self.assertEqual(by_channel["paid"]["impressions"], 250)
+
+    def test_publication_context_is_immutable_and_batches_are_atomic(self) -> None:
+        organic = performance_record(channel="organic")
+        conflicting = performance_record(
+            channel="paid",
+            impressions=100,
+        )
+        conflicting["candidate_id"] = "candidate-2"
+        with self.assertRaisesRegex(ValueError, "immutable publication context"):
+            storage.record_performance_many(
+                self.database,
+                [organic, conflicting],
+            )
+        self.assertEqual(storage.list_performance(self.database), [])
+        with closing(sqlite3.connect(self.database)) as connection:
+            posts = connection.execute("SELECT count(*) FROM published_posts").fetchone()[0]
+        self.assertEqual(posts, 0)
+
+    def test_v2_legacy_performance_table_is_quarantined_without_data_loss(self) -> None:
+        database = Path(self.temporary.name) / "legacy-performance.sqlite"
+        metrics_sql = ",\n".join(
+            f"{metric} INTEGER NOT NULL" for metric in storage.PERFORMANCE_METRICS
+        )
+        with closing(sqlite3.connect(database)) as connection, connection:
+            connection.executescript(
+                f"""
+                CREATE TABLE research_items (
+                    id INTEGER PRIMARY KEY,
+                    canonical_url TEXT NOT NULL UNIQUE,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    author TEXT NOT NULL DEFAULT '',
+                    published_at TEXT NOT NULL,
+                    source_quality TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE,
+                    fetched_at TEXT NOT NULL,
+                    evidence_origin TEXT NOT NULL
+                );
+                CREATE TABLE performance (
+                    id INTEGER PRIMARY KEY,
+                    post_id TEXT NOT NULL,
+                    checkpoint TEXT NOT NULL,
+                    channel TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    {metrics_sql}
+                );
+                PRAGMA user_version = 2;
+                """
+            )
+            columns = (
+                "post_id",
+                "checkpoint",
+                "channel",
+                "observed_at",
+                *storage.PERFORMANCE_METRICS,
+            )
+            connection.execute(
+                f"INSERT INTO performance ({', '.join(columns)}) "
+                f"VALUES ({', '.join('?' for _ in columns)})",
+                ("legacy-post", "24h", "organic", "2026-07-16T00:00:00Z", *range(13)),
+            )
+
+        storage.initialise(database)
+        with closing(sqlite3.connect(database)) as connection:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            legacy_row = connection.execute(
+                "SELECT * FROM legacy_performance_unverified"
+            ).fetchone()
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+        self.assertNotIn("performance", tables)
+        self.assertIn("legacy_performance_unverified", tables)
+        self.assertEqual(legacy_row[1], "legacy-post")
+        self.assertEqual(tuple(legacy_row[5:]), tuple(range(13)))
+        self.assertEqual(version, 3)
+
+    def test_unrecognized_legacy_schema_rolls_back_migration(self) -> None:
+        database = Path(self.temporary.name) / "bad-legacy.sqlite"
+        with closing(sqlite3.connect(database)) as connection, connection:
+            connection.executescript(
+                """
+                CREATE TABLE research_items (
+                    id INTEGER PRIMARY KEY,
+                    canonical_url TEXT NOT NULL UNIQUE,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    author TEXT NOT NULL DEFAULT '',
+                    published_at TEXT NOT NULL,
+                    source_quality TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE,
+                    fetched_at TEXT NOT NULL,
+                    evidence_origin TEXT NOT NULL
+                );
+                CREATE TABLE performance (id INTEGER PRIMARY KEY, surprise TEXT);
+                PRAGMA user_version = 2;
+                """
+            )
+        with self.assertRaisesRegex(ValueError, "unrecognized"):
+            storage.initialise(database)
+        with closing(sqlite3.connect(database)) as connection:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(tables, {"research_items", "performance"})
+        self.assertEqual(version, 2)
+
+    def test_reserved_performance_table_collisions_fail_closed(self) -> None:
+        for table_name in ("published_posts", "performance_observations"):
+            with self.subTest(table_name=table_name):
+                database = Path(self.temporary.name) / f"bad-{table_name}.sqlite"
+                with closing(sqlite3.connect(database)) as connection, connection:
+                    connection.execute(
+                        f"CREATE TABLE {table_name} (surprise TEXT)"
+                    )
+                    connection.execute("PRAGMA user_version = 2")
+                with self.assertRaisesRegex(ValueError, "Reserved performance table"):
+                    storage.initialise(database)
+                with closing(sqlite3.connect(database)) as connection:
+                    columns = [
+                        row[1]
+                        for row in connection.execute(
+                            f"PRAGMA table_info({table_name})"
+                        )
+                    ]
+                    version = connection.execute("PRAGMA user_version").fetchone()[0]
+                self.assertEqual(columns, ["surprise"])
+                self.assertEqual(version, 2)
+
+    def test_new_private_ledger_uses_private_directory_and_file_modes(self) -> None:
+        private_database = Path(self.temporary.name) / "new-private" / "ledger.sqlite"
+        storage.initialise(private_database)
+        self.assertEqual(private_database.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(private_database.stat().st_mode & 0o777, 0o600)
+
+    def test_symlinked_database_is_rejected_without_touching_target(self) -> None:
+        target = Path(self.temporary.name) / "outside.txt"
+        target.write_bytes(b"do-not-touch")
+        target.chmod(0o644)
+        database = Path(self.temporary.name) / "linked.sqlite"
+        database.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, "unsafe"):
+            storage.initialise(database)
+        self.assertEqual(target.read_bytes(), b"do-not-touch")
+        self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+
+    def test_shared_writable_database_parent_is_rejected(self) -> None:
+        shared = Path(self.temporary.name) / "shared"
+        shared.mkdir(mode=0o777)
+        shared.chmod(0o777)
+        database = shared / "ledger.sqlite"
+        with self.assertRaisesRegex(ValueError, "group/world-writable"):
+            storage.initialise(database)
+        self.assertFalse(database.exists())
 
 
 if __name__ == "__main__":

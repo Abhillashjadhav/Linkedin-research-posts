@@ -4,12 +4,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sqlite3
+import stat
 import sys
 from pathlib import Path
 
-from . import __version__, package as approval_package, storage, workflow
+from . import (
+    __version__,
+    package as approval_package,
+    performance,
+    storage,
+    workflow,
+)
 
 
 def _path(value: str) -> Path:
@@ -29,8 +37,17 @@ def _nonblank(value: str) -> str:
     return cleaned
 
 
+def _metric(value: str) -> int:
+    try:
+        return performance.parse_metric(value, field="value")
+    except workflow.WorkflowError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def _add_common(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--db", type=_path, default=workflow.DEFAULT_DB, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--db", type=_unresolved_path, default=workflow.DEFAULT_DB, help=argparse.SUPPRESS
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -117,18 +134,99 @@ def build_parser() -> argparse.ArgumentParser:
     )
     research.add_argument("--dry-run", action="store_true", help="Use the offline safe fixture.")
     _add_common(research)
+
+    performance_parser = subparsers.add_parser(
+        "record-performance",
+        help="Record a manually published candidate's paid or organic checkpoint.",
+    )
+    performance_parser.add_argument(
+        "--csv",
+        type=_unresolved_path,
+        help="Owner-only exact-schema CSV batch under data/private.",
+    )
+    performance_parser.add_argument(
+        "--package-id",
+        type=_nonblank,
+        help="Committed live package ID printed by draft --package.",
+    )
+    performance_parser.add_argument(
+        "--candidate",
+        type=_nonblank,
+        help="Eligible candidate that a human actually published.",
+    )
+    performance_parser.add_argument(
+        "--manually-published-at",
+        help="Whole-second timezone-aware timestamp of the external manual publication.",
+    )
+    performance_parser.add_argument(
+        "--checkpoint", choices=storage.PERFORMANCE_CHECKPOINTS
+    )
+    performance_parser.add_argument("--channel", choices=storage.PERFORMANCE_CHANNELS)
+    performance_parser.add_argument(
+        "--observed-at", help="Whole-second timezone-aware timestamp of the metric snapshot."
+    )
+    for metric in storage.PERFORMANCE_METRICS:
+        performance_parser.add_argument(
+            f"--{metric.replace('_', '-')}",
+            type=_metric,
+            default=None,
+        )
+    performance_parser.add_argument(
+        "--confirm-manual-publication",
+        action="store_true",
+        help="Assert that publication already happened outside this runtime.",
+    )
+    performance_parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="Replace an existing checkpoint with an equal-or-newer complete snapshot.",
+    )
+    _add_common(performance_parser)
     return parser
 
 
+def _ensure_owner_only_directory(path: Path) -> None:
+    if not all(
+        (
+            getattr(os, "O_DIRECTORY", 0),
+            getattr(os, "O_NOFOLLOW", 0),
+            hasattr(os, "geteuid"),
+            hasattr(os, "fchmod"),
+        )
+    ):
+        raise workflow.WorkflowError("Secure private directory operations are unavailable.")
+    descriptor = -1
+    try:
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        descriptor = os.open(
+            path,
+            os.O_RDONLY
+            | os.O_DIRECTORY
+            | os.O_NOFOLLOW
+            | getattr(os, "O_CLOEXEC", 0),
+        )
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid():
+            raise workflow.WorkflowError("A private runtime directory is unavailable or unsafe.")
+        os.fchmod(descriptor, 0o700)
+    except OSError as exc:
+        raise workflow.WorkflowError(
+            "A private runtime directory is unavailable or unsafe."
+        ) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def initialise_paths(db_path: Path) -> None:
-    workflow.DEFAULT_OUTPUTS.mkdir(parents=True, exist_ok=True)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_owner_only_directory(workflow.DEFAULT_OUTPUTS)
+    _ensure_owner_only_directory(workflow.DEFAULT_PRIVATE_DATA)
     storage.initialise(db_path)
 
 
 def command_init(args: argparse.Namespace) -> int:
     initialise_paths(args.db)
-    print(f"Initialised private research database: {args.db}")
+    print(f"Initialised private Authority OS database: {args.db}")
     print("Publishing remains disabled.")
     return 0
 
@@ -161,9 +259,9 @@ def command_doctor(args: argparse.Namespace) -> int:
     checks.append(("privacy ignore rules", required_ignores <= ignore_lines, "configured"))
     try:
         initialise_paths(args.db)
-        checks.append(("private research ledger", True, "ready"))
+        checks.append(("private research and performance ledger", True, "ready"))
     except Exception:
-        checks.append(("private research ledger", False, "unavailable"))
+        checks.append(("private research and performance ledger", False, "unavailable"))
     checks.append(("optional Claude CLI", shutil.which("claude") is not None, "optional"))
 
     failures: list[str] = []
@@ -476,6 +574,10 @@ def command_draft(args: argparse.Namespace) -> int:
         "A gate pass alone is not approval, recommendation, scheduling, or permission to publish."
     )
     print(f"Content package: {display_path}")
+    if manifest["mode"] == "live" and manifest["review_status"] == "READY_FOR_HUMAN_REVIEW":
+        print(f"Performance package ID: {manifest['package_id']}")
+    else:
+        print("Performance recording: unavailable for this review-only or blocked package.")
     recommended_id = manifest["recommended_candidate_id"]
     if recommended_id is None and manifest["mode"] == "fixture":
         print("Recommendation: none; synthetic fixture output is review-only.")
@@ -486,6 +588,84 @@ def command_draft(args: argparse.Namespace) -> int:
     print(f"Review status: {manifest['review_status']}.")
     print("Human approval status: NOT_APPROVED; manual fact verification required.")
     print("Publishing status: DISABLED. No LinkedIn action was taken.")
+    return 0
+
+
+def command_record_performance(args: argparse.Namespace) -> int:
+    if not bool(args.confirm_manual_publication):
+        raise workflow.WorkflowError(
+            "Performance recording requires --confirm-manual-publication after a human publishes externally."
+        )
+    direct_fields = (
+        "package_id",
+        "candidate",
+        "manually_published_at",
+        "checkpoint",
+        "channel",
+        "observed_at",
+        *storage.PERFORMANCE_METRICS,
+    )
+    recorded_at = workflow.now_iso()
+    if args.csv is not None:
+        if any(getattr(args, field, None) is not None for field in direct_fields):
+            raise workflow.WorkflowError(
+                "Use either --csv or direct performance fields, not both."
+            )
+        records = performance.load_csv_records(
+            args.csv,
+            recorded_at=recorded_at,
+        )
+    else:
+        required = {
+            "--package-id": args.package_id,
+            "--candidate": args.candidate,
+            "--manually-published-at": args.manually_published_at,
+            "--checkpoint": args.checkpoint,
+            "--channel": args.channel,
+            "--observed-at": args.observed_at,
+        }
+        if any(value is None for value in required.values()):
+            raise workflow.WorkflowError(
+                "Direct performance recording requires --package-id, --candidate, "
+                "--manually-published-at, --checkpoint, --channel, and --observed-at."
+            )
+        if args.replace and any(
+            getattr(args, metric) is None for metric in storage.PERFORMANCE_METRICS
+        ):
+            raise workflow.WorkflowError(
+                "--replace requires every performance metric for a complete correction."
+            )
+        context = performance.load_package_context(args.package_id, args.candidate)
+        records = [
+            performance.prepare_record(
+                context,
+                published_at=args.manually_published_at,
+                checkpoint=args.checkpoint,
+                channel=args.channel,
+                observed_at=args.observed_at,
+                metrics={
+                    metric: (
+                        getattr(args, metric)
+                        if getattr(args, metric) is not None
+                        else 0
+                    )
+                    for metric in storage.PERFORMANCE_METRICS
+                },
+                recorded_at=recorded_at,
+            )
+        ]
+    initialise_paths(args.db)
+    counts = storage.record_performance_many(
+        args.db,
+        records,
+        replace=bool(args.replace),
+    )
+    print(
+        "Performance checkpoints: "
+        f"inserted={counts['inserted']}; replaced={counts['replaced']}; "
+        f"unchanged={counts['unchanged']}."
+    )
+    print("Publishing remains disabled. No LinkedIn action was taken.")
     return 0
 
 
@@ -561,6 +741,7 @@ COMMANDS = {
     "doctor": command_doctor,
     "draft": command_draft,
     "research": command_research,
+    "record-performance": command_record_performance,
 }
 
 

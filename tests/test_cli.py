@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import unittest
 from contextlib import closing, redirect_stdout
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -34,6 +35,30 @@ def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.Complet
     )
 
 
+def performance_context(*, package_created_at: str = "2026-07-16T00:00:00Z") -> dict[str, object]:
+    return {
+        "package_id": "2026-07-16-agent-reliability",
+        "candidate_id": "candidate-1",
+        "package_created_at": package_created_at,
+        "goal": "authority",
+        "output_format": None,
+        "weekly_slot": 2,
+        "revision_count": 0,
+        "was_revised": False,
+        "hook_strength": 5,
+        "middle_escalation": 5,
+        "earned_closer": 5,
+        "specificity_and_source_quality": 5,
+        "voice_fidelity": 5,
+        "critic_raw_total": 25,
+        "critic_effective_total": 25,
+        "critic_hook_cap_applied": False,
+        "critic_band": "advance-to-gates",
+        "critic_rank": 1,
+        "is_recommended": True,
+    }
+
+
 class MinimalCliTests(unittest.TestCase):
     def test_single_entry_point_is_executable(self) -> None:
         self.assertTrue(CLI.is_file())
@@ -48,6 +73,21 @@ class MinimalCliTests(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertTrue(database.parent.is_dir())
             self.assertTrue(database.exists())
+
+    def test_private_directory_upgrade_and_symlink_rejection_are_no_follow(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            existing = Path(temporary) / "existing"
+            existing.mkdir(mode=0o755)
+            cli._ensure_owner_only_directory(existing)
+            self.assertEqual(existing.stat().st_mode & 0o777, 0o700)
+
+            target = Path(temporary) / "target"
+            target.mkdir(mode=0o755)
+            linked = Path(temporary) / "linked"
+            linked.symlink_to(target, target_is_directory=True)
+            with self.assertRaises(cli.workflow.WorkflowError):
+                cli._ensure_owner_only_directory(linked)
+            self.assertEqual(target.stat().st_mode & 0o777, 0o755)
 
     def test_doctor_redacts_environment_values(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -184,7 +224,7 @@ class MinimalCliTests(unittest.TestCase):
         self.assertEqual(attempted.returncode, 2)
         self.assertIn("fixture and unverified rows are ineligible", attempted.stderr)
         self.assertNotIn("unavailable or corrupt", attempted.stderr)
-        self.assertEqual(version, 2)
+        self.assertEqual(version, 3)
         self.assertEqual(origin, "legacy-unverified")
 
     def test_draft_accepts_an_arbitrary_short_explicit_topic(self) -> None:
@@ -216,6 +256,8 @@ class MinimalCliTests(unittest.TestCase):
             self.assertIsNone(manifest["recommended_candidate_id"])
             self.assertEqual(len(list(package_path.iterdir())), 6)
             self.assertIn("Recommendation: none; synthetic fixture", result.stdout)
+            self.assertIn("Performance recording: unavailable", result.stdout)
+            self.assertNotIn("Performance package ID:", result.stdout)
             self.assertIn("Publishing status: DISABLED", result.stdout)
             self.assertNotIn("Recommended candidate for human review:", result.stdout)
         finally:
@@ -848,6 +890,131 @@ class MinimalCliTests(unittest.TestCase):
             self.assertIn("not a readable file", result.stderr)
             self.assertNotIn("Traceback", result.stderr)
             self.assertFalse(database.exists())
+
+    def test_record_performance_links_a_manual_checkpoint_without_publishing(self) -> None:
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        published_at = (now - timedelta(hours=30)).isoformat()
+        observed_at = (now - timedelta(hours=1)).isoformat()
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "authority.sqlite"
+            output = io.StringIO()
+            with (
+                patch.object(
+                    cli.performance,
+                    "load_package_context",
+                    return_value=performance_context(
+                        package_created_at=(now - timedelta(hours=31)).isoformat()
+                    ),
+                ) as loaded,
+                redirect_stdout(output),
+            ):
+                result = cli.main(
+                    [
+                        "record-performance",
+                        "--package-id",
+                        "2026-07-16-agent-reliability",
+                        "--candidate",
+                        "candidate-1",
+                        "--manually-published-at",
+                        published_at,
+                        "--checkpoint",
+                        "24h",
+                        "--channel",
+                        "organic",
+                        "--observed-at",
+                        observed_at,
+                        "--impressions",
+                        "1000",
+                        "--profile-visits",
+                        "30",
+                        "--saves",
+                        "12",
+                        "--sends",
+                        "5",
+                        "--confirm-manual-publication",
+                        "--db",
+                        str(database),
+                    ]
+                )
+            rows = cli.storage.list_performance(database)
+        self.assertEqual(result, 0)
+        loaded.assert_called_once_with(
+            "2026-07-16-agent-reliability", "candidate-1"
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["impressions"], 1_000)
+        self.assertEqual(rows[0]["profile_visits"], 30)
+        self.assertEqual(rows[0]["recruiter_inbound"], 0)
+        self.assertIn("inserted=1", output.getvalue())
+        self.assertIn("Publishing remains disabled", output.getvalue())
+        self.assertIn("No LinkedIn action was taken", output.getvalue())
+
+    def test_record_performance_requires_explicit_manual_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "authority.sqlite"
+            result = run_cli(
+                "record-performance",
+                "--package-id",
+                "2026-07-16-agent-reliability",
+                "--db",
+                str(database),
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("--confirm-manual-publication", result.stderr)
+            self.assertFalse(database.exists())
+
+    def test_record_performance_rejects_partial_replace_and_mixed_csv(self) -> None:
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        common = (
+            "--package-id",
+            "2026-07-16-agent-reliability",
+            "--candidate",
+            "candidate-1",
+            "--manually-published-at",
+            (now - timedelta(hours=30)).isoformat(),
+            "--checkpoint",
+            "24h",
+            "--channel",
+            "organic",
+            "--observed-at",
+            (now - timedelta(hours=1)).isoformat(),
+            "--confirm-manual-publication",
+        )
+        partial = run_cli("record-performance", *common, "--replace")
+        self.assertEqual(partial.returncode, 2)
+        self.assertIn("every performance metric", partial.stderr)
+        mixed = run_cli(
+            "record-performance",
+            "--csv",
+            "data/private/performance.csv",
+            "--package-id",
+            "2026-07-16-agent-reliability",
+            "--confirm-manual-publication",
+        )
+        self.assertEqual(mixed.returncode, 2)
+        self.assertIn("either --csv or direct", mixed.stderr)
+
+    def test_record_performance_help_exposes_all_checkpoints_and_channels(self) -> None:
+        result = run_cli("record-performance", "--help")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rendered = " ".join(result.stdout.split())
+        self.assertIn("{2h,24h,72h,7d}", rendered)
+        self.assertIn("{organic,paid}", rendered)
+        self.assertIn("--profile-visits", rendered)
+        self.assertIn("--relevant-followers", rendered)
+        self.assertIn("--recruiter-inbound", rendered)
+
+    def test_oversized_direct_metric_fails_without_echoing_private_input(self) -> None:
+        private_value = "9" * 5_000
+        result = run_cli(
+            "record-performance",
+            "--impressions",
+            private_value,
+            "--confirm-manual-publication",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("outside the supported range", result.stderr)
+        self.assertNotIn(private_value, result.stderr)
 
     def test_corrupt_database_is_a_safe_cli_error(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
