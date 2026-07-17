@@ -1,12 +1,12 @@
 # LinkedIn Authority OS v6
 
-This repository preserves the evidence-backed role, voice, and rubric assets recovered for LinkedIn Authority OS v6 and provides a deliberately small research, analysis, strategic-routing, voice-grounded drafting, Critic-scoring, deterministic safety-gate, local human-review-package, and manual performance-recording runtime.
+This repository preserves the evidence-backed role, voice, and rubric assets recovered for LinkedIn Authority OS v6 and provides a deliberately small research, analysis, strategic-routing, voice-grounded drafting, Critic-scoring, deterministic safety-gate, local human-review-package, manual performance-recording, and evidence-thresholded weekly-learning runtime.
 
 The intended workflow boundary is Scout → Analyst → Writer → Critic → human approval. Historical Gmail ingestion, authenticated browser analytics, schedulers, messaging, and publishing-adjacent components are deliberately excluded.
 
 ## Offline quick start
 
-Requires Python 3.11 or newer and no third-party packages.
+Requires Python 3.11 or newer, a secure POSIX filesystem runtime (supported on macOS and Linux), and no third-party packages. Operations that depend on descriptor-relative, no-follow, owner-identity, or restrictive-mode primitives fail closed when those primitives are unavailable; Windows is not currently a supported private-data runtime.
 
 ```sh
 make setup
@@ -14,8 +14,10 @@ make doctor
 ./bin/linkedin-os research --dry-run
 ./bin/linkedin-os draft --dry-run
 ./bin/linkedin-os draft --dry-run --package
-make test
+make check
 ```
+
+`setup`/`init` is the explicit mutating operation: it creates or migrates the ignored local ledger and secures private directories. `doctor` is read-only; it validates the current schema, permissions, assets, privacy policy, and absent publishing surface without creating, migrating, chmodding, or printing private state. `make check` runs the Git-aware privacy gate followed by the warnings-as-errors test suite.
 
 `research --dry-run` validates and stores the visibly synthetic fixture in the ignored SQLite research ledger. Every row retains `synthetic-fixture`, `private-import`, or quarantined `legacy-unverified` provenance. Live drafting reads only explicitly private-imported rows, so fixture research cannot become a live recommendation. An exact private re-import can promote the same stored URL/body pair; a fixture import can never demote private evidence. Canonical URL and normalized body hash remain independent uniqueness keys, so rerunning the command is safe. `draft --dry-run` analyses the fixture, builds the strategy brief, emits exactly three text candidates, applies deterministic fixture scorecards, and evaluates the five local gates without writing files. Fixture execution is offline: it invokes neither Writer nor Critic models. Add the explicit `--package` flag to create one ignored, review-only local package. Synthetic data can exercise eligibility, but fixture packages never recommend a candidate, record approval, or publish.
 
@@ -145,7 +147,7 @@ The command accepts only a committed `live` package in `READY_FOR_HUMAN_REVIEW` 
 
 Checkpoints are `2h`, `24h`, `72h`, and optional `7d`. Their observation windows are `[2h,24h)`, `[24h,72h)`, `[72h,7d)`, and `[7d,∞)`. All timestamps must be timezone-aware and use whole-second precision. Paid and organic rows have separate keys and are never combined; a missing paid row means unobserved, not zero. The ledger keeps impressions, non-follower reach, external comments, reactions, reposts, saves, sends, profile visits, relevant followers, GitHub/tool clicks, and recruiter, founder/advisor, and speaking/podcast inbound counts.
 
-Omitted direct-entry metrics default to zero only for a new checkpoint. A differing existing checkpoint fails unless `--replace` is explicit; replacement requires all thirteen metrics and cannot use an older observation timestamp. Exact repeats are idempotent. Exact-schema CSV batches under `data/private/` are supported with `--csv` and validated completely before one transaction, so one bad or duplicate row writes nothing. The required header order is:
+Omitted direct-entry metrics default to zero only for a new checkpoint. A differing existing checkpoint fails unless `--replace` is explicit; replacement requires all thirteen metrics, cannot use an older observation timestamp, and cannot record the correction before the stored `updated_at`. Exact repeats are idempotent. Exact-schema CSV batches under `data/private/` are supported with `--csv` and validated completely before one transaction, so one bad or duplicate row writes nothing. The required header order is:
 
 ```text
 package_id,candidate_id,published_at,checkpoint,channel,observed_at,impressions,non_follower_reach,external_comments,reactions,reposts,saves,sends,profile_visits,relevant_followers,github_clicks,recruiter_inbound,founder_advisor_inbound,speaking_podcast_inbound
@@ -159,6 +161,38 @@ chmod 600 data/private/performance.csv
 ./bin/linkedin-os record-performance --csv data/private/performance.csv \
   --confirm-manual-publication
 ```
+
+## Weekly learning review
+
+Generate a cumulative private review from trusted package-linked observations:
+
+```sh
+./bin/linkedin-os weekly-review
+./bin/linkedin-os weekly-review --as-of 2026-07-20T00:00:00Z
+```
+
+The learning cohort is exactly one organic `72h` observation per package whose actual observation age is `72h <= age < 96h`. Later rows in the broad storage-level `72h` bucket are reported but excluded so cumulative counts with materially different exposure time are not compared. Organic `2h` and `24h` rows are immature exclusions, organic `7d` rows form a separate follow-up cohort, and paid rows are descriptive only. Checkpoints and channels are never blended, and rows recorded or updated after an explicit `--as-of` boundary are excluded. The review compares posts only within the same strategic goal using transparent lexicographic outcome vectors:
+
+- Reach: non-follower reach, then impressions.
+- Authority: saves + sends + reposts, then external comments, then profile visits.
+- Opportunity: qualified inbound, then GitHub/tool clicks, then relevant followers, then profile visits. Qualified inbound is recruiter + founder/advisor + speaking/podcast inbound.
+
+At the first performance recording, the ledger immutably anchors the exact descriptor-held `brief.md` and `candidates.md` snapshot with a SHA-256 fingerprint; it still stores no candidate body. Schema-v3 rows migrate with a `NULL` anchor, remain valid metric evidence, and always report a context gap because provenance cannot be reconstructed or backfilled later.
+
+For each top observed outcome, and only after applying the organic 72–96-hour and `--as-of` filters, the review descriptor-opens the original committed private package and extracts only a bounded first-paragraph hook excerpt, the candidate angle, the canonical goal route, and paragraph count. Tied leaders are preserved; nonleaders and excluded rows are never opened. The current files must match the recorded fingerprint. These are winning-context references, not claims that wording or structure caused performance. A removed, changed, legacy-unanchored, or mismatched package becomes an explicit context gap instead of guessed content. The full candidate body, source/proof material, and private paths are never copied. Within-package Critic ranking remains `NOT_TESTABLE`: only the one candidate a human published has outcomes.
+
+Critic-versus-actual alignment needs at least three distinct posts and three scorable cross-package pairs in one goal. A possible axis-calibration review needs still stronger repetition inside one goal and known output-format cohort: both the score-5 and score-4-or-lower groups must contain at least three posts, share at least two ISO publication weeks, show a pooled median reversal, and show the lower-score cohort outperforming independently in every shared week. Evaluated non-reversals are recorded explicitly; missing formats and evidence stay gaps. Even a repeated reversal produces only a human review suggestion, never an automatic rubric edit.
+
+Reports are deterministic owner-only JSON files under ignored `data/private/weekly-reviews/`. They contain IDs, counts, score snapshots, aggregate outcome vectors, bounded winning hook/structure context, evidence gaps, and safety status—never full candidate bodies, source URLs, proof data, private paths, approval changes, or publishing instructions.
+
+## Production verification and privacy
+
+```sh
+./bin/linkedin-os privacy-check
+make check
+```
+
+The privacy gate asks Git for tracked and prospective non-ignored files using NUL-safe paths and separately scans the exact regular blobs in the Git index, so staged content cannot hide behind different worktree bytes. It rejects private/generated paths, database files and sidecars, high-confidence credential or SQLite signatures, scheduled workflows, and LinkedIn/browser write surfaces. It does not recurse into ignored `data/private/` or `outputs/`, never prints a matching value, caps reads, and compares independent positional and streamed snapshots so same-size mutations cannot hide behind coarse filesystem timestamps. It fails closed if Git/index enumeration, a path-component revalidation, or a candidate read cannot be completed. CI runs the same aggregate check on Python 3.11 and the current supported interpreter with read-only repository permissions and no schedule.
 
 Private JSON, JSONL, and NDJSON imports belong under ignored `data/private/`:
 

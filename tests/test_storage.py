@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
-from authority_os import storage, workflow
+from authority_os import learning, storage, workflow
 
 
 def item(url: str, *, title: str = "Reliability note", body: str = "Stable body") -> dict[str, object]:
@@ -50,6 +52,7 @@ def performance_record(
         "critic_band": "advance-to-gates",
         "critic_rank": 1,
         "is_recommended": True,
+        "learning_context_fingerprint": "a" * 64,
         "checkpoint": checkpoint,
         "channel": channel,
         "observed_at": observed_at,
@@ -59,6 +62,536 @@ def performance_record(
         },
         "recorded_at": "2026-07-25T00:00:00Z",
     }
+
+
+class DatabaseHealthInspectionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.database = Path(self.temporary.name) / "private" / "authority.sqlite"
+        storage.initialise(self.database)
+
+    def test_current_database_is_inspected_without_any_filesystem_change(self) -> None:
+        prepared = workflow.prepare_research_items(
+            [item("https://example.com/health-check")]
+        )
+        storage.insert_research_items(
+            self.database, prepared, evidence_origin="private-import"
+        )
+        before_bytes = self.database.read_bytes()
+        before_metadata = self.database.stat()
+        before_entries = {
+            entry.name for entry in self.database.parent.iterdir()
+        }
+        with closing(sqlite3.connect(self.database)) as connection:
+            before_version = connection.execute("PRAGMA user_version").fetchone()[0]
+
+        result = storage.inspect_database_health(self.database)
+
+        after_metadata = self.database.stat()
+        with closing(sqlite3.connect(self.database)) as connection:
+            after_version = connection.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(
+            result,
+            {
+                "status": "ready",
+                "schema_version": storage.SCHEMA_VERSION,
+                "permissions": "owner-only",
+                "access": "read-only",
+            },
+        )
+        self.assertEqual(self.database.read_bytes(), before_bytes)
+        self.assertEqual(before_version, after_version)
+        self.assertEqual(before_metadata.st_mode, after_metadata.st_mode)
+        self.assertEqual(before_metadata.st_mtime_ns, after_metadata.st_mtime_ns)
+        self.assertEqual(before_metadata.st_ctime_ns, after_metadata.st_ctime_ns)
+        self.assertEqual(
+            {entry.name for entry in self.database.parent.iterdir()},
+            before_entries,
+        )
+
+    def test_learning_query_is_read_only_and_preserves_database_metadata(self) -> None:
+        storage.record_performance(self.database, performance_record())
+        before_bytes = self.database.read_bytes()
+        before_metadata = self.database.stat()
+        before_entries = {entry.name for entry in self.database.parent.iterdir()}
+
+        rows = storage.list_performance_readonly(self.database)
+
+        after_metadata = self.database.stat()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["package_id"], "2026-07-16-agent-reliability")
+        self.assertEqual(self.database.read_bytes(), before_bytes)
+        self.assertEqual(after_metadata.st_mode, before_metadata.st_mode)
+        self.assertEqual(after_metadata.st_mtime_ns, before_metadata.st_mtime_ns)
+        self.assertEqual(after_metadata.st_ctime_ns, before_metadata.st_ctime_ns)
+        self.assertEqual(
+            {entry.name for entry in self.database.parent.iterdir()}, before_entries
+        )
+
+    def test_path_swap_during_read_only_open_fails_closed(self) -> None:
+        storage.record_performance(self.database, performance_record())
+        attacker_dir = Path(self.temporary.name) / "attacker"
+        attacker = attacker_dir / "authority.sqlite"
+        storage.initialise(attacker)
+        attacker_record = performance_record()
+        attacker_record["package_id"] = "2026-07-16-attacker"
+        storage.record_performance(attacker, attacker_record)
+        parked = self.database.with_name("parked.sqlite")
+        real_connect = sqlite3.connect
+        swapped = False
+
+        def swap_before_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
+            nonlocal swapped
+            if not swapped and str(args[0]).startswith("file:///dev/fd/"):
+                os.replace(self.database, parked)
+                os.replace(attacker, self.database)
+                swapped = True
+            return real_connect(*args, **kwargs)
+
+        try:
+            with patch(
+                "authority_os.storage.sqlite3.connect",
+                side_effect=swap_before_connect,
+            ):
+                with self.assertRaisesRegex(
+                    ValueError, r"^Private database is unavailable or unsafe\.$"
+                ):
+                    storage.list_performance_readonly(self.database)
+        finally:
+            if parked.exists():
+                if self.database.exists():
+                    os.replace(self.database, attacker)
+                os.replace(parked, self.database)
+        self.assertTrue(swapped)
+        rows = storage.list_performance_readonly(self.database)
+        self.assertEqual(rows[0]["package_id"], "2026-07-16-agent-reliability")
+
+    def test_missing_database_and_parent_are_never_created(self) -> None:
+        missing = Path(self.temporary.name) / "missing" / "authority.sqlite"
+        with self.assertRaisesRegex(
+            ValueError, r"^Private database is unavailable or unsafe\.$"
+        ):
+            storage.inspect_database_health(missing)
+        self.assertFalse(missing.parent.exists())
+        self.assertFalse(missing.exists())
+
+    def test_unsafe_permissions_are_rejected_without_being_repaired(self) -> None:
+        original = self.database.read_bytes()
+        self.database.chmod(0o644)
+        with self.assertRaisesRegex(
+            ValueError, r"^Private database is unavailable or unsafe\.$"
+        ):
+            storage.inspect_database_health(self.database)
+        self.assertEqual(self.database.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(self.database.read_bytes(), original)
+
+        self.database.chmod(0o600)
+        self.database.parent.chmod(0o750)
+        with self.assertRaisesRegex(
+            ValueError, r"^Private database is unavailable or unsafe\.$"
+        ):
+            storage.inspect_database_health(self.database)
+        self.assertEqual(self.database.parent.stat().st_mode & 0o777, 0o750)
+        self.assertEqual(self.database.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.database.read_bytes(), original)
+
+    def test_database_sidecars_are_rejected_without_ignoring_pending_state(self) -> None:
+        original = self.database.read_bytes()
+        for suffix in ("-wal", "-shm", "-journal"):
+            with self.subTest(suffix=suffix):
+                sidecar = self.database.with_name(self.database.name + suffix)
+                sidecar.write_bytes(b"pending-state")
+                sidecar.chmod(0o600)
+                try:
+                    with self.assertRaisesRegex(
+                        ValueError, r"^Private database is unavailable or unsafe\.$"
+                    ):
+                        storage.inspect_database_health(self.database)
+                finally:
+                    sidecar.unlink()
+                self.assertEqual(self.database.read_bytes(), original)
+
+    def test_symlink_is_rejected_without_reading_or_changing_its_target(self) -> None:
+        target = self.database
+        before = target.read_bytes()
+        linked = target.parent / "linked.sqlite"
+        linked.symlink_to(target)
+        with self.assertRaisesRegex(
+            ValueError, r"^Private database is unavailable or unsafe\.$"
+        ):
+            storage.inspect_database_health(linked)
+        self.assertTrue(linked.is_symlink())
+        self.assertEqual(target.read_bytes(), before)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+
+        linked_parent = Path(self.temporary.name) / "linked-private"
+        linked_parent.symlink_to(target.parent, target_is_directory=True)
+        with self.assertRaisesRegex(
+            ValueError, r"^Private database is unavailable or unsafe\.$"
+        ):
+            storage.inspect_database_health(linked_parent / target.name)
+        self.assertTrue(linked_parent.is_symlink())
+        self.assertEqual(target.read_bytes(), before)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+
+    def test_old_schema_is_rejected_without_migration_or_version_change(self) -> None:
+        legacy = Path(self.temporary.name) / "legacy"
+        legacy.mkdir(mode=0o700)
+        database = legacy / "authority.sqlite"
+        with closing(sqlite3.connect(database)) as connection, connection:
+            connection.execute("CREATE TABLE performance (id INTEGER PRIMARY KEY)")
+            connection.execute("PRAGMA user_version = 2")
+        database.chmod(0o600)
+        before = database.read_bytes()
+
+        with self.assertRaisesRegex(
+            ValueError, r"^Private database schema is not current\.$"
+        ):
+            storage.inspect_database_health(database)
+
+        self.assertEqual(database.read_bytes(), before)
+        with closing(sqlite3.connect(database)) as connection:
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+        self.assertEqual(version, 2)
+        self.assertEqual(tables, {"performance"})
+
+    def test_supported_migrated_schema_is_current_and_remains_unchanged(self) -> None:
+        migrated = Path(self.temporary.name) / "migrated.sqlite"
+        with closing(sqlite3.connect(migrated)) as connection, connection:
+            connection.executescript(
+                """
+                CREATE TABLE research_items (
+                    id INTEGER PRIMARY KEY,
+                    canonical_url TEXT NOT NULL UNIQUE,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    author TEXT NOT NULL DEFAULT "",
+                    published_at TEXT NOT NULL,
+                    source_quality TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE,
+                    fetched_at TEXT NOT NULL
+                );
+                PRAGMA user_version = 1;
+                """
+            )
+        storage.initialise(migrated)
+        before = migrated.read_bytes()
+
+        result = storage.inspect_database_health(migrated)
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(migrated.read_bytes(), before)
+        with closing(sqlite3.connect(migrated)) as connection:
+            self.assertEqual(
+                connection.execute("PRAGMA user_version").fetchone()[0],
+                storage.SCHEMA_VERSION,
+            )
+
+    def test_current_version_with_an_unknown_object_is_rejected_unchanged(self) -> None:
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            connection.execute("CREATE TABLE unexpected (value TEXT)")
+        before = self.database.read_bytes()
+        with self.assertRaisesRegex(ValueError, "explicit recovery"):
+            storage.initialise(self.database)
+        self.assertEqual(self.database.read_bytes(), before)
+        with self.assertRaisesRegex(
+            ValueError, r"^Private database schema is not current\.$"
+        ):
+            storage.inspect_database_health(self.database)
+        self.assertEqual(self.database.read_bytes(), before)
+        with closing(sqlite3.connect(self.database)) as connection:
+            self.assertIsNotNone(
+                connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name = 'unexpected'"
+                ).fetchone()
+            )
+
+    def test_duplicate_table_trigger_name_fails_schema_attestation_unchanged(self) -> None:
+        malicious = self.database.parent / "duplicate-object.sqlite"
+        with closing(sqlite3.connect(malicious)) as connection, connection:
+            connection.execute(storage.PUBLISHED_POSTS_SQL)
+            connection.execute(storage.PERFORMANCE_OBSERVATIONS_SQL)
+            connection.executescript(
+                """
+                CREATE TRIGGER research_items
+                AFTER INSERT ON performance_observations
+                BEGIN
+                    UPDATE performance_observations
+                    SET impressions = 999999
+                    WHERE id = NEW.id;
+                END;
+                """
+            )
+            connection.execute(storage.RESEARCH_ITEMS_SQL)
+            connection.execute(f"PRAGMA user_version = {storage.SCHEMA_VERSION}")
+        malicious.chmod(0o600)
+        before = malicious.read_bytes()
+        before_metadata = malicious.stat()
+        with self.assertRaisesRegex(
+            ValueError, r"^Private database schema is not current\.$"
+        ):
+            storage.record_performance(malicious, performance_record())
+        with closing(sqlite3.connect(malicious)) as connection:
+            self.assertEqual(
+                [
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT type FROM sqlite_master WHERE name = 'research_items'"
+                    )
+                ],
+                ["trigger", "table"],
+            )
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM performance_observations"
+                ).fetchone()[0],
+                0,
+            )
+
+        for reader in (
+            storage.inspect_database_health,
+            storage.list_performance_readonly,
+        ):
+            with self.subTest(reader=reader.__name__), self.assertRaisesRegex(
+                ValueError, r"^Private database schema is not current\.$"
+            ):
+                reader(malicious)
+
+        after_metadata = malicious.stat()
+        self.assertEqual(malicious.read_bytes(), before)
+        self.assertEqual(after_metadata.st_mtime_ns, before_metadata.st_mtime_ns)
+        self.assertEqual(after_metadata.st_ctime_ns, before_metadata.st_ctime_ns)
+
+    def test_writable_schema_sqlite_trigger_fails_attestation_unchanged(self) -> None:
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            schema_version = connection.execute(
+                "PRAGMA schema_version"
+            ).fetchone()[0]
+            connection.execute("PRAGMA writable_schema = ON")
+            connection.execute(
+                """
+                INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql)
+                VALUES ('trigger', 'sqlite_shadow', 'performance_observations', 0, ?)
+                """,
+                (
+                    "CREATE TRIGGER sqlite_shadow AFTER INSERT ON "
+                    "performance_observations BEGIN UPDATE performance_observations "
+                    "SET impressions = 999999 WHERE id = NEW.id; END",
+                ),
+            )
+            connection.execute(f"PRAGMA schema_version = {schema_version + 1}")
+            connection.execute("PRAGMA writable_schema = OFF")
+        before = self.database.read_bytes()
+        before_metadata = self.database.stat()
+        with self.assertRaisesRegex(
+            ValueError, r"^Private database schema is not current\.$"
+        ):
+            storage.record_performance(self.database, performance_record())
+        with closing(sqlite3.connect(self.database)) as connection:
+            self.assertEqual(
+                connection.execute(
+                    "SELECT COUNT(*) FROM performance_observations"
+                ).fetchone()[0],
+                0,
+            )
+
+        for reader in (
+            storage.inspect_database_health,
+            storage.list_performance_readonly,
+        ):
+            with self.subTest(reader=reader.__name__), self.assertRaisesRegex(
+                ValueError, r"^Private database schema is not current\.$"
+            ):
+                reader(self.database)
+
+        after_metadata = self.database.stat()
+        self.assertEqual(self.database.read_bytes(), before)
+        self.assertEqual(after_metadata.st_mtime_ns, before_metadata.st_mtime_ns)
+        self.assertEqual(after_metadata.st_ctime_ns, before_metadata.st_ctime_ns)
+
+    def test_current_schema_has_only_the_exact_allowed_internal_objects(self) -> None:
+        expected = {
+            (
+                "sqlite_autoindex_research_items_1",
+                "index",
+                "research_items",
+                None,
+            ),
+            (
+                "sqlite_autoindex_research_items_2",
+                "index",
+                "research_items",
+                None,
+            ),
+            (
+                "sqlite_autoindex_published_posts_1",
+                "index",
+                "published_posts",
+                None,
+            ),
+            (
+                "sqlite_autoindex_performance_observations_1",
+                "index",
+                "performance_observations",
+                None,
+            ),
+        }
+        with closing(sqlite3.connect(self.database)) as connection:
+            actual = {
+                tuple(row)
+                for row in connection.execute(
+                    """
+                    SELECT name, type, tbl_name, sql
+                    FROM sqlite_master
+                    WHERE name GLOB 'sqlite_*'
+                    """
+                )
+            }
+
+        self.assertEqual(actual, expected)
+        self.assertEqual(
+            storage.inspect_database_health(self.database)["status"],
+            "ready",
+        )
+
+    def test_sidecars_created_during_immutable_open_fail_closed(self) -> None:
+        real_connect = sqlite3.connect
+        for index, reader in enumerate(
+            (
+                storage.inspect_database_health,
+                storage.list_performance_readonly,
+            ),
+            start=1,
+        ):
+            with self.subTest(reader=reader.__name__):
+                database = self.database.parent / f"sidecar-race-{index}.sqlite"
+                storage.initialise(database)
+                with closing(real_connect(database)) as connection, connection:
+                    self.assertEqual(
+                        connection.execute("PRAGMA journal_mode = WAL").fetchone()[0],
+                        "wal",
+                    )
+                self.assertFalse(database.with_name(database.name + "-wal").exists())
+                writers: list[sqlite3.Connection] = []
+
+                def connect_with_pending_wal(
+                    target: object, *args: object, **kwargs: object
+                ) -> sqlite3.Connection:
+                    if isinstance(target, str) and target.startswith("file:///dev/fd/"):
+                        writer = real_connect(database)
+                        writer.execute("CREATE TABLE pending_schema (value TEXT)")
+                        writer.commit()
+                        writers.append(writer)
+                    return real_connect(target, *args, **kwargs)  # type: ignore[arg-type]
+
+                try:
+                    with (
+                        patch.object(
+                            storage.sqlite3,
+                            "connect",
+                            side_effect=connect_with_pending_wal,
+                        ),
+                        patch.object(
+                            storage,
+                            "_database_sidecars_absent",
+                            wraps=storage._database_sidecars_absent,
+                        ) as sidecar_check,
+                        self.assertRaisesRegex(
+                            ValueError,
+                            r"^Private database is unavailable or unsafe\.$",
+                        ),
+                    ):
+                        reader(database)
+                    self.assertGreaterEqual(sidecar_check.call_count, 2)
+                    self.assertTrue(
+                        database.with_name(database.name + "-wal").exists()
+                    )
+                finally:
+                    for writer in writers:
+                        writer.close()
+
+    def test_intermediate_symlink_cannot_redirect_readonly_database(self) -> None:
+        outside = Path(self.temporary.name) / "outside"
+        target = outside / "private" / "authority.sqlite"
+        storage.initialise(target)
+        storage.record_performance(target, performance_record())
+        redirected = Path(self.temporary.name) / "redirected"
+        redirected.mkdir(mode=0o700)
+        (redirected / "data").symlink_to(outside, target_is_directory=True)
+        escaped = redirected / "data" / "private" / "authority.sqlite"
+        before = target.read_bytes()
+
+        for reader in (
+            storage.inspect_database_health,
+            storage.list_performance_readonly,
+        ):
+            with self.subTest(reader=reader.__name__), self.assertRaisesRegex(
+                ValueError, r"^Private database is unavailable or unsafe\.$"
+            ):
+                reader(escaped)
+
+        self.assertTrue((redirected / "data").is_symlink())
+        self.assertEqual(target.read_bytes(), before)
+
+    def test_foreign_key_damage_fails_integrity_without_repair(self) -> None:
+        columns = (
+            "package_id",
+            "checkpoint",
+            "channel",
+            "observed_at",
+            *storage.PERFORMANCE_METRICS,
+            "recorded_at",
+            "updated_at",
+        )
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            connection.execute(
+                f"INSERT INTO performance_observations ({', '.join(columns)}) "
+                f"VALUES ({', '.join('?' for _ in columns)})",
+                (
+                    "missing-package",
+                    "2h",
+                    "organic",
+                    "2026-07-16T02:00:00Z",
+                    *([0] * len(storage.PERFORMANCE_METRICS)),
+                    "2026-07-16T02:00:00Z",
+                    "2026-07-16T02:00:00Z",
+                ),
+            )
+        before = self.database.read_bytes()
+
+        with self.assertRaisesRegex(
+            ValueError, r"^Private database integrity check failed\.$"
+        ):
+            storage.inspect_database_health(self.database)
+
+        self.assertEqual(self.database.read_bytes(), before)
+        with closing(sqlite3.connect(self.database)) as connection:
+            self.assertEqual(
+                connection.execute("PRAGMA foreign_key_check").fetchall(),
+                [("performance_observations", 1, "published_posts", 0)],
+            )
+
+    def test_corrupt_regular_file_fails_with_static_error_and_is_unchanged(self) -> None:
+        corrupt = self.database.parent / "corrupt.sqlite"
+        corrupt.write_bytes(b"private-corrupt-sentinel")
+        corrupt.chmod(0o600)
+        with self.assertRaises(ValueError) as raised:
+            storage.inspect_database_health(corrupt)
+        self.assertEqual(
+            str(raised.exception), "Private database is unavailable or unsafe."
+        )
+        self.assertNotIn(str(corrupt), str(raised.exception))
+        self.assertNotIn("private-corrupt-sentinel", str(raised.exception))
+        self.assertEqual(corrupt.read_bytes(), b"private-corrupt-sentinel")
+        self.assertEqual(corrupt.stat().st_mode & 0o777, 0o600)
 
 
 class ResearchStorageTests(unittest.TestCase):
@@ -85,7 +618,7 @@ class ResearchStorageTests(unittest.TestCase):
             {"research_items", "published_posts", "performance_observations"},
         )
         self.assertIn("evidence_origin", columns)
-        self.assertEqual(version, 3)
+        self.assertEqual(version, storage.SCHEMA_VERSION)
 
     def test_v1_rows_are_quarantined_until_exact_private_reimport(self) -> None:
         legacy = Path(self.temporary.name) / "legacy.sqlite"
@@ -269,6 +802,32 @@ class ResearchStorageTests(unittest.TestCase):
         )
         storage.initialise(self.database)
         self.assertEqual(len(storage.list_research_items(self.database)), 1)
+
+    def test_unknown_schema_object_blocks_research_writes(self) -> None:
+        prepared = workflow.prepare_research_items(
+            [item("https://example.com/untrusted-schema")]
+        )
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            connection.execute(
+                "CREATE VIEW unexpected_research AS SELECT 1 AS value"
+            )
+        before = self.database.read_bytes()
+
+        with self.assertRaisesRegex(
+            ValueError, r"^Private database schema is not current\.$"
+        ):
+            storage.insert_research_items(
+                self.database,
+                prepared,
+                evidence_origin="private-import",
+            )
+
+        self.assertEqual(self.database.read_bytes(), before)
+        with closing(sqlite3.connect(self.database)) as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM research_items"
+            ).fetchone()[0]
+        self.assertEqual(count, 0)
 
     def test_private_or_local_source_url_is_rejected(self) -> None:
         for url in (
@@ -522,6 +1081,35 @@ class PerformanceStorageTests(unittest.TestCase):
             storage.list_performance(self.database)[0]["impressions"], 1_200
         )
 
+    def test_backdated_correction_rolls_back_the_whole_batch(self) -> None:
+        organic = performance_record(channel="organic", impressions=1_000)
+        paid = performance_record(channel="paid", impressions=250)
+        storage.record_performance_many(self.database, [organic, paid])
+        valid_correction = dict(
+            organic,
+            impressions=1_500,
+            recorded_at="2026-07-26T00:00:00Z",
+        )
+        backdated_correction = dict(
+            paid,
+            impressions=500,
+            recorded_at="2026-07-24T00:00:00Z",
+        )
+
+        with self.assertRaisesRegex(ValueError, "older correction"):
+            storage.record_performance_many(
+                self.database,
+                [valid_correction, backdated_correction],
+                replace=True,
+            )
+
+        rows = storage.list_performance(self.database)
+        by_channel = {str(row["channel"]): row for row in rows}
+        self.assertEqual(by_channel["organic"]["impressions"], 1_000)
+        self.assertEqual(by_channel["paid"]["impressions"], 250)
+        self.assertEqual(by_channel["organic"]["updated_at"], organic["recorded_at"])
+        self.assertEqual(by_channel["paid"]["updated_at"], paid["recorded_at"])
+
     def test_organic_replacement_never_changes_paid(self) -> None:
         organic = performance_record(channel="organic", impressions=1_000)
         paid = performance_record(channel="paid", impressions=250)
@@ -552,6 +1140,171 @@ class PerformanceStorageTests(unittest.TestCase):
         with closing(sqlite3.connect(self.database)) as connection:
             posts = connection.execute("SELECT count(*) FROM published_posts").fetchone()[0]
         self.assertEqual(posts, 0)
+
+    def test_learning_context_fingerprint_is_required_and_immutable(self) -> None:
+        missing = performance_record()
+        missing["learning_context_fingerprint"] = None
+        with self.assertRaisesRegex(ValueError, "fingerprint is required"):
+            storage.record_performance(self.database, missing)
+
+        malformed = performance_record()
+        malformed["learning_context_fingerprint"] = "A" * 64
+        with self.assertRaisesRegex(ValueError, "fingerprint is invalid"):
+            storage.record_performance(self.database, malformed)
+
+        original = performance_record()
+        storage.record_performance(self.database, original)
+        changed = performance_record(channel="paid")
+        changed["learning_context_fingerprint"] = "b" * 64
+        with self.assertRaisesRegex(ValueError, "immutable publication context"):
+            storage.record_performance(self.database, changed)
+
+    def test_v3_rows_migrate_as_unanchored_and_remain_metric_eligible(self) -> None:
+        database = Path(self.temporary.name) / "schema-v3.sqlite"
+        original = performance_record(
+            checkpoint="72h",
+            observed_at="2026-07-19T01:00:00Z",
+        )
+        v3_fields = tuple(
+            field
+            for field in storage.PUBLISHED_POST_FIELDS
+            if field != "learning_context_fingerprint"
+        )
+        with closing(sqlite3.connect(database)) as connection, connection:
+            connection.execute(storage.RESEARCH_ITEMS_SQL)
+            connection.execute(storage._PUBLISHED_POSTS_V3_SQL)
+            connection.execute(storage.PERFORMANCE_OBSERVATIONS_SQL)
+            connection.execute(
+                f"INSERT INTO published_posts ({', '.join(v3_fields)}, "
+                f"first_recorded_at) VALUES "
+                f"({', '.join('?' for _ in (*v3_fields, 'first_recorded_at'))})",
+                (
+                    *(
+                        storage._database_value(field, original[field])
+                        for field in v3_fields
+                    ),
+                    original["recorded_at"],
+                ),
+            )
+            observation_fields = storage.PERFORMANCE_OBSERVATION_FIELDS
+            connection.execute(
+                f"INSERT INTO performance_observations (package_id, "
+                f"{', '.join(observation_fields)}, recorded_at, updated_at) "
+                f"VALUES ({', '.join('?' for _ in range(len(observation_fields) + 3))})",
+                (
+                    original["package_id"],
+                    *(original[field] for field in observation_fields),
+                    original["recorded_at"],
+                    original["recorded_at"],
+                ),
+            )
+            connection.execute("PRAGMA user_version = 3")
+
+        storage.initialise(database)
+        migrated = storage.list_performance_readonly(database)
+
+        self.assertEqual(len(migrated), 1)
+        self.assertIsNone(migrated[0]["learning_context_fingerprint"])
+        report = learning.build_weekly_review(
+            migrated, as_of="2026-08-15T00:00:00Z"
+        )
+        self.assertEqual(report["basis"]["canonical_posts"], 1)
+        self.assertEqual(
+            report["strongest_hook_by_goal"]["authority"]["status"],
+            "OBSERVED_REFERENCE_CONTEXT_GAP",
+        )
+
+        followup = performance_record(
+            checkpoint="7d",
+            observed_at="2026-07-23T00:00:00Z",
+        )
+        storage.record_performance(database, followup)
+        self.assertTrue(
+            all(
+                row["learning_context_fingerprint"] is None
+                for row in storage.list_performance_readonly(database)
+            )
+        )
+        with closing(sqlite3.connect(database)) as connection:
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(version, storage.SCHEMA_VERSION)
+
+    def test_v3_current_shape_cannot_preserve_a_forged_fingerprint(self) -> None:
+        database = Path(self.temporary.name) / "forged-v3-anchor.sqlite"
+        forged = performance_record()
+        published_fields = storage.PUBLISHED_POST_FIELDS
+        with closing(sqlite3.connect(database)) as connection, connection:
+            connection.execute(storage.RESEARCH_ITEMS_SQL)
+            connection.execute(storage.PUBLISHED_POSTS_SQL)
+            connection.execute(storage.PERFORMANCE_OBSERVATIONS_SQL)
+            connection.execute(
+                f"INSERT INTO published_posts ({', '.join(published_fields)}, "
+                f"first_recorded_at) VALUES "
+                f"({', '.join('?' for _ in (*published_fields, 'first_recorded_at'))})",
+                (
+                    *(
+                        storage._database_value(field, forged[field])
+                        for field in published_fields
+                    ),
+                    forged["recorded_at"],
+                ),
+            )
+            connection.execute("PRAGMA user_version = 3")
+
+        storage.initialise(database)
+
+        with closing(sqlite3.connect(database)) as connection:
+            fingerprint = connection.execute(
+                "SELECT learning_context_fingerprint FROM published_posts"
+            ).fetchone()[0]
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+        self.assertIsNone(fingerprint)
+        self.assertEqual(version, storage.SCHEMA_VERSION)
+
+    def test_current_version_missing_fingerprint_column_is_not_self_repaired(self) -> None:
+        database = Path(self.temporary.name) / "broken-current-schema.sqlite"
+        with closing(sqlite3.connect(database)) as connection, connection:
+            connection.execute(storage.RESEARCH_ITEMS_SQL)
+            connection.execute(storage._PUBLISHED_POSTS_V3_SQL)
+            connection.execute(storage.PERFORMANCE_OBSERVATIONS_SQL)
+            connection.execute(f"PRAGMA user_version = {storage.SCHEMA_VERSION}")
+        before = database.read_bytes()
+
+        with self.assertRaisesRegex(ValueError, "explicit recovery"):
+            storage.initialise(database)
+
+        self.assertEqual(database.read_bytes(), before)
+        with closing(sqlite3.connect(database)) as connection:
+            columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(published_posts)")
+            }
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+        self.assertNotIn("learning_context_fingerprint", columns)
+        self.assertEqual(version, storage.SCHEMA_VERSION)
+
+    def test_current_version_missing_research_table_is_not_self_repaired(self) -> None:
+        database = Path(self.temporary.name) / "broken-current-research.sqlite"
+        with closing(sqlite3.connect(database)) as connection, connection:
+            connection.execute(storage.PUBLISHED_POSTS_SQL)
+            connection.execute(storage.PERFORMANCE_OBSERVATIONS_SQL)
+            connection.execute(f"PRAGMA user_version = {storage.SCHEMA_VERSION}")
+        before = database.read_bytes()
+
+        with self.assertRaisesRegex(ValueError, "explicit recovery"):
+            storage.initialise(database)
+
+        self.assertEqual(database.read_bytes(), before)
+        with closing(sqlite3.connect(database)) as connection:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+        self.assertNotIn("research_items", tables)
+        self.assertEqual(version, storage.SCHEMA_VERSION)
 
     def test_v2_legacy_performance_table_is_quarantined_without_data_loss(self) -> None:
         database = Path(self.temporary.name) / "legacy-performance.sqlite"
@@ -614,7 +1367,10 @@ class PerformanceStorageTests(unittest.TestCase):
         self.assertIn("legacy_performance_unverified", tables)
         self.assertEqual(legacy_row[1], "legacy-post")
         self.assertEqual(tuple(legacy_row[5:]), tuple(range(13)))
-        self.assertEqual(version, 3)
+        self.assertEqual(version, storage.SCHEMA_VERSION)
+        after_migration = database.read_bytes()
+        self.assertEqual(storage.inspect_database_health(database)["status"], "ready")
+        self.assertEqual(database.read_bytes(), after_migration)
 
     def test_unrecognized_legacy_schema_rolls_back_migration(self) -> None:
         database = Path(self.temporary.name) / "bad-legacy.sqlite"
@@ -651,6 +1407,64 @@ class PerformanceStorageTests(unittest.TestCase):
         self.assertEqual(tables, {"research_items", "performance"})
         self.assertEqual(version, 2)
 
+    def test_late_schema_collision_rolls_back_legacy_table_rename(self) -> None:
+        database = Path(self.temporary.name) / "late-migration-collision.sqlite"
+        metrics_sql = ",\n".join(
+            f"{metric} INTEGER NOT NULL" for metric in storage.PERFORMANCE_METRICS
+        )
+        with closing(sqlite3.connect(database)) as connection, connection:
+            connection.executescript(
+                f"""
+                CREATE TABLE research_items (
+                    id INTEGER PRIMARY KEY,
+                    canonical_url TEXT NOT NULL UNIQUE,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    author TEXT NOT NULL DEFAULT '',
+                    published_at TEXT NOT NULL,
+                    source_quality TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE,
+                    fetched_at TEXT NOT NULL,
+                    evidence_origin TEXT NOT NULL
+                );
+                CREATE TABLE performance (
+                    id INTEGER PRIMARY KEY,
+                    post_id TEXT NOT NULL,
+                    checkpoint TEXT NOT NULL,
+                    channel TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    {metrics_sql}
+                );
+                CREATE TABLE published_posts (surprise TEXT);
+                PRAGMA user_version = 2;
+                """
+            )
+        before = database.read_bytes()
+
+        with self.assertRaisesRegex(ValueError, "Reserved performance table"):
+            storage.initialise(database)
+
+        self.assertEqual(database.read_bytes(), before)
+        with closing(sqlite3.connect(database)) as connection:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            columns = [
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info(published_posts)"
+                )
+            ]
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+        self.assertIn("performance", tables)
+        self.assertNotIn("legacy_performance_unverified", tables)
+        self.assertEqual(columns, ["surprise"])
+        self.assertEqual(version, 2)
+
     def test_reserved_performance_table_collisions_fail_closed(self) -> None:
         for table_name in ("published_posts", "performance_observations"):
             with self.subTest(table_name=table_name):
@@ -679,6 +1493,89 @@ class PerformanceStorageTests(unittest.TestCase):
         self.assertEqual(private_database.parent.stat().st_mode & 0o777, 0o700)
         self.assertEqual(private_database.stat().st_mode & 0o777, 0o600)
 
+    def test_intermediate_symlink_cannot_redirect_initialise_or_record(self) -> None:
+        base = Path(self.temporary.name) / "mutating-root"
+        base.mkdir(mode=0o700)
+        outside = Path(self.temporary.name) / "mutating-outside"
+        outside.mkdir(mode=0o700)
+        (base / "data").symlink_to(outside, target_is_directory=True)
+        escaped = base / "data" / "private" / "authority.sqlite"
+
+        with self.assertRaisesRegex(ValueError, "unavailable or unsafe"):
+            storage.initialise(escaped)
+        self.assertFalse((outside / "private").exists())
+
+        target = outside / "private" / "authority.sqlite"
+        storage.initialise(target)
+        before = target.read_bytes()
+        with self.assertRaisesRegex(ValueError, "unavailable or unsafe"):
+            storage.record_performance(escaped, performance_record())
+
+        self.assertEqual(target.read_bytes(), before)
+        self.assertEqual(storage.list_performance(target), [])
+        self.assertTrue((base / "data").is_symlink())
+
+    def test_connect_time_parent_swap_cannot_create_an_outside_database(self) -> None:
+        base = Path(self.temporary.name) / "connect-race"
+        data = base / "data"
+        data.mkdir(mode=0o700, parents=True)
+        outside = Path(self.temporary.name) / "connect-race-outside"
+        outside.mkdir(mode=0o700)
+        database = data / "authority.sqlite"
+        parked = base / "parked"
+        real_connect = sqlite3.connect
+        swapped = False
+
+        def swap_parent(*args: object, **kwargs: object) -> sqlite3.Connection:
+            nonlocal swapped
+            if not swapped and isinstance(args[0], str):
+                os.replace(data, parked)
+                data.symlink_to(outside, target_is_directory=True)
+                swapped = True
+            return real_connect(*args, **kwargs)  # type: ignore[arg-type]
+
+        try:
+            with patch(
+                "authority_os.storage.sqlite3.connect",
+                side_effect=swap_parent,
+            ):
+                with self.assertRaisesRegex(ValueError, "unavailable or unsafe"):
+                    storage.initialise(database)
+            self.assertTrue(swapped)
+            self.assertFalse((outside / database.name).exists())
+            self.assertTrue((parked / database.name).exists())
+        finally:
+            if data.is_symlink():
+                data.unlink()
+            if parked.exists():
+                os.replace(parked, data)
+
+    def test_connection_revalidates_held_directories_before_execute(self) -> None:
+        base = Path(self.temporary.name) / "lifecycle-race"
+        data = base / "data"
+        data.mkdir(mode=0o700, parents=True)
+        outside = Path(self.temporary.name) / "lifecycle-outside"
+        outside.mkdir(mode=0o700)
+        database = data / "authority.sqlite"
+        parked = base / "parked"
+        storage.initialise(database)
+        connection = storage.connect(database)
+        cursor = connection.cursor()
+        try:
+            os.replace(data, parked)
+            data.symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "unavailable or unsafe"):
+                connection.execute("SELECT 1")
+            with self.assertRaisesRegex(ValueError, "unavailable or unsafe"):
+                cursor.execute("SELECT 1")
+            self.assertFalse((outside / database.name).exists())
+        finally:
+            if data.is_symlink():
+                data.unlink()
+            if parked.exists():
+                os.replace(parked, data)
+            connection.close()
+
     def test_symlinked_database_is_rejected_without_touching_target(self) -> None:
         target = Path(self.temporary.name) / "outside.txt"
         target.write_bytes(b"do-not-touch")
@@ -690,14 +1587,18 @@ class PerformanceStorageTests(unittest.TestCase):
         self.assertEqual(target.read_bytes(), b"do-not-touch")
         self.assertEqual(target.stat().st_mode & 0o777, 0o644)
 
-    def test_shared_writable_database_parent_is_rejected(self) -> None:
+    def test_owned_database_parent_is_normalised_for_readonly_health(self) -> None:
         shared = Path(self.temporary.name) / "shared"
         shared.mkdir(mode=0o777)
         shared.chmod(0o777)
         database = shared / "ledger.sqlite"
-        with self.assertRaisesRegex(ValueError, "group/world-writable"):
-            storage.initialise(database)
-        self.assertFalse(database.exists())
+        storage.initialise(database)
+
+        self.assertEqual(shared.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(database.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(
+            storage.inspect_database_health(database)["status"], "ready"
+        )
 
 
 if __name__ == "__main__":
