@@ -110,6 +110,22 @@ def _identity_token(metadata: os.stat_result) -> tuple[int, ...]:
     )
 
 
+def _read_positional_snapshot(descriptor: int, size: int) -> bytes | None:
+    """Read one bounded snapshot without changing the descriptor offset."""
+
+    chunks: list[bytes] = []
+    offset = 0
+    while offset < size:
+        chunk = os.pread(descriptor, min(65_536, size - offset), offset)
+        if not chunk:
+            return None
+        chunks.append(chunk)
+        offset += len(chunk)
+    if os.pread(descriptor, 1, size):
+        return None
+    return b"".join(chunks)
+
+
 def _git_environment() -> dict[str, str]:
     return {
         key: value
@@ -305,6 +321,11 @@ def _read_candidate(root_descriptor: int, relative: str) -> tuple[bytes | None, 
             return None, "non-regular-candidate-not-scanned"
         if metadata.st_size > MAX_SCANNED_FILE_BYTES:
             return None, "oversized-unscanned-file"
+        positional_snapshot = _read_positional_snapshot(
+            descriptor, int(metadata.st_size)
+        )
+        if positional_snapshot is None:
+            return None, "file-changed-during-scan"
         chunks: list[bytes] = []
         remaining = int(metadata.st_size)
         while remaining:
@@ -313,8 +334,11 @@ def _read_candidate(root_descriptor: int, relative: str) -> tuple[bytes | None, 
                 return None, "incomplete-file-read"
             chunks.append(chunk)
             remaining -= len(chunk)
-        if os.read(descriptor, 1) or _metadata_token(os.fstat(descriptor)) != _metadata_token(
-            metadata
+        streamed_snapshot = b"".join(chunks)
+        if (
+            streamed_snapshot != positional_snapshot
+            or os.read(descriptor, 1)
+            or _metadata_token(os.fstat(descriptor)) != _metadata_token(metadata)
         ):
             return None, "file-changed-during-scan"
         for index, part in enumerate(path.parts[:-1]):
@@ -344,7 +368,7 @@ def _read_candidate(root_descriptor: int, relative: str) -> tuple[bytes | None, 
             return None, "file-changed-during-scan"
         if _metadata_token(live_leaf) != _metadata_token(metadata):
             return None, "file-changed-during-scan"
-        return b"".join(chunks), None
+        return streamed_snapshot, None
     except OSError:
         # Inspect the leaf relative to the already verified parent descriptor.
         if opening_leaf and directory_descriptors:
@@ -421,6 +445,7 @@ def scan_repository(root: Path, *, candidates: Iterable[str] | None = None) -> l
         getattr(os, "O_DIRECTORY", 0),
         getattr(os, "O_NOFOLLOW", 0),
         getattr(os, "O_NONBLOCK", 0),
+        callable(getattr(os, "pread", None)),
         os.open in getattr(os, "supports_dir_fd", ()),
         os.stat in getattr(os, "supports_dir_fd", ()),
         os.stat in getattr(os, "supports_follow_symlinks", ()),

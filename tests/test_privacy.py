@@ -252,7 +252,9 @@ class PrivacyScannerTests(unittest.TestCase):
                     mutated = True
                 return real_read(descriptor, size)
 
-            with patch.object(privacy.os, "read", side_effect=mutate_before_read):
+            with patch.object(
+                privacy, "_metadata_token", side_effect=privacy._identity_token
+            ), patch.object(privacy.os, "read", side_effect=mutate_before_read):
                 findings = privacy.scan_repository(
                     root, candidates=["candidate.txt"]
                 )
@@ -353,7 +355,9 @@ class PrivacyScannerTests(unittest.TestCase):
                     mutated = True
                 return real_read(descriptor, size)
 
-            with patch.object(privacy.os, "read", side_effect=mutate_before_read):
+            with patch.object(
+                privacy, "_metadata_token", side_effect=privacy._identity_token
+            ), patch.object(privacy.os, "read", side_effect=mutate_before_read):
                 findings = privacy.scan_repository(root, candidates=[])
 
         self.assertTrue(mutated)
@@ -437,6 +441,13 @@ class PrivacyScannerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.make_root(temporary)
             with patch.object(privacy.os, "O_NOFOLLOW", 0):
+                with self.assertRaisesRegex(ValueError, "Secure repository"):
+                    privacy.scan_repository(root, candidates=[])
+
+    def test_missing_positional_read_capability_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            with patch.object(privacy.os, "pread", None):
                 with self.assertRaisesRegex(ValueError, "Secure repository"):
                     privacy.scan_repository(root, candidates=[])
 
