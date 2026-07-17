@@ -23,14 +23,16 @@ This manifest uses repository evidence, not filenames or embedded version labels
 | Voice guide and performance-pattern anchors | RECONSTRUCTED | The originals are absent. Only user-supplied aggregate patterns and voice rules are recorded; missing post text is never fabricated. |
 | `.gitignore` | NEW | Protects private inputs, databases, credentials, generated packages, and the local `.agents/` mirror. |
 | `bin/linkedin-os`, `src/authority_os/*` | NEW | Minimal offline CLI and fixture-validation runtime; no historical executable exists. |
-| `src/authority_os/storage.py` | NEW | Direct research-ledger persistence with canonical URL/content deduplication and fail-closed synthetic/private provenance. |
+| `src/authority_os/storage.py` | NEW | Direct research and performance persistence with fail-closed provenance/migrations and paid/organic separation. |
 | `src/authority_os/package.py` | NEW | Deterministic, private six-file human-review packaging with live-only recommendation eligibility and no approval or publishing authority. |
+| `src/authority_os/performance.py` | NEW | Package-linked manual checkpoint validation; no analytics fetch, approval mutation, or publishing action. |
 | `data/samples/dry-run.json` | NEW | Visibly synthetic offline fixture data. |
 | `data/samples/proof-fixture.json`, `data/samples/synthetic-proof.md` | NEW | Visibly synthetic local-proof fixture; it contains no personal data or publishing authority. |
 | `Makefile`, `requirements.txt` | NEW | Zero-download setup and verification commands. |
 | `ARCHITECTURE_DECISION.md` | NEW | Records the deliberately small current runtime boundary. |
 | `docs/WORKFLOW.md` | RECONSTRUCTED | Documents the implemented evidence and two-pass analysis boundary without claiming missing stages. |
-| `tests/test_cli.py`, `tests/test_storage.py` | NEW | Setup, diagnostics, fixture, research persistence, failure, and no-publishing tests. |
+| `tests/test_cli.py`, `tests/test_storage.py` | NEW | Setup, diagnostics, fixture, research/performance persistence, migration, failure, and no-publishing tests. |
+| `tests/test_performance.py` | NEW | Validates live-package binding, strict timestamps/metrics, private CSV batches, and fixture/symlink rejection. |
 | `tests/test_gates.py` | NEW | Validates strict proof privacy and deterministic authority, proof, honesty, citation, and relevance gates. |
 | `tests/test_package.py` | NEW | Validates eligibility, fixture suppression, blocked outcomes, privacy projections, collision safety, atomic writes, restrictive modes, and rollback. |
 | `tests/test_recovery.py` | NEW | Validates the asset inventory, provenance labels, exclusions, and private-path ignore boundary. |
