@@ -2,6 +2,10 @@
 
 The exact post text and original anchor file were not found. Do not recreate or quote them from memory. These are aggregate patterns supplied for v6, not recovered posts.
 
+> **HUMAN REVIEW REQUIRED**
+>
+> The author must verify each performance figure, pattern, and personal framing before public reuse. These anchors calibrate drafting only; they are not an approved first-person account or citable evidence.
+
 ## Claude/payments architecture post
 
 - Approximate performance supplied by the user: 227K impressions and 99% out-of-network reach.
