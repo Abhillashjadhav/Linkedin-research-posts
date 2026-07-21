@@ -2001,7 +2001,7 @@ def invoke_writer(
 
 
 def critic_scoring_system_prompt() -> str:
-    """Load only the recovered score rubric, excluding later binary gates."""
+    """Load only the recovered score rubric, excluding the later policy boundary."""
 
     path = REPO_ROOT / ".claude" / "agents" / "critic.md"
     try:
@@ -2009,7 +2009,7 @@ def critic_scoring_system_prompt() -> str:
     except OSError as exc:
         raise WorkflowError("Critic rubric is unavailable.") from exc
     start_marker = "## Recovered 25-point rubric"
-    end_marker = "## Binary gates"
+    end_marker = "## Boundary"
     start = content.find(start_marker)
     end = content.find(end_marker)
     if start < 0 or end <= start:

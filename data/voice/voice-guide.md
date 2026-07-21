@@ -2,6 +2,10 @@
 
 The original voice guide was not present in repository history. This file reconstructs only the rules supplied for v6; it is not an exact recovered original.
 
+> **HUMAN REVIEW REQUIRED**
+>
+> The author must approve, edit, or reject every personal voice section before this guide is treated as an authoritative description of personal style or reused in a public portfolio narrative.
+
 ## Target voice
 
 - A practitioner explaining mechanics to a peer.
