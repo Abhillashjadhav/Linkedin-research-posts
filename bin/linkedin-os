@@ -8,4 +8,4 @@ else
   PYTHON="${PYTHON:-python3}"
 fi
 
-PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os "$@"
+PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.quality_cli "$@"
