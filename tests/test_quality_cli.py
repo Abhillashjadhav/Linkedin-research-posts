@@ -21,10 +21,21 @@ def attempt_output(
 ) -> str:
     remaining = max(first_score - first_hook, 4)
     axis = [first_hook, 5, 5, 5, max(1, remaining - 15)]
-    # The legacy command owns score validation; these tests need stable rendered totals.
     gates = "PASS" if first_gates else "FAIL"
     passes = "yes" if first_gates else "no"
     reason = "" if first_gates else "authority_statement_missing"
+    context = (
+        "Fixture envelope validated: topic=test; research_items=2.\n"
+        "Strategy brief: goal=authority; format=not-selected; weekly_slot=2; topic=test.\n"
+        "Reader: AI product leaders Problem: They need a defensible decision.\n"
+        "Core hypothesis: Reliability compounds across workflow steps.\n"
+        "Product decision: Set the end-to-end reliability budget first.\n"
+        "Authority statement: Connect the mechanism to a falsifiable decision.\n"
+        "Strategy input origin: synthetic-fixture\n"
+        "Evidence status: source_quality=sufficient; body=sufficient; "
+        "recency=sufficient; stale=not-evaluated; primary_sources=1; "
+        "limitations=recent-post-similarity-not-evaluated.\n"
+    )
     package = ""
     if ready:
         package = (
@@ -34,8 +45,11 @@ def attempt_output(
             "Human approval status: NOT_APPROVED; manual fact verification required.\n"
             "Publishing status: DISABLED. No LinkedIn action was taken.\n"
         )
+    else:
+        context += "No approval package was generated. No LinkedIn action was taken.\n"
     return (
-        "Candidate 1: id=candidate-1; angle=mechanism; claim_ids=claim-1.\n"
+        context
+        + "Candidate 1: id=candidate-1; angle=mechanism; claim_ids=claim-1.\n"
         f"{first_opening}\n\nFirst body.\n"
         "Candidate 2: id=candidate-2; angle=decision; claim_ids=claim-1.\n"
         "Second opening.\n\nSecond body.\n"
@@ -69,7 +83,7 @@ def attempt_output(
 
 
 class QualityOutputTests(unittest.TestCase):
-    def test_parser_connects_candidate_text_scores_and_gates(self) -> None:
+    def test_parser_connects_context_candidate_scores_and_gates(self) -> None:
         parsed = quality_cli.parse_attempt_output(
             attempt_output(first_score=24, ready=True)
         )
@@ -79,6 +93,8 @@ class QualityOutputTests(unittest.TestCase):
         self.assertEqual(first.effective_total, 24)
         self.assertEqual(first.axes["hook_strength"], 5)
         self.assertTrue(first.passes_required_gates)
+        self.assertTrue(parsed.context_lines[0].startswith("Fixture envelope validated:"))
+        self.assertTrue(any(line.startswith("Strategy brief:") for line in parsed.context_lines))
         self.assertEqual(parsed.review_status, "READY_FOR_HUMAN_REVIEW")
         self.assertEqual(parsed.recommendation, "candidate-1")
 
@@ -122,6 +138,7 @@ class QualitySearchTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertNotIn("Rejected private prose", rendered)
         self.assertIn("Quality cycle 1/2 rejected", rendered)
+        self.assertIn("Strategy brief: goal=authority", rendered)
         self.assertIn("Accepted public opening", rendered)
         self.assertIn("score=24/25", rendered)
         self.assertNotIn("Second body", rendered)
@@ -203,6 +220,7 @@ class QualitySearchTests(unittest.TestCase):
             with self.assertRaisesRegex(workflow.WorkflowError, "No post was returned"):
                 quality_cli.command_draft(self._args())
         self.assertNotIn("First body", output.getvalue())
+        self.assertNotIn("Strategy brief:", output.getvalue())
 
     def test_fixture_is_deterministic_and_runs_once(self) -> None:
         calls = 0
@@ -221,6 +239,8 @@ class QualitySearchTests(unittest.TestCase):
         ):
             quality_cli.command_draft(args)
         self.assertEqual(calls, 1)
+        self.assertIn("Fixture envelope validated:", output.getvalue())
+        self.assertIn("No approval package was generated", output.getvalue())
 
 
 class RetryPromptTests(unittest.TestCase):
