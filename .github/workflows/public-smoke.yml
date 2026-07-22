@@ -1,0 +1,30 @@
+name: Public smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-quickstart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Initialize local-only state
+        run: make setup
+      - name: Run documented public demo
+        run: |
+          make doctor
+          ./bin/linkedin-os research --dry-run
+          ./bin/linkedin-os draft --dry-run
+          ./bin/linkedin-os draft --dry-run --package
+      - name: Run repository checks
+        run: make check
