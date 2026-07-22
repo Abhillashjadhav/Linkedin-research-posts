@@ -1,10 +1,25 @@
 # LinkedIn Authority OS
 
-**A local, evidence-backed workflow for researching, drafting, reviewing, and learning from LinkedIn posts without automatic publishing.**
+**Turn research into a private, evidence-backed review package—not automatically published content.**
 
-The system turns research into three voice-grounded candidates, scores them with a bounded Critic, applies deterministic honesty and citation gates, and produces a private package for human review. Publishing remains disabled.
+LinkedIn Authority OS is a local workflow for researching, drafting, critiquing, and learning from LinkedIn posts. It produces exactly three voice-grounded candidates, maps claims to sources, applies bounded critique and deterministic honesty gates, and leaves publication entirely with the human owner.
 
-## Try the synthetic workflow
+## See the product before installing
+
+Open the **[synthetic review package preview](examples/review-package-preview.md)**.
+
+It shows the complete decision surface:
+
+- strategy brief and evidence limitations;
+- three candidate posts with claim IDs;
+- critic scorecard;
+- authority, citation, honesty, and public-safe-proof gates;
+- recommendation or blocked explanation;
+- explicit human-verification checklist.
+
+The preview is intentionally synthetic and blocked from publication. That is a product behaviour, not a missing feature.
+
+## Run the public workflow
 
 Requires Python 3.11+ on macOS or Linux.
 
@@ -14,7 +29,6 @@ cd Linkedin-research-posts
 make setup
 make doctor
 ./bin/linkedin-os research --dry-run
-./bin/linkedin-os draft --dry-run
 ./bin/linkedin-os draft --dry-run --package
 make check
 ```
@@ -23,38 +37,75 @@ The dry run is offline and uses visibly synthetic fixtures. It does not invoke a
 
 ## What the workflow produces
 
-For a live, consented run:
+A review package is created only through the explicit `--package` operation:
 
-1. **Research:** store source material with provenance.
-2. **Analyse:** cluster topics and identify the strongest evidence-backed angle.
-3. **Route:** choose a strategic outcome—Reach, Authority, or Opportunity—separately from format.
-4. **Draft:** generate exactly three plain-text candidates from a bounded evidence brief.
-5. **Critique:** score five dimensions from 1–5 with at most one revision.
-6. **Gate:** run deterministic authority, proof, honesty, citation, and relevance checks.
-7. **Package:** write a private, review-only bundle for human verification.
-8. **Learn:** record manually published performance and compare like-for-like outcomes.
+```text
+manifest.json      provenance, privacy, and safety status
+brief.md           audience, goal, angle, and evidence limitations
+candidates.md      exactly three candidates with claim IDs
+evaluation.json    critic scores, revision metadata, and gate results
+sources.md         public-safe source metadata
+final-package.md   recommendation or blocked reason plus review checklist
+```
+
+A recommendation means **ready for human review**. It never means approved, scheduled, or published.
+
+## The product flow
 
 ```mermaid
 flowchart LR
     A[Research with provenance] --> B[Topic analysis]
     B --> C[Strategy brief]
-    C --> D[Three candidates]
-    D --> E[Bounded Critic]
+    C --> D[Exactly three candidates]
+    D --> E[Bounded critic]
     E --> F[Deterministic gates]
-    F --> G[Human-review package]
-    G --> H[Manual publication outside system]
-    H --> I[Performance learning]
+    F --> G[Private review package]
+    G --> H[Manual fact verification]
+    H --> I[Manual publication outside system]
+    I --> J[Performance learning]
 ```
 
-## Strategic goals
+### 1. Research
+
+Store source material with provenance and public/private boundaries.
+
+### 2. Analyse
+
+Cluster themes and identify the strongest evidence-backed angle.
+
+### 3. Route
+
+Choose the strategic outcome separately from the content format.
+
+### 4. Draft
+
+Generate exactly three plain-text candidates from a bounded evidence brief.
+
+### 5. Critique
+
+Score five dimensions from 1–5 with at most one revision. The critic can rank; it cannot approve.
+
+### 6. Gate
+
+Run deterministic authority, proof, honesty, citation, relevance, and safety checks.
+
+### 7. Package
+
+Create a private bundle for human review, or explain precisely why no candidate is eligible.
+
+### 8. Learn
+
+Record manually published performance and compare like-for-like outcomes.
+
+## Choose the strategic goal
 
 | Goal | Intended outcome | Default evidence bar |
 |---|---|---|
-| Reach | Qualified non-follower exposure | Research evidence |
-| Authority | Saves, sends, reposts, and useful discussion | Research evidence |
-| Opportunity | Qualified inbound and tool interest | Research plus validated public-safe proof |
+| **Reach** | Qualified non-follower exposure | Research evidence |
+| **Authority** | Saves, sends, reposts, and useful discussion | Research evidence |
+| **Opportunity** | Qualified inbound and demonstrated tool interest | Research plus validated public-safe proof |
 
-Goal selection never silently chooses the content format.
+Goal selection never silently chooses the format.
 
 ```bash
 ./bin/linkedin-os draft --dry-run --goal reach --format text
@@ -62,22 +113,9 @@ Goal selection never silently chooses the content format.
 ./bin/linkedin-os draft --dry-run --goal opportunity --format artifact-demo
 ```
 
-## Human-review package
-
-An explicit `--package` operation creates an ignored local directory containing:
-
-- `manifest.json` — provenance and safety status;
-- `brief.md` — strategy and evidence limitations;
-- `candidates.md` — all three candidates and claim IDs;
-- `evaluation.json` — scores, revision metadata, and gate results;
-- `sources.md` — public-safe source metadata;
-- `final-package.md` — recommendation or blocked explanation plus checklist.
-
-A recommendation means **ready for human review**, not approved or published. Manual fact verification remains required.
-
 ## Live drafting boundary
 
-Live/private drafting requires both an explicit private strategy file and explicit consent for model egress:
+Live or private drafting requires both an explicit private strategy file and explicit consent for model egress:
 
 ```bash
 ./bin/linkedin-os draft \
@@ -90,12 +128,13 @@ Opportunity drafting additionally requires a validated public-safe proof manifes
 ## Safety model
 
 - Publishing, scheduling, messaging, and authenticated browser automation are absent.
-- Private data and output packages are git-ignored and owner-restricted.
+- Private data and review packages are git-ignored and owner-restricted.
 - Synthetic research cannot become live evidence.
 - Factual claims retain claim IDs and source traceability.
 - Critic scores cannot approve content.
 - Deterministic gates fail closed on unsupported or malformed claims.
-- Human approval and manual fact verification are always required.
+- Public-safe proof is required before opportunity-oriented artifact claims.
+- Human approval and manual factual verification remain mandatory.
 
 Detailed controls: [`docs/`](docs/).
 
@@ -119,6 +158,23 @@ After a human independently verifies and publishes an eligible live candidate:
 
 The system records observations; it does not infer that publication occurred.
 
+## Use it when
+
+- research-backed authority matters more than post volume;
+- private context must remain local and explicitly consented;
+- claims need source traceability;
+- several candidate angles should remain visible for human judgment;
+- unsupported content should be blocked even when it sounds polished;
+- performance learning must preserve goal and format context.
+
+## Do not use it when
+
+- you want an autonomous posting bot;
+- you expect engagement predictions to replace editorial judgment;
+- you have no source material for factual claims;
+- you want synthetic fixtures converted into publishable evidence;
+- you need Windows support for the private-data runtime today.
+
 ## Validation
 
 ```bash
@@ -126,13 +182,13 @@ make doctor
 make check
 ```
 
-`doctor` is read-only. `make check` runs the Git-aware privacy gate and the warnings-as-errors test suite.
+`doctor` is read-only. `make check` runs the Git-aware privacy gate and warnings-as-errors test suite. Public Smoke runs the documented dry-run research, draft, package, and repository checks from a clean checkout.
 
 ## Current limitations
 
-- macOS and Linux are supported; Windows is not currently supported for the private-data runtime.
+- macOS and Linux are supported; Windows is not currently supported for private-data operation.
 - Live drafting depends on the locally configured Claude service and explicit consent.
-- Research ingestion, analytics, and publication are not automated.
+- Research ingestion, analytics collection, and publication are not automated.
 - Structural citation checks reduce unsupported claims but cannot prove factual truth.
 - Performance learning depends on manually recorded observations.
 
