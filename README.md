@@ -2,7 +2,7 @@
 
 **Turn research into a private, evidence-backed review package—not automatically published content.**
 
-LinkedIn Authority OS is a local workflow for researching, drafting, critiquing, and learning from LinkedIn posts. It produces exactly three voice-grounded candidates, maps claims to sources, applies bounded critique and deterministic honesty gates, and leaves publication entirely with the human owner.
+LinkedIn Authority OS is a local workflow for researching, drafting, critiquing, and learning from LinkedIn posts. Each candidate cycle creates exactly three voice-grounded drafts, maps claims to sources, applies bounded critique and deterministic honesty gates, and leaves publication entirely with the human owner.
 
 ## See the product before installing
 
@@ -35,6 +35,19 @@ make check
 
 The dry run is offline and uses visibly synthetic fixtures. It does not invoke a Writer or Critic model, recommend a candidate for publication, or publish anything.
 
+## Locked high-bar search
+
+A live invocation no longer exposes the first completed draft batch. It runs up to four candidate cycles and returns prose only when at least one candidate satisfies all of these conditions:
+
+- effective Critic score of **24–25**;
+- hook score of at least **4/5**;
+- every required authority, proof, honesty, citation, and relevance gate passes; and
+- the opening does not repeat one rejected in an earlier cycle.
+
+Each cycle still contains exactly three candidates and at most one light revision. When a cycle fails, its prose remains hidden. Only bounded angle, opening, score, and gate diagnostics are added to the next Writer prompt, with an explicit instruction to create a genuinely new narrative execution without changing the supplied strategy or inventing evidence.
+
+After four unsuccessful live cycles, the command fails closed and returns no post. When `--package` is selected, rejected cycles may leave private `BLOCKED` audit packages; only a live `READY_FOR_HUMAN_REVIEW` package can clear the coordinator.
+
 ## What the workflow produces
 
 A review package is created only through the explicit `--package` operation:
@@ -56,10 +69,11 @@ A recommendation means **ready for human review**. It never means approved, sche
 flowchart LR
     A[Research with provenance] --> B[Topic analysis]
     B --> C[Strategy brief]
-    C --> D[Exactly three candidates]
+    C --> D[Three candidates]
     D --> E[Bounded critic]
     E --> F[Deterministic gates]
-    F --> G[Private review package]
+    F -->|Below locked bar| D
+    F -->|24–25 and gates pass| G[Private review package]
     G --> H[Manual fact verification]
     H --> I[Manual publication outside system]
     I --> J[Performance learning]
@@ -79,15 +93,15 @@ Choose the strategic outcome separately from the content format.
 
 ### 4. Draft
 
-Generate exactly three plain-text candidates from a bounded evidence brief.
+Generate exactly three plain-text candidates per cycle from a bounded evidence brief.
 
 ### 5. Critique
 
-Score five dimensions from 1–5 with at most one revision. The critic can rank; it cannot approve.
+Score five dimensions from 1–5 with at most one revision per cycle. The critic can rank; it cannot approve.
 
-### 6. Gate
+### 6. Gate and regenerate
 
-Run deterministic authority, proof, honesty, citation, relevance, and safety checks.
+Run deterministic authority, proof, honesty, citation, relevance, and safety checks. If no candidate clears the locked bar, hide the rejected prose and start a new candidate cycle with bounded diagnostics.
 
 ### 7. Package
 
@@ -132,6 +146,7 @@ Opportunity drafting additionally requires a validated public-safe proof manifes
 - Synthetic research cannot become live evidence.
 - Factual claims retain claim IDs and source traceability.
 - Critic scores cannot approve content.
+- Rejected candidate prose is not exposed by the high-bar coordinator.
 - Deterministic gates fail closed on unsupported or malformed claims.
 - Public-safe proof is required before opportunity-oriented artifact claims.
 - Human approval and manual factual verification remain mandatory.
@@ -163,14 +178,14 @@ The system records observations; it does not infer that publication occurred.
 - research-backed authority matters more than post volume;
 - private context must remain local and explicitly consented;
 - claims need source traceability;
-- several candidate angles should remain visible for human judgment;
+- weak completed batches should be regenerated rather than presented;
 - unsupported content should be blocked even when it sounds polished;
 - performance learning must preserve goal and format context.
 
 ## Do not use it when
 
 - you want an autonomous posting bot;
-- you expect engagement predictions to replace editorial judgment;
+- you expect Critic scores or engagement predictions to replace editorial judgment;
 - you have no source material for factual claims;
 - you want synthetic fixtures converted into publishable evidence;
 - you need Windows support for the private-data runtime today.
@@ -188,6 +203,8 @@ make check
 
 - macOS and Linux are supported; Windows is not currently supported for private-data operation.
 - Live drafting depends on the locally configured Claude service and explicit consent.
+- The bounded search stops after four live cycles rather than spending indefinitely.
+- A 24–25 Critic score is a machine quality gate, not proof that a human will find the post compelling.
 - Research ingestion, analytics collection, and publication are not automated.
 - Structural citation checks reduce unsupported claims but cannot prove factual truth.
 - Performance learning depends on manually recorded observations.

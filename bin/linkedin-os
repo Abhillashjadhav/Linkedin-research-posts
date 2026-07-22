@@ -8,4 +8,14 @@ else
   PYTHON="${PYTHON:-python3}"
 fi
 
-PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os "$@"
+MODULE="authority_os.quality_cli"
+for ARG in "$@"; do
+  if [ "$ARG" = "--dry-run" ]; then
+    # Preserve the complete deterministic fixture diagnostics used by public
+    # smoke tests. High-bar suppression applies only to live model drafting.
+    MODULE="authority_os"
+    break
+  fi
+done
+
+PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m "$MODULE" "$@"
