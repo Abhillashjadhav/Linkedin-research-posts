@@ -1,8 +1,8 @@
-"""High-bar orchestration for the existing Authority OS CLI.
+"""Bounded high-bar orchestration for the existing Authority OS CLI.
 
-The core workflow remains responsible for evidence, drafting, Critic scoring,
-deterministic gates, packaging, and safety. This coordinator repeats the live
-Draft -> Critic -> Gate cycle when no candidate clears the locked public bar.
+The existing workflow remains authoritative for research, strategy, drafting,
+Critic scoring, deterministic gates, packaging, and privacy. This coordinator
+repeats the live candidate cycle when nothing clears the locked public bar.
 Rejected prose is never printed to the user.
 """
 
@@ -37,6 +37,29 @@ _GATE_LINE = re.compile(
     r"passes_required_gates=(?P<passes>yes|no); "
     r"manual_fact_verification_required=yes; reasons=(?P<reasons>.*)\.$"
 )
+_CONTEXT_PREFIXES = (
+    "Fixture envelope validated:",
+    "Stored evidence selected for Writer:",
+    "Strategy brief:",
+    "Purpose:",
+    "Reader:",
+    "Core hypothesis:",
+    "Product decision:",
+    "Authority statement:",
+    "Strategy input origin:",
+    "Evidence status:",
+    "Opportunity route:",
+    "No approval package was generated.",
+)
+_PACKAGE_PREFIXES = (
+    "Content package:",
+    "Performance package ID:",
+    "Recommendation:",
+    "Recommended candidate for human review:",
+    "Review status:",
+    "Human approval status:",
+    "Publishing status:",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +83,7 @@ class CandidateResult:
 @dataclass(frozen=True, slots=True)
 class AttemptResult:
     candidates: tuple[CandidateResult, ...]
+    context_lines: tuple[str, ...]
     review_status: str | None
     recommendation: str | None
     package_lines: tuple[str, ...]
@@ -80,7 +104,7 @@ def _parse_pairs(value: str, *, label: str) -> dict[str, str]:
 
 
 def parse_attempt_output(stdout: str) -> AttemptResult:
-    """Parse the stable human-readable contract emitted by command_draft."""
+    """Parse the stable, fail-closed text contract emitted by command_draft."""
 
     lines = stdout.splitlines()
     candidate_text: dict[str, dict[str, str]] = {}
@@ -120,19 +144,10 @@ def parse_attempt_output(stdout: str) -> AttemptResult:
 
     scores: dict[str, dict[str, object]] = {}
     gates: dict[str, dict[str, object]] = {}
+    context_lines: list[str] = []
+    package_lines: list[str] = []
     review_status: str | None = None
     recommendation: str | None = None
-    package_lines: list[str] = []
-
-    package_prefixes = (
-        "Content package:",
-        "Performance package ID:",
-        "Recommendation:",
-        "Recommended candidate for human review:",
-        "Review status:",
-        "Human approval status:",
-        "Publishing status:",
-    )
 
     for line in lines:
         score_match = _SCORE_LINE.match(line)
@@ -151,6 +166,7 @@ def parse_attempt_output(stdout: str) -> AttemptResult:
                 "band": score_match.group("band").strip(),
             }
             continue
+
         gate_match = _GATE_LINE.match(line)
         if gate_match:
             reason_text = gate_match.group("reasons").strip()
@@ -162,11 +178,15 @@ def parse_attempt_output(stdout: str) -> AttemptResult:
                 ),
             }
             continue
+
         if line.startswith("Review status:"):
             review_status = line.split(":", 1)[1].strip().rstrip(".")
         elif line.startswith("Recommended candidate for human review:"):
             recommendation = line.split(":", 1)[1].strip()
-        if line.startswith(package_prefixes):
+
+        if line.startswith(_CONTEXT_PREFIXES):
+            context_lines.append(line)
+        if line.startswith(_PACKAGE_PREFIXES):
             package_lines.append(line)
 
     if not candidate_text or set(candidate_text) != set(scores) or set(scores) != set(gates):
@@ -179,8 +199,9 @@ def parse_attempt_output(stdout: str) -> AttemptResult:
         score = scores[candidate_id]
         gate = gates[candidate_id]
         axes = score["axes"]
-        if not isinstance(axes, Mapping):
-            raise workflow.WorkflowError("Quality search received malformed score axes.")
+        gate_values = gate["gates"]
+        if not isinstance(axes, Mapping) or not isinstance(gate_values, Mapping):
+            raise workflow.WorkflowError("Quality search received malformed evaluation data.")
         parsed_candidates.append(
             CandidateResult(
                 candidate_id=candidate_id,
@@ -190,7 +211,7 @@ def parse_attempt_output(stdout: str) -> AttemptResult:
                 raw_total=int(score["raw_total"]),
                 effective_total=int(score["effective_total"]),
                 band=str(score["band"]),
-                gates={str(key): str(value) for key, value in gate["gates"].items()},
+                gates={str(key): str(value) for key, value in gate_values.items()},
                 passes_required_gates=bool(gate["passes"]),
                 gate_reasons=tuple(str(reason) for reason in gate["reasons"]),
             )
@@ -198,6 +219,7 @@ def parse_attempt_output(stdout: str) -> AttemptResult:
 
     return AttemptResult(
         candidates=tuple(parsed_candidates),
+        context_lines=tuple(context_lines),
         review_status=review_status,
         recommendation=recommendation,
         package_lines=tuple(package_lines),
@@ -258,6 +280,7 @@ def _writer_retry_prompt(feedback: Mapping[str, object] | None) -> Iterator[None
     if feedback is None:
         yield
         return
+
     original = workflow.build_writer_prompt
 
     def build_with_feedback(*args: object, **kwargs: object) -> str:
@@ -317,6 +340,8 @@ def _render_success(
     cycle: int,
     limit: int,
 ) -> None:
+    for line in attempt.context_lines:
+        print(line)
     print(
         f"Quality search passed on cycle {cycle}/{limit}: "
         f"{len(accepted)} candidate(s) cleared {MIN_QUALITY_SCORE}/25, hook "
@@ -359,6 +384,7 @@ def command_draft(args: object) -> int:
         if accepted:
             _render_success(attempt, accepted, cycle, cycle_limit)
             return 0
+
         _render_rejection(attempt, cycle, cycle_limit)
         rejected_openings.update(
             _normalise_opening(candidate.opening)
