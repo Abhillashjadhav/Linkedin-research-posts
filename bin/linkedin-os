@@ -8,6 +8,11 @@ else
   PYTHON="${PYTHON:-python3}"
 fi
 
+if [ "${1:-}" = "discover" ]; then
+  shift
+  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.daily_cli "$@"
+fi
+
 MODULE="authority_os.quality_cli"
 for ARG in "$@"; do
   if [ "$ARG" = "--dry-run" ]; then
