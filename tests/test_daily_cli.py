@@ -146,8 +146,9 @@ class ThesisSearchTests(unittest.TestCase):
             calls.append(deepcopy(feedback))
             return generated.pop(0)
 
-        def critic(_cards: object, _profile: object, _signals: object) -> list[dict[str, object]]:
-            return scored.pop(0)
+        def critic(current_cards: object, _profile: object, _signals: object) -> list[dict[str, object]]:
+            assert isinstance(current_cards, list)
+            return daily_cli.validate_scores(scored.pop(0), current_cards)
 
         result = daily_cli.search_theses(
             profile(), signals(), generator=generator, critic=critic
@@ -165,24 +166,29 @@ class ThesisSearchTests(unittest.TestCase):
             counter += 1
             return cards(f"Cycle-{counter}")
 
+        def critic(current_cards: object, _profile: object, _signals: object) -> list[dict[str, object]]:
+            assert isinstance(current_cards, list)
+            return daily_cli.validate_scores(scorecards(22), current_cards)
+
         with self.assertRaisesRegex(workflow.WorkflowError, "No complete three-thesis"):
             daily_cli.search_theses(
-                profile(),
-                signals(),
-                generator=generator,
-                critic=lambda _cards, _profile, _signals: scorecards(22),
+                profile(), signals(), generator=generator, critic=critic
             )
 
     def test_rejected_thesis_cannot_be_reused(self) -> None:
         first = cards("Repeated")
         responses = [first, deepcopy(first)]
 
+        def critic(current_cards: object, _profile: object, _signals: object) -> list[dict[str, object]]:
+            assert isinstance(current_cards, list)
+            return daily_cli.validate_scores(scorecards(22), current_cards)
+
         with self.assertRaisesRegex(workflow.WorkflowError, "reused a rejected thesis"):
             daily_cli.search_theses(
                 profile(),
                 signals(),
                 generator=lambda _p, _s, _f: responses.pop(0),
-                critic=lambda _cards, _profile, _signals: scorecards(22),
+                critic=critic,
             )
 
 
