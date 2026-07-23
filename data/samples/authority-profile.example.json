@@ -1,0 +1,23 @@
+{
+  "target_audience": "Senior product leaders, AI founders, relevant recruiters, and event organisers",
+  "authority_goal": "Be remembered for practical product judgment in building reliable enterprise AI systems",
+  "proof_inventory": [
+    {
+      "id": "proof-example-repository",
+      "label": "Public decision-system repository",
+      "public_safe_claim": "A public repository demonstrates a reusable product-decision workflow.",
+      "evidence_type": "repository"
+    },
+    {
+      "id": "proof-example-case",
+      "label": "Public-safe operator case",
+      "public_safe_claim": "A reviewed case demonstrates a concrete product decision and its trade-offs.",
+      "evidence_type": "decision-record"
+    }
+  ],
+  "avoid_topics": [
+    "Generic AI trend summaries",
+    "News commentary without an original product decision"
+  ],
+  "recent_theses": []
+}
