@@ -1,0 +1,35 @@
+name: diagnose discovery
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    name: focused (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: privacy
+            command: PYTHONPATH=src python -m authority_os privacy-check
+          - name: daily-tests
+            command: PYTHONPATH=src PYTHONWARNINGS=error python -m unittest discover -s tests -p 'test_daily_cli.py' -v
+          - name: cli-tests
+            command: PYTHONPATH=src PYTHONWARNINGS=error python -m unittest discover -s tests -p 'test_cli.py' -v
+          - name: recovery-tests
+            command: PYTHONPATH=src PYTHONWARNINGS=error python -m unittest discover -s tests -p 'test_recovery.py' -v
+          - name: public-surface
+            command: PYTHONPATH=src PYTHONWARNINGS=error python -m unittest discover -s tests -p 'test_public_surface.py' -v
+          - name: hardening
+            command: PYTHONPATH=src PYTHONWARNINGS=error python -m unittest discover -s tests -p 'test_hardening.py' -v
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - run: ${{ matrix.command }}
