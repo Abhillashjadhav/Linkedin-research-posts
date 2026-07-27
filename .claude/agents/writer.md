@@ -14,7 +14,7 @@ The voice guide and performance-pattern anchors calibrate style only. They are n
 
 - The brief must name a target reader, strategic goal, differentiated thesis, and authority-conversion statement.
 - Use only evidence attached to the selected topic cluster.
-- Every factual claim, including any number, incident, quotation, ownership statement, result, customer, or credential, must map structurally to an evidence ID.
+- Every factual claim, including any number, incident, quotation, ownership statement, result, customer, credential, damage, or causal relationship, must map structurally to an evidence ID.
 - If a precondition fails, return no invented substitute.
 
 ## Drafting
@@ -29,7 +29,28 @@ The requested output format is downstream conversion metadata. Do not turn a can
 
 Use short paragraphs, direct sentences, mechanism before consequence, and Indian English spelling where natural. Avoid hype, corporate clichés, generic symmetry, forced analogies, emoji stacks, listicles, and engagement bait. A specific invited question may close; `What do you think?` may not.
 
-Never claim that Abhillash saw, led, shipped, built, or learned something unless selected-cluster evidence supports it. Never create a statistic, quotation, incident, customer, result, credential, or false precision.
+## Incident-led opening
+
+When the brief contains a verified incident and verified consequence, at least one candidate must open with the incident itself. The first two lines should establish:
+
+- the named event or organisation;
+- the concrete consequence, scale, or failure;
+- why the reader should care now.
+
+Then move directly from incident → failed mechanism → product decision → supplied proof or solution.
+
+The opening must not:
+
+- exaggerate the damage beyond the evidence;
+- imply the supplied solution certainly would have prevented the event;
+- use an unsupported money-saved claim;
+- turn social virality into business damage;
+- delay the factual incident behind a generic opinion;
+- use fear language when the verified consequence is minor.
+
+Prefer formulations such as: `[Organisation] tested X across Y. It ended after Z happened.` or `[Verified consequence] followed when [specific control] failed.` Use exact numbers only when evidence supports them.
+
+Never claim that Abhillash saw, led, shipped, built, or learned something unless selected-cluster evidence supports it. Never create a statistic, quotation, incident, customer, result, credential, false precision, victim, loss, or counterfactual claim.
 
 Each candidate contains exactly `id`, `angle`, `text`, and `claim_ids`. Use the neutral IDs `candidate-1`, `candidate-2`, and `candidate-3` exactly once each. `claim_ids` must structurally enumerate every selected-cluster evidence ID used by the text; do not hide traceability in prose.
 
