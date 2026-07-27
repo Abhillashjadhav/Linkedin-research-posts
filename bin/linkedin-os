@@ -13,11 +13,11 @@ if [ "${1:-}" = "discover" ]; then
   PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.daily_cli "$@"
 fi
 
-MODULE="authority_os.quality_cli"
+MODULE="authority_os.integrated_cli"
 for ARG in "$@"; do
   if [ "$ARG" = "--dry-run" ]; then
     # Preserve the complete deterministic fixture diagnostics used by public
-    # smoke tests. High-bar suppression applies only to live model drafting.
+    # smoke tests. High-bar and anti-slop suppression apply only to live drafting.
     MODULE="authority_os"
     break
   fi
