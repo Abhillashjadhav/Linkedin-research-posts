@@ -16,6 +16,10 @@ Agentic AI, agents, RAG, evaluations, reliability, context engineering, memory, 
 
 When defensible evidence exists, prioritise a recent real-world incident over a generic announcement. Useful incidents include a failed rollout, public customer harm, safety failure, hallucination, outage, financial loss, workflow breakdown, regulatory action, costly abandonment, or a production result that contradicted the original promise.
 
+Default incident window: the previous six months from the research date.
+
+Use an older incident only when the impact was exceptionally large and the incident remains directly relevant because of a recent development, renewed consequence, regulatory action, or category-defining lesson. Clearly preserve the original incident date. Do not select an older famous example merely because it is easier to explain. When a recent and older incident are equally defensible, choose the recent one.
+
 For each incident candidate, collect only source-supported fields:
 
 - what happened;
@@ -24,7 +28,9 @@ For each incident candidate, collect only source-supported fields:
 - the observable damage or consequence;
 - any verified scale, number, duration, cost, customer impact, or operational effect;
 - the product or governance mechanism that failed;
-- what action the organisation took afterward.
+- what action the organisation took afterward;
+- whether it falls inside the six-month window;
+- if older, the exact exceptional-impact and present-relevance justification.
 
 Do not force an incident angle when the damage is vague, speculative, old without renewed relevance, or supported only by social commentary. Never convert embarrassment, criticism, or virality into financial, safety, customer, or reputational damage unless a source states that consequence.
 
