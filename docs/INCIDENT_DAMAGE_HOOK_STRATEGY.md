@@ -4,6 +4,19 @@
 
 The strongest default hook for authority posts is a verified real-world incident with a concrete consequence, followed by the product mechanism that failed and the bounded solution Abhillash has built or recommends.
 
+## Freshness rule
+
+Default to incidents from the previous six months, measured from the research date.
+
+An older incident may be used only when all of these are true:
+
+1. the impact was exceptionally large, such as material customer harm, major financial loss, widespread operational disruption, regulatory action, or a category-defining product failure;
+2. the incident remains directly relevant to the current AI product decision;
+3. the post states the original incident date clearly;
+4. a recent development, renewed consequence, or enduring lesson makes the incident timely now.
+
+Do not choose an older famous incident merely because it is easier to explain. When a recent incident and an older incident are equally defensible, choose the recent one.
+
 ## Preferred sequence
 
 ```text
@@ -34,7 +47,7 @@ The opening should normally name the incident and consequence within the first t
 
 Good:
 
-> McDonald’s tested AI ordering across more than 100 drive-thrus. The pilot ended after repeated ordering failures became public.
+> A major retailer withdrew an AI feature this quarter after verified production failures affected customers at scale.
 
 Bad:
 
@@ -66,6 +79,8 @@ Prefer this pattern when the incident is current, consequential, relevant to AI 
 
 Before approval, answer yes to all:
 
+- Did the incident occur within the previous six months?
+- If older, is the exceptional-impact exception documented and genuinely current?
 - Is the incident real and body-read?
 - Is the consequence factual rather than inferred?
 - Does the hook contain the most compelling supported detail?
