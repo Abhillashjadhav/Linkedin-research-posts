@@ -4,6 +4,20 @@
 
 LinkedIn Authority OS is a local workflow for researching, drafting, critiquing, and learning from LinkedIn posts. Each candidate cycle creates exactly three voice-grounded drafts, maps claims to sources, applies bounded critique and deterministic honesty gates, and leaves publication entirely with the human owner.
 
+For trace-first campaign runs, the executable order is:
+
+```text
+Scout → Thesis → Writer (3) → Narrative Editor → Critic → deterministic gates
+→ integrated Anti-AI-Slop → bounded regeneration → external no-ai-slop edit
+→ post-edit Re-Critic/gates → First Comment Writer/Reviewer → Artifact Editor
+→ rendered artifact → Visual QA → human-review package
+```
+
+Every LLM stage records its runtime, exact model, and reasoning effort. The
+preferred campaign hierarchy is GPT-5.6 Sol/high for Writer, GPT-5.6 Sol/max
+for Narrative Editor and the external artisanal edit, and GPT-5.6 Sol/ultra
+for Critic and review stages. The Critic is never weaker than the Writer.
+
 ## See the product before installing
 
 Open the **[synthetic review package preview](examples/review-package-preview.md)**.
@@ -48,6 +62,33 @@ Each cycle still contains exactly three candidates and at most one light revisio
 
 After four unsuccessful live cycles, the command fails closed and returns no post. When `--package` is selected, rejected cycles may leave private `BLOCKED` audit packages; only a live `READY_FOR_HUMAN_REVIEW` package can clear the coordinator.
 
+## Run a persisted five-day campaign
+
+Campaign mode uses the same `draft` command, but takes one public, source-grounded
+five-day spec and the separate `Abhillashjadhav/no-ai-slop` editor files:
+
+```bash
+git clone --depth 1 https://github.com/Abhillashjadhav/no-ai-slop.git /tmp/no-ai-slop
+
+./bin/linkedin-os draft \
+  --run-spec campaigns/2026-08-10-to-14/spec.json \
+  --trace-output campaigns/2026-08-10-to-14/run \
+  --no-ai-slop-skill /tmp/no-ai-slop/SKILL.md \
+  --no-ai-slop-eval /tmp/no-ai-slop/eval.md
+```
+
+The coordinator runs each in-scope day independently. Every executed day ends
+in either `READY_FOR_HUMAN_REVIEW` or an explicit `BLOCKED` trace; a preserved
+published day may instead carry an aggregate-only out-of-scope status. The
+coordinator never lowers the 24/25 threshold. Rejected prose is omitted from the persisted public trace.
+Visual plans are rendered as repository-native SVG files and must pass both
+layout checks and the separate Visual QA stage.
+
+After a complete five-day run, `--campaign-day Tuesday` (or another weekday)
+reruns only that day and rebuilds the aggregate from all five persisted traces.
+The rerun clears only that day's replaceable post, comment, and SVG outputs, so
+stale artifacts cannot survive a changed result.
+
 ## What the workflow produces
 
 A review package is created only through the explicit `--package` operation:
@@ -70,13 +111,16 @@ flowchart LR
     A[Research with provenance] --> B[Topic analysis]
     B --> C[Strategy brief]
     C --> D[Three candidates]
-    D --> E[Bounded critic]
-    E --> F[Deterministic gates]
-    F -->|Below locked bar| D
-    F -->|24–25 and gates pass| G[Private review package]
-    G --> H[Manual fact verification]
-    H --> I[Manual publication outside system]
-    I --> J[Performance learning]
+    D --> E[Narrative Editor]
+    E --> F[Critic and deterministic gates]
+    F --> G[Integrated and artisanal anti-slop]
+    G -->|Below locked bar| D
+    G -->|24–25 and gates pass| H[First comment and artifact]
+    H --> I[Visual QA]
+    I --> J[Human review package]
+    J --> K[Manual fact verification]
+    K --> L[Manual publication outside system]
+    L --> M[Performance learning]
 ```
 
 ### 1. Research
@@ -202,7 +246,7 @@ make check
 ## Current limitations
 
 - macOS and Linux are supported; Windows is not currently supported for private-data operation.
-- Live drafting depends on the locally configured Claude service and explicit consent.
+- Legacy single-post live drafting depends on the locally configured Claude service and explicit consent; trace-first campaign mode uses the authenticated Codex CLI with explicit per-stage model settings.
 - The bounded search stops after four live cycles rather than spending indefinitely.
 - A 24–25 Critic score is a machine quality gate, not proof that a human will find the post compelling.
 - Research ingestion, analytics collection, and publication are not automated.

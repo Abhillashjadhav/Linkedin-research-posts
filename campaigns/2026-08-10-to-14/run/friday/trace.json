@@ -1,0 +1,940 @@
+{
+  "artifact": {
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    }
+  },
+  "critic": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 23,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 23,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      },
+      {
+        "cycle": 2,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 23,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 23,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      },
+      {
+        "cycle": 3,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 4,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          }
+        ]
+      },
+      {
+        "cycle": 4,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 23,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 23,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 22,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 4,
+            "raw_total": 22,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    }
+  },
+  "date": "2026-08-14",
+  "day": "Friday",
+  "deterministic_gates": {
+    "cycles": [
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 1
+      },
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 2
+      },
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 3
+      },
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 4
+      }
+    ]
+  },
+  "final": {
+    "human_approval_status": "NOT_APPROVED",
+    "publishing_status": "DISABLED",
+    "reason": "No candidate cleared all four high-bar cycles.",
+    "status": "BLOCKED"
+  },
+  "first_comment": {
+    "artisanal_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    },
+    "reviewer_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    },
+    "writer_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "runtime": "codex"
+    }
+  },
+  "integrated_anti_slop": {
+    "cycles": [
+      {
+        "candidates": {
+          "candidate-1": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "For AI product leaders, the useful design question is precise: when an agent returns after interruption, which persisted record has the authority to say what happens next?"
+            }
+          ],
+          "candidate-2": [],
+          "candidate-3": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "This is the failure mode worth designing around: fluent reconstruction standing in for workflow truth."
+            }
+          ]
+        },
+        "cycle": 1
+      },
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [],
+          "candidate-3": []
+        },
+        "cycle": 2
+      },
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [],
+          "candidate-3": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "That artefact forces a useful product question: what, exactly, is allowed to say where the workflow resumes?"
+            }
+          ]
+        },
+        "cycle": 3
+      },
+      {
+        "candidates": {
+          "candidate-1": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "For AI product leaders, the useful design review question is precise: if the conversation disappeared, which persisted document could still prove the next valid action?"
+            }
+          ],
+          "candidate-2": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "Before approving a resumable agent, ask one concrete question: can it justify the next action from validated execution state alone?"
+            }
+          ],
+          "candidate-3": []
+        },
+        "cycle": 4
+      }
+    ]
+  },
+  "narrative_editor": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "results": [
+          {
+            "diagnosis": "The draft turns a technical persistence boundary into a clear product decision, with ambiguous resume authority as the concrete failure consequence.",
+            "id": "candidate-1",
+            "repeatable_sentence": "A system may recall the user perfectly and still lack sufficient authority to continue an interrupted workflow.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The draft has a direct thesis, an audience-specific stop condition, and an evidence-backed rule separating personalisation from continuation authority.",
+            "id": "candidate-2",
+            "repeatable_sentence": "A resumable agent should not let user memory decide what executes next.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The authoritative artefact anchors a concrete failure mode\u2014fluent reconstruction being mistaken for valid progress\u2014and leads to an inspectable resume policy.",
+            "id": "candidate-3",
+            "repeatable_sentence": "This is the failure mode worth designing around: fluent reconstruction standing in for workflow truth.",
+            "status": "UNCHANGED"
+          }
+        ]
+      },
+      {
+        "cycle": 2,
+        "results": [
+          {
+            "diagnosis": "Moved the operating judgement to the opening and clarified that continuation depends on validated execution state, making the authority boundary visible before the mechanism.",
+            "id": "candidate-1",
+            "repeatable_sentence": "Only validated execution state should confer permission to continue.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "The draft already leads with a clear product decision, distinguishes useful recall from resume authority, and supplies an evidence-backed stop condition with a concrete consequence.",
+            "id": "candidate-2",
+            "repeatable_sentence": "Give resume authority to validated execution state, not long-term user memory.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "Moved the reader-facing resume test ahead of the implementation detail, foregrounding the failure mode: fluent reconstruction can conceal missing execution authority.",
+            "id": "candidate-3",
+            "repeatable_sentence": "Without an authoritative execution record, fluent reconstruction can look like valid progress.",
+            "status": "EDITED"
+          }
+        ]
+      },
+      {
+        "cycle": 3,
+        "results": [
+          {
+            "diagnosis": "Moved the authority conflict ahead of the mechanism so the resume-risk consequence is visible immediately; all factual claims remain unchanged.",
+            "id": "candidate-1",
+            "repeatable_sentence": "If the answer is conversation history, the workflow has remembered plenty but established too little.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "The draft already leads with a consequential product decision, supports it with two distinct persistence designs, and ends with a practical diagnostic for design reviews.",
+            "id": "candidate-2",
+            "repeatable_sentence": "Do not let long-term user memory decide where an unfinished workflow resumes.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The concrete run-state artefact exposes the underlying authority conflict, while the closing test converts that distinction into an actionable operating judgement.",
+            "id": "candidate-3",
+            "repeatable_sentence": "A production agent should not resume because the conversation sounds familiar.",
+            "status": "UNCHANGED"
+          }
+        ]
+      },
+      {
+        "cycle": 4,
+        "results": [
+          {
+            "diagnosis": "The draft turns the persistence split into an authority boundary, identifies unsafe resumption as the consequence, and ends with a concrete design-review decision.",
+            "id": "candidate-1",
+            "repeatable_sentence": "The product judgement is to assign authority before adding memory.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The draft leads with the decision, breaks the assumption that durable context grants execution authority, and gives product leaders a test for safe resumption.",
+            "id": "candidate-2",
+            "repeatable_sentence": "A convincing conversational account should not outrank the record designed to govern the run.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The draft makes the governing artefact the focus, connects missing execution authority to duplicate or invalid actions, and supplies a practical inspection method.",
+            "id": "candidate-3",
+            "repeatable_sentence": "The artefact worth reviewing is the one that can explain both where execution resumes and why that step is permitted.",
+            "status": "UNCHANGED"
+          }
+        ]
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    }
+  },
+  "no_ai_slop_artisanal": {
+    "attempts": [
+      {
+        "candidate_id": "candidate-2",
+        "changed": true,
+        "changes_made": [
+          "Recast the opening and closing binary contrasts as direct claims.",
+          "Tightened interpretive prose and removed the stop-condition setup.",
+          "Preserved source-1 and source-2, leaving every source-anchored sentence character-for-character unchanged."
+        ],
+        "cycle": 2,
+        "failed_checks": [],
+        "status": "PASS"
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    },
+    "source": {
+      "commit": "61c21c351da4dcb40946a11fead978f2078a2c65",
+      "eval_sha256": "b274cdc623e57ff1b4f673aedef929ba2b01419d13097248c3c74a5dbd80ccfd",
+      "repository": "https://github.com/Abhillashjadhav/no-ai-slop",
+      "skill_sha256": "73f87f7f79bd3540c4d8494b5c43d37d25584be6886212e1516fdd8d1c539846"
+    }
+  },
+  "post_edit_recritic": {
+    "anti_slop_findings": [],
+    "executed": true,
+    "gates": {
+      "authority_conversion": {
+        "reason_codes": [
+          "authority-and-decision-reflected"
+        ],
+        "status": "PASS"
+      },
+      "citation": {
+        "reason_codes": [
+          "traceable-body-read-evidence"
+        ],
+        "status": "PASS"
+      },
+      "honesty": {
+        "reason_codes": [
+          "no-unsupported-high-risk-claim-detected"
+        ],
+        "status": "PASS"
+      },
+      "proof": {
+        "reason_codes": [
+          "goal-does-not-require-proof"
+        ],
+        "status": "NOT_REQUIRED"
+      },
+      "relevance": {
+        "reason_codes": [
+          "target-audience-and-problem-reflected"
+        ],
+        "status": "PASS"
+      }
+    },
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    },
+    "score": {
+      "band": "below-critic-bar",
+      "candidate_id": "candidate-2",
+      "earned_closer": 4,
+      "effective_total": 18,
+      "hook_cap_applied": true,
+      "hook_strength": 3,
+      "middle_escalation": 4,
+      "raw_total": 20,
+      "specificity_and_source_quality": 5,
+      "voice_fidelity": 4
+    },
+    "unchanged_score_reused": false
+  },
+  "regeneration_count": 4,
+  "schema_version": 1,
+  "scout": {
+    "freshness": "verified against primary sources on the researched_at date",
+    "researched_at": "2026-08-09T22:30:00+05:30",
+    "sources": [
+      {
+        "body_read": true,
+        "caveats": "Current framework documentation accessed 2026-08-09; examples include in-memory implementations that are not production persistence.",
+        "date_kind": "accessed",
+        "id": "source-1",
+        "source_date": "2026-08-09",
+        "source_quality": "primary",
+        "title": "LangGraph persistence documentation",
+        "url": "https://docs.langchain.com/oss/python/langgraph/persistence"
+      },
+      {
+        "body_read": true,
+        "caveats": "Public repository implementation evidence; it supports the architecture claim, not comparative performance.",
+        "date_kind": "accessed",
+        "id": "source-2",
+        "source_date": "2026-08-09",
+        "source_quality": "primary",
+        "title": "Production Engineering OS persisted run state",
+        "url": "https://github.com/Abhillashjadhav/production-engineering-os/blob/main/docs/v2-production-engineering.md"
+      }
+    ],
+    "status": "PASS"
+  },
+  "thesis": {
+    "selected_thesis": "Production agents should separate user memory from execution state so unfinished work resumes from deterministic workflow truth rather than reconstructed conversational context.",
+    "status": "PASS"
+  },
+  "topic": "Execution state versus user memory",
+  "visual_qa": {
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    }
+  },
+  "writer": {
+    "cycles": [
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 1
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 2
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 3
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 4
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "runtime": "codex"
+    }
+  }
+}

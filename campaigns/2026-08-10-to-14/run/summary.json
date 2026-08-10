@@ -1,0 +1,117 @@
+{
+  "campaign": "2026-08-10-to-14-authority-os",
+  "days": [
+    {
+      "artifact_format": null,
+      "critic": null,
+      "critic_effective_total": null,
+      "day": "Monday",
+      "hook_strength": null,
+      "narrative_editor": null,
+      "regeneration_count": null,
+      "status": "ALREADY_PUBLISHED \u2014 OUT_OF_SCOPE",
+      "visual_qa": null,
+      "writer": null
+    },
+    {
+      "artifact_format": "NONE",
+      "critic": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "ultra",
+        "runtime": "codex"
+      },
+      "critic_effective_total": 24,
+      "day": "Tuesday",
+      "hook_strength": 4,
+      "narrative_editor": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "max",
+        "runtime": "codex"
+      },
+      "regeneration_count": 0,
+      "status": "READY_FOR_HUMAN_REVIEW",
+      "visual_qa": "NOT_REQUIRED",
+      "writer": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "high",
+        "runtime": "codex"
+      }
+    },
+    {
+      "artifact_format": null,
+      "critic": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "ultra",
+        "runtime": "codex"
+      },
+      "critic_effective_total": 22,
+      "day": "Wednesday",
+      "hook_strength": 4,
+      "narrative_editor": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "max",
+        "runtime": "codex"
+      },
+      "regeneration_count": 4,
+      "status": "BLOCKED",
+      "visual_qa": null,
+      "writer": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "high",
+        "runtime": "codex"
+      }
+    },
+    {
+      "artifact_format": null,
+      "critic": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "ultra",
+        "runtime": "codex"
+      },
+      "critic_effective_total": 23,
+      "day": "Thursday",
+      "hook_strength": 4,
+      "narrative_editor": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "max",
+        "runtime": "codex"
+      },
+      "regeneration_count": 4,
+      "status": "BLOCKED",
+      "visual_qa": null,
+      "writer": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "high",
+        "runtime": "codex"
+      }
+    },
+    {
+      "artifact_format": null,
+      "critic": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "ultra",
+        "runtime": "codex"
+      },
+      "critic_effective_total": 18,
+      "day": "Friday",
+      "hook_strength": 3,
+      "narrative_editor": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "max",
+        "runtime": "codex"
+      },
+      "regeneration_count": 4,
+      "status": "BLOCKED",
+      "visual_qa": null,
+      "writer": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "high",
+        "runtime": "codex"
+      }
+    }
+  ],
+  "human_approval_status": "NOT_APPROVED",
+  "publishing_status": "DISABLED",
+  "researched_at": "2026-08-09T22:30:00+05:30",
+  "schema_version": 1
+}

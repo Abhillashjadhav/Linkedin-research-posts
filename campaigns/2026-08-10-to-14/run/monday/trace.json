@@ -1,0 +1,740 @@
+{
+  "artifact": {
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    }
+  },
+  "critic": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          }
+        ]
+      },
+      {
+        "cycle": 2,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 4,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 23,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 23,
+            "specificity_and_source_quality": 4,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "below-critic-bar",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 21,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 4,
+            "raw_total": 21,
+            "specificity_and_source_quality": 4,
+            "voice_fidelity": 4
+          }
+        ]
+      },
+      {
+        "cycle": 3,
+        "scorecards": []
+      },
+      {
+        "cycle": 4,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          }
+        ]
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    }
+  },
+  "date": "2026-08-10",
+  "day": "Monday",
+  "deterministic_gates": {
+    "cycles": [
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 1
+      },
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 2
+      },
+      {
+        "candidates": {},
+        "cycle": 3
+      },
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-personal-or-ownership-claim",
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-personal-or-ownership-claim",
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-personal-or-ownership-claim",
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 4
+      }
+    ]
+  },
+  "final": {
+    "human_approval_status": "NOT_APPROVED",
+    "publishing_status": "DISABLED",
+    "reason": "No candidate cleared all four high-bar cycles.",
+    "status": "BLOCKED"
+  },
+  "first_comment": {
+    "artisanal_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    },
+    "reviewer_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    },
+    "writer_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "runtime": "codex"
+    }
+  },
+  "integrated_anti_slop": {
+    "cycles": [
+      {
+        "candidates": {
+          "candidate-1": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "The practical test is simple: after every node completes, can the product explain why this edge\u2014and no other edge\u2014was allowed to run?"
+            }
+          ],
+          "candidate-2": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "Before approving another agent, ask a narrower question: which new transition does it require, and what will authorise that edge?"
+            }
+          ],
+          "candidate-3": []
+        },
+        "cycle": 1
+      },
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [],
+          "candidate-3": []
+        },
+        "cycle": 2
+      },
+      {
+        "candidates": {},
+        "cycle": 3
+      },
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [],
+          "candidate-3": []
+        },
+        "cycle": 4
+      }
+    ]
+  },
+  "narrative_editor": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "results": [
+          {
+            "diagnosis": "Moved the underlying control conflict ahead of the framework detail so the mechanism leads cleanly to the product decision.",
+            "id": "candidate-1",
+            "repeatable_sentence": "The graph becomes useful when it limits execution, not merely when it visualises it.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "Replaced the unsupported emphasis on evidence with the source-grounded concept of conditions; the capability-versus-authority distinction already carries the narrative.",
+            "id": "candidate-2",
+            "repeatable_sentence": "Model capability answers whether an agent can propose an action.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "The draft already turns graph notation into a reviewable permission contract, names the failure mode, and gives the reader a concrete design artefact to change.",
+            "id": "candidate-3",
+            "repeatable_sentence": "The graph earns its place when a reviewer can inspect it and determine not only where execution could go, but why it is allowed to go there.",
+            "status": "UNCHANGED"
+          }
+        ]
+      },
+      {
+        "cycle": 2,
+        "results": [
+          {
+            "diagnosis": "Moved the permission failure ahead of the framework detail so the mechanism leads directly to the product decision.",
+            "id": "candidate-1",
+            "repeatable_sentence": "Completion alone should not grant permission to continue.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "The draft already separates capability from authority, changes the agent-expansion decision, and states the practical consequence clearly.",
+            "id": "candidate-2",
+            "repeatable_sentence": "Add an agent only after defining the edge it is permitted to activate.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The transition register gives the thesis a distinctive artefact, exposes the unresolved authority decision, and provides a concrete design-review action.",
+            "id": "candidate-3",
+            "repeatable_sentence": "A workflow sketch says which agents are connected.",
+            "status": "UNCHANGED"
+          }
+        ]
+      },
+      {
+        "cycle": 3,
+        "results": [
+          {
+            "diagnosis": "The authority thesis is clear, but the draft only synthesises framework documentation. It offers no author-owned evidence or situated consequence, so it reads as generic guidance and cannot be fixed with a bounded edit.",
+            "id": "candidate-1",
+            "repeatable_sentence": "",
+            "status": "DROP"
+          },
+          {
+            "diagnosis": "The capability-versus-authority distinction changes a decision, but the edge-contract advice rests on documentation alone. Without author-owned practice or an observed consequence, it lacks the standing needed to be Abhillash\u2019s post.",
+            "id": "candidate-2",
+            "repeatable_sentence": "",
+            "status": "DROP"
+          },
+          {
+            "diagnosis": "The transition register is a useful artefact, but the draft neither demonstrates that Abhillash uses it nor ties it to an observed failure. Establishing that standing would require a new claim, not a bounded edit.",
+            "id": "candidate-3",
+            "repeatable_sentence": "",
+            "status": "DROP"
+          }
+        ]
+      },
+      {
+        "cycle": 4,
+        "results": [
+          {
+            "diagnosis": "Made the author\u2019s operating-system evidence concrete so the central distinction\u2014task completion versus transition permission\u2014has earned standing and a clear product consequence.",
+            "id": "candidate-1",
+            "repeatable_sentence": "An agent finishing a task should not automatically earn the right to choose what happens next.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "Replaced the generic repository reference with the author\u2019s concrete implementation, grounding the edge-contract decision in demonstrated practice.",
+            "id": "candidate-2",
+            "repeatable_sentence": "Without an explicit authority boundary, capability can quietly become permission.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "Grounded the missing-authority failure mode in the author\u2019s own stage-machine design, making the proposed review artifact specific rather than generic.",
+            "id": "candidate-3",
+            "repeatable_sentence": "When they are explicit product boundaries, the graph becomes executable governance.",
+            "status": "EDITED"
+          }
+        ]
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    }
+  },
+  "no_ai_slop_artisanal": {
+    "attempts": [],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    },
+    "source": {
+      "commit": "61c21c351da4dcb40946a11fead978f2078a2c65",
+      "eval_sha256": "b274cdc623e57ff1b4f673aedef929ba2b01419d13097248c3c74a5dbd80ccfd",
+      "repository": "https://github.com/Abhillashjadhav/no-ai-slop",
+      "skill_sha256": "73f87f7f79bd3540c4d8494b5c43d37d25584be6886212e1516fdd8d1c539846"
+    }
+  },
+  "post_edit_recritic": {
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    }
+  },
+  "regeneration_count": 4,
+  "schema_version": 1,
+  "scout": {
+    "freshness": "verified against primary sources on the researched_at date",
+    "researched_at": "2026-08-09T22:30:00+05:30",
+    "sources": [
+      {
+        "body_read": true,
+        "caveats": "The page exposes a 2026 copyright but no publication date; accessed 2026-08-09.",
+        "date_kind": "accessed",
+        "id": "source-1",
+        "source_date": "2026-08-09",
+        "source_quality": "primary",
+        "title": "Google ADK template agent workflows",
+        "url": "https://adk.dev/agents/workflow-agents/"
+      },
+      {
+        "body_read": true,
+        "caveats": "GraphFlow is explicitly experimental and may change.",
+        "date_kind": "accessed",
+        "id": "source-2",
+        "source_date": "2026-08-09",
+        "source_quality": "primary",
+        "title": "Microsoft AutoGen GraphFlow workflows",
+        "url": "https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/graph-flow.html"
+      },
+      {
+        "body_read": true,
+        "caveats": "Author-owned public repository evidence; this establishes implementation design, not third-party adoption.",
+        "date_kind": "accessed",
+        "id": "source-3",
+        "source_date": "2026-08-09",
+        "source_quality": "primary",
+        "title": "Production Engineering OS V2 stage machine",
+        "url": "https://github.com/Abhillashjadhav/production-engineering-os/blob/main/docs/v2-production-engineering.md"
+      }
+    ],
+    "status": "PASS"
+  },
+  "thesis": {
+    "selected_thesis": "Agent workflows become graphs when the product needs explicit transition authority; the important decision is what is allowed to happen after a node completes.",
+    "status": "PASS"
+  },
+  "topic": "Graph execution and edge authority",
+  "visual_qa": {
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    }
+  },
+  "writer": {
+    "cycles": [
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 1
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 2
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 3
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 4
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "runtime": "codex"
+    }
+  }
+}

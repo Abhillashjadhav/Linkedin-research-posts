@@ -1,0 +1,921 @@
+{
+  "artifact": {
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    }
+  },
+  "critic": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 22,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 4,
+            "raw_total": 22,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 22,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 4,
+            "raw_total": 22,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      },
+      {
+        "cycle": 2,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 23,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 23,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          },
+          {
+            "band": "below-critic-bar",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 18,
+            "hook_cap_applied": true,
+            "hook_strength": 3,
+            "middle_escalation": 4,
+            "raw_total": 21,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      },
+      {
+        "cycle": 3,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 23,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 23,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      },
+      {
+        "cycle": 4,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 22,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 4,
+            "raw_total": 22,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    }
+  },
+  "date": "2026-08-12",
+  "day": "Wednesday",
+  "deterministic_gates": {
+    "cycles": [
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 1
+      },
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 2
+      },
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-personal-or-ownership-claim",
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 3
+      },
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 4
+      }
+    ]
+  },
+  "final": {
+    "human_approval_status": "NOT_APPROVED",
+    "publishing_status": "DISABLED",
+    "reason": "No candidate cleared all four high-bar cycles.",
+    "status": "BLOCKED"
+  },
+  "first_comment": {
+    "artisanal_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    },
+    "reviewer_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    },
+    "writer_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "runtime": "codex"
+    }
+  },
+  "integrated_anti_slop": {
+    "cycles": [
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [],
+          "candidate-3": []
+        },
+        "cycle": 1
+      },
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [],
+          "candidate-3": []
+        },
+        "cycle": 2
+      },
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "That produces a routing policy a product leader can explain: visible task assessment, explicit risk treatment and evaluation against representative work."
+            }
+          ],
+          "candidate-3": []
+        },
+        "cycle": 3
+      },
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [],
+          "candidate-3": []
+        },
+        "cycle": 4
+      }
+    ]
+  },
+  "narrative_editor": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "results": [
+          {
+            "diagnosis": "The task-versus-application conflict, risk-floor consequence, and stage-boundary decision are already explicit and evidence-backed.",
+            "id": "candidate-1",
+            "repeatable_sentence": "Generation and evaluation should not inherit one route merely because they sit inside the same application.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The draft leads with a concrete product decision and clearly exposes the hidden consequence of blanket application-level routing.",
+            "id": "candidate-2",
+            "repeatable_sentence": "The relevant unit is the task and the consequence of its error.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The distinction between assessment, recommendation, and action supplies a concrete failure mode and an inspectable operating judgement.",
+            "id": "candidate-3",
+            "repeatable_sentence": "The artefact is not the intelligence.",
+            "status": "UNCHANGED"
+          }
+        ]
+      },
+      {
+        "cycle": 2,
+        "results": [
+          {
+            "diagnosis": "Replaced a vague cost bridge with the central operating trade-off: capability scales with task complexity, while error cost establishes the floor.",
+            "id": "candidate-1",
+            "repeatable_sentence": "Capability can scale with task complexity, while error cost sets the floor.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "The draft already connects the application-wide-default conflict to the differing failure costs of generation and evaluation, then gives a clear stage-level routing sequence.",
+            "id": "candidate-2",
+            "repeatable_sentence": "A reversible generation step and a consequential evaluation step should not inherit the same answer merely because they sit inside one workflow.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The draft sustains a distinct governance narrative: an inspectable decision trail matters more than a bare recommendation, and recommendation must remain separate from execution.",
+            "id": "candidate-3",
+            "repeatable_sentence": "A router that returns only a model name is missing its most important output: the decision trail.",
+            "status": "UNCHANGED"
+          }
+        ]
+      },
+      {
+        "cycle": 3,
+        "results": [
+          {
+            "diagnosis": "Separates task demand from error consequence, exposes the application-wide default\u2019s cost, and ends with a defensible operating sequence.",
+            "id": "candidate-1",
+            "repeatable_sentence": "The two signals must remain separate: a bounded task can still require a stronger model when a plausible mistake would be difficult to detect or reverse.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "Breaks the application-wide-default assumption and makes both the stage-boundary decision and its quality-cost consequence explicit.",
+            "id": "candidate-2",
+            "repeatable_sentence": "A blanket default spends capability where it adds little and withholds it where an error deserves more protection.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "Replaces the abstract governance hook with the concrete failure: a routing record can suggest that an unapplied control exists.",
+            "id": "candidate-3",
+            "repeatable_sentence": "A model recommendation without a visible decision trail can imply a control that was never applied.",
+            "status": "EDITED"
+          }
+        ]
+      },
+      {
+        "cycle": 4,
+        "results": [
+          {
+            "diagnosis": "The mechanism already exposes the conflict between application-wide defaults and task-specific error costs, then lands on an inspectable routing control.",
+            "id": "candidate-1",
+            "repeatable_sentence": "Model routing stops being a configuration preference and becomes an explicit product control.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The draft directly challenges application-wide assignment, identifies its quality, latency, and cost consequence, and gives readers a task-level routing test.",
+            "id": "candidate-2",
+            "repeatable_sentence": "If the answer exists only at application level, the routing unit is still too broad.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The draft breaks the assumption that a routing recommendation is an applied control and makes inspectable assessment, risk treatment, and execution status the operating judgement.",
+            "id": "candidate-3",
+            "repeatable_sentence": "A routing artefact can look decisive even when the product has not applied its recommendation.",
+            "status": "UNCHANGED"
+          }
+        ]
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    }
+  },
+  "no_ai_slop_artisanal": {
+    "attempts": [
+      {
+        "candidate_id": "candidate-3",
+        "changed": true,
+        "changes_made": [
+          "Preserved the source-2 and source-1 anchored sentences character-for-character.",
+          "Replaced an indirect contrast with a direct description of the boundary.",
+          "Recast the closing binary contrast as a clear comparison."
+        ],
+        "cycle": 4,
+        "failed_checks": [],
+        "status": "PASS"
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    },
+    "source": {
+      "commit": "61c21c351da4dcb40946a11fead978f2078a2c65",
+      "eval_sha256": "b274cdc623e57ff1b4f673aedef929ba2b01419d13097248c3c74a5dbd80ccfd",
+      "repository": "https://github.com/Abhillashjadhav/no-ai-slop",
+      "skill_sha256": "73f87f7f79bd3540c4d8494b5c43d37d25584be6886212e1516fdd8d1c539846"
+    }
+  },
+  "post_edit_recritic": {
+    "anti_slop_findings": [],
+    "executed": true,
+    "gates": {
+      "authority_conversion": {
+        "reason_codes": [
+          "authority-and-decision-reflected"
+        ],
+        "status": "PASS"
+      },
+      "citation": {
+        "reason_codes": [
+          "traceable-body-read-evidence"
+        ],
+        "status": "PASS"
+      },
+      "honesty": {
+        "reason_codes": [
+          "no-unsupported-high-risk-claim-detected"
+        ],
+        "status": "PASS"
+      },
+      "proof": {
+        "reason_codes": [
+          "goal-does-not-require-proof"
+        ],
+        "status": "NOT_REQUIRED"
+      },
+      "relevance": {
+        "reason_codes": [
+          "target-audience-and-problem-reflected"
+        ],
+        "status": "PASS"
+      }
+    },
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    },
+    "score": {
+      "band": "one-light-revision",
+      "candidate_id": "candidate-3",
+      "earned_closer": 5,
+      "effective_total": 22,
+      "hook_cap_applied": false,
+      "hook_strength": 4,
+      "middle_escalation": 4,
+      "raw_total": 22,
+      "specificity_and_source_quality": 5,
+      "voice_fidelity": 4
+    },
+    "unchanged_score_reused": false
+  },
+  "regeneration_count": 4,
+  "schema_version": 1,
+  "scout": {
+    "freshness": "verified against primary sources on the researched_at date",
+    "researched_at": "2026-08-09T22:30:00+05:30",
+    "sources": [
+      {
+        "body_read": true,
+        "caveats": "Model availability, pricing, and guidance can change; this claim reflects the page accessed on 2026-08-09.",
+        "date_kind": "accessed",
+        "id": "source-1",
+        "source_date": "2026-08-09",
+        "source_quality": "primary",
+        "title": "OpenAI GPT-5.6 model guidance",
+        "url": "https://developers.openai.com/api/docs/guides/latest-model"
+      },
+      {
+        "body_read": true,
+        "caveats": "Public repository implementation; its tier map uses Claude labels, while the transferable proof is the task-scoring and risk-floor mechanism.",
+        "date_kind": "accessed",
+        "id": "source-2",
+        "source_date": "2026-08-09",
+        "source_quality": "primary",
+        "title": "Public model-complexity-router implementation",
+        "url": "https://github.com/Abhillashjadhav/production-engineering-os/blob/main/.claude/skills/model-complexity-router/SKILL.md"
+      }
+    ],
+    "status": "PASS"
+  },
+  "thesis": {
+    "selected_thesis": "Route model capability by task complexity and error cost instead of assigning one model to an entire application.",
+    "status": "PASS"
+  },
+  "topic": "Model routing by task",
+  "visual_qa": {
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    }
+  },
+  "writer": {
+    "cycles": [
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 1
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 2
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 3
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 4
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "runtime": "codex"
+    }
+  }
+}
