@@ -7,6 +7,13 @@ description: Prepare evidence-grounded LinkedIn drafts through a bounded high-ba
 
 Use only `./bin/linkedin-os`. Do not bypass its validation or invoke the role prompts directly.
 
+For a five-day `--run-spec` campaign, the CLI owns the full executable order:
+Scout → Thesis → Writer → Narrative Editor → Critic → deterministic gates →
+integrated Anti-AI-Slop → bounded regeneration → separate no-ai-slop edit →
+post-edit Re-Critic/gates → First Comment Writer/Reviewer → Artifact Editor →
+rendered artifact → Visual QA → human review. Do not invoke any of those role
+prompts directly.
+
 ## Choose the run mode
 
 - For an offline workflow check, use `--dry-run`. Fixture output is synthetic, invokes no model, runs one deterministic cycle, never recommends a candidate, and must not be published.
@@ -22,7 +29,15 @@ Examples:
 ./bin/linkedin-os draft --strategy-input data/private/strategy.json --allow-model-egress
 ./bin/linkedin-os draft --goal opportunity --strategy-input data/private/strategy.json \
   --proof-manifest data/private/proof.json --allow-model-egress --package
+./bin/linkedin-os draft --run-spec campaigns/2026-08-10-to-14/spec.json \
+  --trace-output campaigns/2026-08-10-to-14/run \
+  --no-ai-slop-skill /tmp/no-ai-slop/SKILL.md \
+  --no-ai-slop-eval /tmp/no-ai-slop/eval.md
 ```
+
+Use `--campaign-day <Weekday>` only after a complete run; it reruns that day
+and rebuilds the aggregate from the five persisted traces. Never rerun a day
+listed in the campaign spec's `preserve_days`.
 
 If live prerequisites are missing, report the exact missing input. Do not replace missing research, strategy, proof, ownership, or model-egress consent with invented material or a silent fixture run.
 

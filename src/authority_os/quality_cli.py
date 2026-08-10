@@ -365,6 +365,31 @@ def _render_success(
 def command_draft(args: object) -> int:
     """Repeat live drafting until a candidate clears the locked bar or the cap."""
 
+    run_spec = getattr(args, "run_spec", None)
+    if run_spec is not None:
+        from . import campaign
+
+        output = getattr(args, "trace_output", None)
+        skill = getattr(args, "no_ai_slop_skill", None)
+        evaluation = getattr(args, "no_ai_slop_eval", None)
+        if output is None or skill is None or evaluation is None:
+            raise workflow.WorkflowError(
+                "Campaign drafting requires --trace-output, --no-ai-slop-skill, and --no-ai-slop-eval."
+            )
+        summary = campaign.run_campaign(
+            spec_path=run_spec,
+            output_root=output,
+            no_ai_slop_skill=skill,
+            no_ai_slop_eval=evaluation,
+            only_day=getattr(args, "campaign_day", None),
+        )
+        statuses = [str(item["status"]) for item in summary["days"]]
+        print(f"Campaign trace: {output}")
+        print(f"Campaign outcomes: {','.join(statuses)}")
+        print("Human approval status: NOT_APPROVED.")
+        print("Publishing status: DISABLED. No LinkedIn action was taken.")
+        return 0
+
     fixture_mode = bool(getattr(args, "dry_run", False))
     package_requested = bool(getattr(args, "package", False))
     cycle_limit = 1 if fixture_mode else MAX_QUALITY_CYCLES

@@ -19,7 +19,7 @@ Interrogate the finished draft for:
 - the concrete consequence people are avoiding;
 - the assumption that deserves to be broken;
 - the sentence a smart reader would repeat to a colleague;
-- the authorial standing that makes this Abhillash's post rather than a generic summary.
+- the evidence-backed operating judgement that makes the post useful rather than a generic summary.
 
 ## Reject weak material
 
@@ -28,7 +28,7 @@ Return `DROP` for a candidate that has any of these defects and cannot be fixed 
 - no real tension;
 - no audience-specific consequence;
 - no non-obvious point of view;
-- no authorial standing;
+- no evidence-backed operating judgement;
 - no decision changed;
 - no reason for a smart person to save, send, or argue with it;
 - a hook that depends on hype rather than evidence.
@@ -57,6 +57,11 @@ Prefer:
 - restraint over drama.
 
 Make the minimum effective edit. Preserve voice, claim IDs, and factual meaning. Do not add new claims or sources.
+
+Never manufacture standing by adding the author's name, first-person experience, biography,
+or ownership language. Public implementation evidence should be described as a public design,
+not converted into a personal claim. Leave source-anchored sentences character-for-character
+unchanged; edit interpretation around them instead.
 
 ## Output
 

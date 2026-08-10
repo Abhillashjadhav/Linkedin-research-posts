@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "campaign": "2026-08-10-to-14-authority-os",
+  "researched_at": "2026-08-09T22:30:00+05:30",
+  "reporting_statuses": {
+    "Monday": "ALREADY_PUBLISHED — OUT_OF_SCOPE"
+  },
+  "preserve_days": [
+    "Monday",
+    "Tuesday"
+  ],
+  "days": [
+    {
+      "day": "Monday",
+      "date": "2026-08-10",
+      "topic": "Graph execution and edge authority",
+      "topic_slug": "graph-execution-edge-authority",
+      "thesis": "Agent workflows become graphs when the product needs explicit transition authority; the important decision is what is allowed to happen after a node completes.",
+      "target_reader": "AI product leaders designing reliable multi-agent workflows",
+      "reader_problem": "AI product leaders need a reliable decision about which workflow transition may execute after each agent completes.",
+      "product_decision": "Define allowed transitions, conditional edges, and terminal states before adding more agents.",
+      "authority_statement": "Connect graph structure to the product authority that permits the next workflow action.",
+      "why_now": "Current ADK and AutoGen documentation now make deterministic, conditional, looping, and graph execution explicit product surfaces.",
+      "dominant_take": "Framework documentation explains graph primitives and orchestration patterns.",
+      "missing_angle": "The product decision is not whether to draw a graph; it is who or what has authority to select the next edge.",
+      "artifact_policy": "Return DIAGRAM with two or three nodes showing node completion, edge-policy evaluation, and the permitted next action. Do not use a carousel.",
+      "evidence": [
+        {
+          "id": "source-1",
+          "title": "Google ADK template agent workflows",
+          "claim": "Google ADK describes workflow agents as components that control how and when sub-agents run. Its predefined sequential, loop, and parallel patterns use deterministic logic rather than consulting a model for orchestration; ADK 2.0 points to graph-based and dynamic workflows for more control.",
+          "source": "https://adk.dev/agents/workflow-agents/",
+          "source_quality": "primary",
+          "body_read": true,
+          "source_date": "2026-08-09",
+          "date_kind": "accessed",
+          "caveats": "The page exposes a 2026 copyright but no publication date; accessed 2026-08-09."
+        },
+        {
+          "id": "source-2",
+          "title": "Microsoft AutoGen GraphFlow workflows",
+          "claim": "AutoGen GraphFlow follows a directed graph for strict execution control. Edges define allowed paths and may be conditional; the documentation recommends graphs when different outcomes need different next steps, while warning that GraphFlow is experimental.",
+          "source": "https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/graph-flow.html",
+          "source_quality": "primary",
+          "body_read": true,
+          "source_date": "2026-08-09",
+          "date_kind": "accessed",
+          "caveats": "GraphFlow is explicitly experimental and may change."
+        },
+        {
+          "id": "source-3",
+          "title": "Production Engineering OS V2 stage machine",
+          "claim": "Abhillash's public Production Engineering OS advances a declared stage machine only through admitted artifacts or engine-owned actions, appends digest-bound events to an evidence ledger, and resumes from a single persisted run-state document rather than reconstructing authority from chat.",
+          "source": "https://github.com/Abhillashjadhav/production-engineering-os/blob/main/docs/v2-production-engineering.md",
+          "source_quality": "primary",
+          "body_read": true,
+          "source_date": "2026-08-09",
+          "date_kind": "accessed",
+          "caveats": "Author-owned public repository evidence; this establishes implementation design, not third-party adoption."
+        }
+      ]
+    },
+    {
+      "day": "Tuesday",
+      "date": "2026-08-11",
+      "topic": "Agent budgets and exhaustion behaviour",
+      "topic_slug": "agent-budget-exhaustion-behaviour",
+      "thesis": "A runtime budget is incomplete unless the product defines what happens when the budget is exhausted before the job is done.",
+      "target_reader": "AI product leaders operating long-running autonomous agents",
+      "reader_problem": "AI product leaders need a reliable decision for unfinished work when an autonomous agent exhausts its runtime budget.",
+      "product_decision": "Specify the exhausted state, preserved state, continuation authority, and user-visible recovery path with every budget.",
+      "authority_statement": "Turn token caps into an explicit unfinished-work and recovery contract.",
+      "why_now": "Google added documented Managed Agents token-budget controls and a resumable incomplete state in July 2026.",
+      "dominant_take": "The launch is described primarily as cost control for autonomous loops.",
+      "missing_angle": "The more consequential product surface is the state transition at exhaustion and who may grant a fresh budget.",
+      "artifact_policy": "Text-only is acceptable. Return NONE unless a visual materially clarifies the exhausted-to-resume state transition.",
+      "evidence": [
+        {
+          "id": "source-1",
+          "title": "Google Managed Agents budget controls announcement",
+          "claim": "Google's July 28, 2026 Managed Agents update says max_total_tokens caps input, output, and thinking tokens. At the limit, execution safely pauses, returns status incomplete, preserves environment state, and can continue through previous_interaction_id with a fresh budget.",
+          "source": "https://blog.google/innovation-and-ai/technology/developers-tools/expanding-managed-agents-gemini-api-3-6-flash-hooks/",
+          "source_quality": "primary",
+          "body_read": true,
+          "source_date": "2026-07-28",
+          "date_kind": "published",
+          "caveats": "The announcement describes a preview product."
+        },
+        {
+          "id": "source-2",
+          "title": "Gemini API Antigravity Agent budget documentation",
+          "claim": "Google's Antigravity documentation says max_total_tokens limits total input, output, and thinking tokens, excludes cached tokens, stops with status incomplete, and preserves work for continuation. The limit is best-effort, so usage may slightly exceed it depending on when checks occur between steps.",
+          "source": "https://ai.google.dev/gemini-api/docs/antigravity-agent",
+          "source_quality": "primary",
+          "body_read": true,
+          "source_date": "2026-08-09",
+          "date_kind": "accessed",
+          "caveats": "Preview documentation; the cap is best-effort rather than an exact atomic ceiling."
+        }
+      ]
+    },
+    {
+      "day": "Wednesday",
+      "date": "2026-08-12",
+      "topic": "Model routing by task",
+      "topic_slug": "model-routing-by-task",
+      "thesis": "Route model capability by task complexity and error cost instead of assigning one model to an entire application.",
+      "target_reader": "AI product leaders balancing model quality, latency, and cost",
+      "reader_problem": "AI product leaders need a defensible model-routing decision for tasks with different complexity and error cost.",
+      "product_decision": "Classify the task first, apply a risk floor, and route the model and reasoning effort at the stage boundary.",
+      "authority_statement": "Operationalise task-level routing as a four-axis, gated model-complexity decision.",
+      "why_now": "OpenAI's current GPT-5.6 guidance exposes distinct capability-cost tiers and intentional reasoning settings, making blanket application-level model assignment a product choice rather than a default.",
+      "dominant_take": "Model guidance commonly frames selection as a model-family or migration decision.",
+      "missing_angle": "The routing unit should be the task and its error cost, because generation and evaluation stages have different failure costs.",
+      "artifact_policy": "Return DIAGRAM showing task scoring, the error-cost floor, and the routed model/reasoning setting. Use only public-safe repository proof.",
+      "evidence": [
+        {
+          "id": "source-1",
+          "title": "OpenAI GPT-5.6 model guidance",
+          "claim": "Official OpenAI guidance identifies GPT-5.6 Sol for frontier capability, Terra for a capability-cost balance, and Luna for efficient high-volume workloads. It says reasoning effort should be set intentionally and max reserved for the hardest quality-first workloads, with representative-task evaluation rather than assuming the highest effort is always best.",
+          "source": "https://developers.openai.com/api/docs/guides/latest-model",
+          "source_quality": "primary",
+          "body_read": true,
+          "source_date": "2026-08-09",
+          "date_kind": "accessed",
+          "caveats": "Model availability, pricing, and guidance can change; this claim reflects the page accessed on 2026-08-09."
+        },
+        {
+          "id": "source-2",
+          "title": "Public model-complexity-router implementation",
+          "claim": "The public model-complexity-router scores scope, reasoning depth, error cost, and context load from zero to two, maps the total to a model tier, and applies an error-cost floor exactly once. Its gates require visible scores and prohibit claiming that the skill silently switched the session model.",
+          "source": "https://github.com/Abhillashjadhav/production-engineering-os/blob/main/.claude/skills/model-complexity-router/SKILL.md",
+          "source_quality": "primary",
+          "body_read": true,
+          "source_date": "2026-08-09",
+          "date_kind": "accessed",
+          "caveats": "Public repository implementation; its tier map uses Claude labels, while the transferable proof is the task-scoring and risk-floor mechanism."
+        }
+      ]
+    },
+    {
+      "day": "Thursday",
+      "date": "2026-08-13",
+      "topic": "Evaluation integrity and SWE-Bench Pro",
+      "topic_slug": "evaluation-integrity-swe-bench-pro",
+      "thesis": "Model scores can improve rapidly while the measurement system becomes less trustworthy; product teams must audit an evaluation before giving it release authority.",
+      "target_reader": "AI product leaders using model evaluations for release decisions",
+      "reader_problem": "AI product leaders need to know whether an improving benchmark score deserves authority over a release decision.",
+      "product_decision": "Audit task validity, tests, prompts, and contamination before binding a benchmark threshold to release authority.",
+      "authority_statement": "Separate the score produced by an evaluation from the authority the product grants that evaluation.",
+      "why_now": "OpenAI published a July 2026 audit that retracted its earlier SWE-Bench Pro recommendation after finding widespread broken tasks despite rapid headline score gains.",
+      "dominant_take": "The striking headline is the benchmark's broken-task estimate.",
+      "missing_angle": "The product consequence is that release authority must depend on eval integrity, not score momentum alone.",
+      "artifact_policy": "Return CAROUSEL with three to five slides: score improvement, audit findings with exact caveats, and the release-authority decision. Preserve every denominator and date.",
+      "evidence": [
+        {
+          "id": "source-1",
+          "title": "OpenAI audit of SWE-Bench Pro",
+          "claim": "OpenAI reported that on SWE-Bench Pro's 731-task public split, frontier-model pass rate rose from 23.3% to 80.3% in eight months. Its audit pipeline flagged 200 tasks, or 27.4%, as broken, while a human campaign identified 249, or 34.1%; OpenAI estimated about 30% were broken and retracted its earlier recommendation to adopt the benchmark.",
+          "source": "https://openai.com/index/separating-signal-from-noise-coding-evaluations/",
+          "source_quality": "primary",
+          "body_read": true,
+          "source_date": "2026-07-08",
+          "date_kind": "published",
+          "caveats": "The 23.3%-to-80.3% change applies to the 731-task public split over eight months. The 27.4% pipeline and 34.1% human findings are two audit estimates, not additive counts."
+        },
+        {
+          "id": "source-2",
+          "title": "OpenAI SWE-Bench Pro audit methodology",
+          "claim": "OpenAI says the audit reviewed model attempts, task metadata, and failure traces, followed by repeated investigator-agent passes and independent review by five experienced software engineers. It identified overly strict tests, underspecified prompts, low-coverage tests, and misleading prompts as the main failure categories.",
+          "source": "https://openai.com/index/separating-signal-from-noise-coding-evaluations/",
+          "source_quality": "primary",
+          "body_read": true,
+          "source_date": "2026-07-08",
+          "date_kind": "published",
+          "caveats": "OpenAI audited the benchmark and is also a model developer with an interest in evaluation quality; preserve the described methodology and category scope."
+        }
+      ]
+    },
+    {
+      "day": "Friday",
+      "date": "2026-08-14",
+      "topic": "Execution state versus user memory",
+      "topic_slug": "execution-state-versus-user-memory",
+      "thesis": "Production agents should separate user memory from execution state so unfinished work resumes from deterministic workflow truth rather than reconstructed conversational context.",
+      "target_reader": "AI product leaders building resumable production agents",
+      "reader_problem": "AI product leaders need a reliable resume decision that does not confuse remembered user context with unfinished workflow truth.",
+      "product_decision": "Persist workflow checkpoints and next-step authority separately from long-term user memory, then resume only from validated execution state.",
+      "authority_statement": "Use a persisted stage document and evidence ledger to resume execution without treating chat history as workflow truth.",
+      "why_now": "Current LangGraph documentation explicitly separates checkpointed thread state from cross-thread stores, while the public Production Engineering OS demonstrates the same boundary in a stage machine.",
+      "dominant_take": "Agent memory is often discussed as a single retrieval problem.",
+      "missing_angle": "A user's remembered preferences and a workflow's authoritative next step have different owners, lifetimes, and failure consequences.",
+      "artifact_policy": "Text-only is acceptable. Return NONE unless a diagram is necessary to prevent confusion between checkpoint state and cross-thread memory.",
+      "evidence": [
+        {
+          "id": "source-1",
+          "title": "LangGraph persistence documentation",
+          "claim": "LangGraph separates checkpointers, which persist one thread's graph-state checkpoints for continuity, interrupts, time travel, and fault tolerance, from stores, which persist application-defined long-term data across threads such as user preferences and shared knowledge.",
+          "source": "https://docs.langchain.com/oss/python/langgraph/persistence",
+          "source_quality": "primary",
+          "body_read": true,
+          "source_date": "2026-08-09",
+          "date_kind": "accessed",
+          "caveats": "Current framework documentation accessed 2026-08-09; examples include in-memory implementations that are not production persistence."
+        },
+        {
+          "id": "source-2",
+          "title": "Production Engineering OS persisted run state",
+          "claim": "The public Production Engineering OS names run-state.json as the single persisted execution-state document. Resume re-verifies the locked contract, continues at the persisted stage, and rejects re-submission of completed stages; the evidence ledger is explicitly the run's system of record rather than a chat transcript.",
+          "source": "https://github.com/Abhillashjadhav/production-engineering-os/blob/main/docs/v2-production-engineering.md",
+          "source_quality": "primary",
+          "body_read": true,
+          "source_date": "2026-08-09",
+          "date_kind": "accessed",
+          "caveats": "Public repository implementation evidence; it supports the architecture claim, not comparative performance."
+        }
+      ]
+    }
+  ]
+}

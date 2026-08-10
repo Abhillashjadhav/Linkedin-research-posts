@@ -127,6 +127,31 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Write an ignored local package for explicit human review.",
     )
+    draft.add_argument(
+        "--run-spec",
+        type=_path,
+        help="Run one five-day trace-first Authority OS campaign from a public JSON spec.",
+    )
+    draft.add_argument(
+        "--trace-output",
+        type=_path,
+        help="Repository-local directory for persisted campaign traces and review artifacts.",
+    )
+    draft.add_argument(
+        "--campaign-day",
+        choices=("Monday", "Tuesday", "Wednesday", "Thursday", "Friday"),
+        help="Rerun one day while rebuilding the aggregate from all persisted day traces.",
+    )
+    draft.add_argument(
+        "--no-ai-slop-skill",
+        type=_path,
+        help="Path to the separate Abhillashjadhav/no-ai-slop SKILL.md.",
+    )
+    draft.add_argument(
+        "--no-ai-slop-eval",
+        type=_path,
+        help="Path to the separate Abhillashjadhav/no-ai-slop eval.md.",
+    )
     _add_common(draft)
 
     research = subparsers.add_parser("research", help="Import or validate research signals.")
