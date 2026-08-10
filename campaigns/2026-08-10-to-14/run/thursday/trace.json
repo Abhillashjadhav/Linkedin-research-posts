@@ -1,0 +1,954 @@
+{
+  "artifact": {
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    }
+  },
+  "critic": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 23,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 23,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 22,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 4,
+            "raw_total": 22,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      },
+      {
+        "cycle": 2,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 23,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 23,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 22,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 4,
+            "raw_total": 22,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      },
+      {
+        "cycle": 3,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 23,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 23,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      },
+      {
+        "cycle": 4,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 25,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 25,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 22,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 4,
+            "raw_total": 22,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    }
+  },
+  "date": "2026-08-13",
+  "day": "Thursday",
+  "deterministic_gates": {
+    "cycles": [
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 1
+      },
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 2
+      },
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 3
+      },
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 4
+      }
+    ]
+  },
+  "final": {
+    "human_approval_status": "NOT_APPROVED",
+    "publishing_status": "DISABLED",
+    "reason": "No candidate cleared all four high-bar cycles.",
+    "status": "BLOCKED"
+  },
+  "first_comment": {
+    "artisanal_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    },
+    "reviewer_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    },
+    "writer_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "runtime": "codex"
+    }
+  },
+  "integrated_anti_slop": {
+    "cycles": [
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [],
+          "candidate-3": []
+        },
+        "cycle": 1
+      },
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [],
+          "candidate-3": []
+        },
+        "cycle": 2
+      },
+      {
+        "candidates": {
+          "candidate-1": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "Before the next launch, ask a narrower question: what evidence shows that this evaluation is fit to decide?"
+            }
+          ],
+          "candidate-2": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "The operating principle is simple: benchmark performance informs a release. Evaluation integrity determines how much authority that information receives."
+            }
+          ],
+          "candidate-3": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "That is what an evaluation failure looks like from the product side: the visible artefact produces an increasingly persuasive score while the artefact itself deserves deeper scruti"
+            }
+          ]
+        },
+        "cycle": 3
+      },
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [],
+          "candidate-3": []
+        },
+        "cycle": 4
+      }
+    ]
+  },
+  "narrative_editor": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "results": [
+          {
+            "diagnosis": "Tightened the closing to avoid treating a rising score as proof of capability improvement, preserving the conflict between score momentum and decision authority.",
+            "id": "candidate-1",
+            "repeatable_sentence": "A benchmark score and release authority are two different product objects.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "The draft already connects the audit evidence to a specific governance decision, a reversible release consequence, and a clear distinction between clearing a threshold and trusting it.",
+            "id": "candidate-2",
+            "repeatable_sentence": "A benchmark becomes consequential when a team lets it block or permit a release.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "Replaced the unsupported superlative with a precise governance failure while preserving the useful judgement that benchmark authority should be explicit and reversible.",
+            "id": "candidate-3",
+            "repeatable_sentence": "A score can remain useful for observation while losing permission to approve or block a release.",
+            "status": "EDITED"
+          }
+        ]
+      },
+      {
+        "cycle": 2,
+        "results": [
+          {
+            "diagnosis": "Moved the score surge and broken-task estimate to the opening so the incident now leads into the audit mechanism and release-authority decision.",
+            "id": "candidate-1",
+            "repeatable_sentence": "Conflating the two turns measurement momentum into misplaced confidence.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "The draft already converts the broken-task estimate into a concrete governance distinction: score movement does not itself justify release authority.",
+            "id": "candidate-2",
+            "repeatable_sentence": "A release gate should not inherit credibility from a rising line.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "Sharpened the hierarchy between the rising score and the retraction so the consequential product signal is immediately clear.",
+            "id": "candidate-3",
+            "repeatable_sentence": "The failure mode is not simply a wrong score.",
+            "status": "EDITED"
+          }
+        ]
+      },
+      {
+        "cycle": 3,
+        "results": [
+          {
+            "diagnosis": "Replaced the dramatic hook with the precise governance conflict and moved the audit result ahead of the methodology so the consequence precedes its mechanism.",
+            "id": "candidate-1",
+            "repeatable_sentence": "A benchmark becomes governance when its score is allowed to make a release decision before the benchmark itself has earned trust.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "The draft already connects the benchmark audit to a concrete release-governance decision and states a clear operating principle without overstating the evidence.",
+            "id": "candidate-2",
+            "repeatable_sentence": "Do not bind a benchmark threshold to release authority until the evaluation has been audited.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The draft makes the score-integrity conflict concrete, identifies the evaluation artefacts that require scrutiny, and ends with a release-review question that changes the decision process.",
+            "id": "candidate-3",
+            "repeatable_sentence": "More score momentum cannot repair that connection by itself.",
+            "status": "UNCHANGED"
+          }
+        ]
+      },
+      {
+        "cycle": 4,
+        "results": [
+          {
+            "diagnosis": "Moved the score-versus-integrity contradiction forward, then tightened the audit mechanism into a clear release-authority decision.",
+            "id": "candidate-1",
+            "repeatable_sentence": "A release process should separate the score an evaluation produces from the authority the product grants it.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "Removed the unsupported contamination reference while preserving the evidence-backed two-gate rule for release authority.",
+            "id": "candidate-2",
+            "repeatable_sentence": "Integrity decides how much authority that answer gets.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "Moved the benchmark contradiction ahead of the audit mechanics so the hidden scorecard risk leads directly to the two-question release test.",
+            "id": "candidate-3",
+            "repeatable_sentence": "The score can become more persuasive even when the evaluation deserves deeper scrutiny.",
+            "status": "EDITED"
+          }
+        ]
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    }
+  },
+  "no_ai_slop_artisanal": {
+    "attempts": [
+      {
+        "candidate_id": "candidate-3",
+        "changed": true,
+        "changes_made": [
+          "Preserved claim IDs source-1 and source-2 and all source-anchored sentences verbatim.",
+          "Replaced abstract phrasing with direct, active language.",
+          "Removed the binary contrast from the closing line."
+        ],
+        "cycle": 1,
+        "failed_checks": [],
+        "status": "PASS"
+      },
+      {
+        "candidate_id": "candidate-2",
+        "changed": true,
+        "changes_made": [
+          "Preserved source-1 and source-2 and left every source-anchored sentence unchanged.",
+          "Removed the colon reveal and tightened the distinction between score momentum and measurement trustworthiness.",
+          "Made the audit recommendation direct and cut the metaphorical closing."
+        ],
+        "cycle": 2,
+        "failed_checks": [],
+        "status": "PASS"
+      },
+      {
+        "candidate_id": "candidate-3",
+        "changed": true,
+        "changes_made": [
+          "Preserved all source-anchored sentences and the factual meaning tied to source-1 and source-2.",
+          "Replaced the question pair with a direct release-review standard.",
+          "Removed the negative contrast and tightened the closing paragraph."
+        ],
+        "cycle": 4,
+        "failed_checks": [],
+        "status": "PASS"
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    },
+    "source": {
+      "commit": "61c21c351da4dcb40946a11fead978f2078a2c65",
+      "eval_sha256": "b274cdc623e57ff1b4f673aedef929ba2b01419d13097248c3c74a5dbd80ccfd",
+      "repository": "https://github.com/Abhillashjadhav/no-ai-slop",
+      "skill_sha256": "73f87f7f79bd3540c4d8494b5c43d37d25584be6886212e1516fdd8d1c539846"
+    }
+  },
+  "post_edit_recritic": {
+    "anti_slop_findings": [],
+    "executed": true,
+    "gates": {
+      "authority_conversion": {
+        "reason_codes": [
+          "authority-and-decision-reflected"
+        ],
+        "status": "PASS"
+      },
+      "citation": {
+        "reason_codes": [
+          "traceable-body-read-evidence"
+        ],
+        "status": "PASS"
+      },
+      "honesty": {
+        "reason_codes": [
+          "no-unsupported-high-risk-claim-detected"
+        ],
+        "status": "PASS"
+      },
+      "proof": {
+        "reason_codes": [
+          "goal-does-not-require-proof"
+        ],
+        "status": "NOT_REQUIRED"
+      },
+      "relevance": {
+        "reason_codes": [
+          "target-audience-and-problem-reflected"
+        ],
+        "status": "PASS"
+      }
+    },
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    },
+    "score": {
+      "band": "one-light-revision",
+      "candidate_id": "candidate-3",
+      "earned_closer": 5,
+      "effective_total": 23,
+      "hook_cap_applied": false,
+      "hook_strength": 4,
+      "middle_escalation": 5,
+      "raw_total": 23,
+      "specificity_and_source_quality": 5,
+      "voice_fidelity": 4
+    },
+    "unchanged_score_reused": false
+  },
+  "regeneration_count": 4,
+  "schema_version": 1,
+  "scout": {
+    "freshness": "verified against primary sources on the researched_at date",
+    "researched_at": "2026-08-09T22:30:00+05:30",
+    "sources": [
+      {
+        "body_read": true,
+        "caveats": "The 23.3%-to-80.3% change applies to the 731-task public split over eight months. The 27.4% pipeline and 34.1% human findings are two audit estimates, not additive counts.",
+        "date_kind": "published",
+        "id": "source-1",
+        "source_date": "2026-07-08",
+        "source_quality": "primary",
+        "title": "OpenAI audit of SWE-Bench Pro",
+        "url": "https://openai.com/index/separating-signal-from-noise-coding-evaluations/"
+      },
+      {
+        "body_read": true,
+        "caveats": "OpenAI audited the benchmark and is also a model developer with an interest in evaluation quality; preserve the described methodology and category scope.",
+        "date_kind": "published",
+        "id": "source-2",
+        "source_date": "2026-07-08",
+        "source_quality": "primary",
+        "title": "OpenAI SWE-Bench Pro audit methodology",
+        "url": "https://openai.com/index/separating-signal-from-noise-coding-evaluations/"
+      }
+    ],
+    "status": "PASS"
+  },
+  "thesis": {
+    "selected_thesis": "Model scores can improve rapidly while the measurement system becomes less trustworthy; product teams must audit an evaluation before giving it release authority.",
+    "status": "PASS"
+  },
+  "topic": "Evaluation integrity and SWE-Bench Pro",
+  "visual_qa": {
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    }
+  },
+  "writer": {
+    "cycles": [
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 1
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 2
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 3
+      },
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 4
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "runtime": "codex"
+    }
+  }
+}

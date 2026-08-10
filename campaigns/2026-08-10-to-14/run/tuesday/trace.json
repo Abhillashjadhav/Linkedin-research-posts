@@ -1,0 +1,511 @@
+{
+  "artifact": {
+    "files": [],
+    "format": "NONE",
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    },
+    "panels": [],
+    "rationale": "This day is intentionally text-only, and a visual would not materially clarify the exhausted-to-resume transition beyond the approved post.",
+    "status": "PASS",
+    "visual_narrative": "stage-returned-no-diagnosis"
+  },
+  "critic": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "scorecards": [
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 5
+          },
+          {
+            "band": "one-light-revision",
+            "candidate_id": "candidate-1",
+            "earned_closer": 5,
+            "effective_total": 23,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 23,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          }
+        ]
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    }
+  },
+  "date": "2026-08-11",
+  "day": "Tuesday",
+  "deterministic_gates": {
+    "cycles": [
+      {
+        "candidates": {
+          "candidate-1": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-2": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "honesty": {
+              "reason_codes": [
+                "unsupported-factual-marker"
+              ],
+              "status": "FAIL"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          },
+          "candidate-3": {
+            "authority_conversion": {
+              "reason_codes": [
+                "authority-and-decision-reflected"
+              ],
+              "status": "PASS"
+            },
+            "citation": {
+              "reason_codes": [
+                "traceable-body-read-evidence"
+              ],
+              "status": "PASS"
+            },
+            "honesty": {
+              "reason_codes": [
+                "no-unsupported-high-risk-claim-detected"
+              ],
+              "status": "PASS"
+            },
+            "proof": {
+              "reason_codes": [
+                "goal-does-not-require-proof"
+              ],
+              "status": "NOT_REQUIRED"
+            },
+            "relevance": {
+              "reason_codes": [
+                "target-audience-and-problem-reflected"
+              ],
+              "status": "PASS"
+            }
+          }
+        },
+        "cycle": 1
+      }
+    ]
+  },
+  "final": {
+    "candidate_id": "candidate-3",
+    "first_comment": "A useful implementation detail is to store the configured cap separately from observed usage, then include `status: incomplete` and the continuation handle in the exhaustion record. Google documents that enforcement is best-effort and cached tokens are excluded, while preserved state can be resumed with `previous_interaction_id` and a fresh budget. That gives operators evidence of what happened without pretending the boundary was exact. [Antigravity documentation](https://ai.google.dev/gemini-api/docs/antigravity-agent) \u00b7 [Managed Agents announcement](https://blog.google/innovation-and-ai/technology/developers-tools/expanding-managed-agents-gemini-api-3-6-flash-hooks/)",
+    "human_approval_status": "NOT_APPROVED",
+    "manual_fact_verification_required": true,
+    "post": "The exhaustion record may be more useful for an agent budget than the configuration field.\n\nDesign that record before polishing the happy path. It should answer what stopped, what remains unfinished, what state survives, whether the boundary was exact, and which actor can decide the next step. If the record cannot support that decision, the recovery experience will depend on guesswork.\n\nGoogle's Antigravity documentation says max_total_tokens limits total input, output, and thinking tokens, excludes cached tokens, stops with status incomplete, and preserves work for continuation. The limit is best-effort, so usage may slightly exceed it depending on when checks occur between steps.\n\nProduct teams need to handle two distinct failure modes.\n\nThe first is semantic: treating incomplete work as failure, or presenting it as success because some output exists. Either choice hides the actual execution state from the user.\n\nThe second is operational: treating the budget as a perfectly precise boundary when enforcement may not land at the exact token. A responsible interface should preserve the distinction between a configured limit and observed usage without implying false precision.\n\nA practical exhaustion artefact can become the contract between runtime, product and operator. It records the stopped state, exposes the remaining decision and makes continuation an explicit act of authority.\n\nCost control sets the boundary, while product judgement determines whether unfinished work remains understandable and recoverable when the budget runs out.",
+    "publishing_status": "DISABLED",
+    "status": "READY_FOR_HUMAN_REVIEW"
+  },
+  "first_comment": {
+    "anti_slop_findings": [],
+    "artisanal_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    },
+    "attempts": [
+      {
+        "anti_slop_findings": [],
+        "artisanal": {
+          "changes_made": [
+            "Recast the opening as a direct sentence.",
+            "Added the supplied claim IDs to their corresponding source links and tightened the attribution."
+          ],
+          "status": "PASS"
+        },
+        "attempt": 1,
+        "claim_ids": [
+          "source-1",
+          "source-2"
+        ],
+        "evidence_gates": {
+          "claim_ids_known": "PASS",
+          "numbers_supported": "FAIL",
+          "passes": false,
+          "source_links_supported": "PASS"
+        },
+        "review": {
+          "scores": {
+            "additional_value": 4,
+            "authority_and_proof": 5,
+            "continuity_with_post": 5,
+            "natural_non_promotional_fit": 5,
+            "voice_fidelity": 4
+          },
+          "total": 23
+        }
+      },
+      {
+        "anti_slop_findings": [],
+        "artisanal": {
+          "changes_made": [
+            "Replaced the colon reveal with a plain sentence.",
+            "Preserved both factual claims, source links, and the source-1/source-2 mapping."
+          ],
+          "status": "PASS"
+        },
+        "attempt": 2,
+        "claim_ids": [
+          "source-1",
+          "source-2"
+        ],
+        "evidence_gates": {
+          "claim_ids_known": "PASS",
+          "numbers_supported": "PASS",
+          "passes": true,
+          "source_links_supported": "PASS"
+        },
+        "review": {
+          "scores": {
+            "additional_value": 4,
+            "authority_and_proof": 5,
+            "continuity_with_post": 5,
+            "natural_non_promotional_fit": 5,
+            "voice_fidelity": 5
+          },
+          "total": 24
+        }
+      }
+    ],
+    "claim_ids": [
+      "source-1",
+      "source-2"
+    ],
+    "evidence_gates": {
+      "claim_ids_known": "PASS",
+      "numbers_supported": "PASS",
+      "passes": true,
+      "source_links_supported": "PASS"
+    },
+    "review": {
+      "scores": {
+        "additional_value": 4,
+        "authority_and_proof": 5,
+        "continuity_with_post": 5,
+        "natural_non_promotional_fit": 5,
+        "voice_fidelity": 5
+      },
+      "total": 24
+    },
+    "reviewer_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    },
+    "text": "A useful implementation detail is to store the configured cap separately from observed usage, then include `status: incomplete` and the continuation handle in the exhaustion record. Google documents that enforcement is best-effort and cached tokens are excluded, while preserved state can be resumed with `previous_interaction_id` and a fresh budget. That gives operators evidence of what happened without pretending the boundary was exact. [Antigravity documentation](https://ai.google.dev/gemini-api/docs/antigravity-agent) \u00b7 [Managed Agents announcement](https://blog.google/innovation-and-ai/technology/developers-tools/expanding-managed-agents-gemini-api-3-6-flash-hooks/)",
+    "writer_model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "runtime": "codex"
+    }
+  },
+  "integrated_anti_slop": {
+    "cycles": [
+      {
+        "candidates": {
+          "candidate-1": [],
+          "candidate-2": [
+            {
+              "code": "colon-reveal",
+              "excerpt": "Before approving a runtime budget, ask one specific question: who owns the next decision when the agent reaches it?"
+            }
+          ],
+          "candidate-3": []
+        },
+        "cycle": 1
+      }
+    ]
+  },
+  "narrative_editor": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "results": [
+          {
+            "diagnosis": "Moved the unfinished-state conflict ahead of the launch detail so the mechanism reads as a product-state problem, while retaining the documented caveat and four-part contract.",
+            "id": "candidate-1",
+            "repeatable_sentence": "A runtime budget is incomplete when it defines only how much an agent may consume.",
+            "status": "EDITED"
+          },
+          {
+            "diagnosis": "The draft already converts the cap into a specific ownership decision and makes the trade-offs among automatic continuation, human review and termination concrete.",
+            "id": "candidate-2",
+            "repeatable_sentence": "These are product choices, not implementation residue.",
+            "status": "UNCHANGED"
+          },
+          {
+            "diagnosis": "The draft already offers a distinctive product artefact, connects best-effort enforcement to false precision, and gives operators a concrete recovery decision to design for.",
+            "id": "candidate-3",
+            "repeatable_sentence": "A practical exhaustion artefact can become the contract between runtime, product and operator.",
+            "status": "UNCHANGED"
+          }
+        ]
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    }
+  },
+  "no_ai_slop_artisanal": {
+    "attempts": [
+      {
+        "candidate_id": "candidate-3",
+        "changed": true,
+        "changes_made": [
+          "Recast the opening to remove the binary \u201cX, not Y\u201d construction.",
+          "Replaced the vague transition into the two failure modes with a direct sentence.",
+          "Combined the closing sentences to reduce the symmetrical rhythm.",
+          "Preserved all source-2 technical details and caveats."
+        ],
+        "cycle": 1,
+        "failed_checks": [],
+        "status": "PASS"
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "runtime": "codex"
+    },
+    "source": {
+      "commit": "61c21c351da4dcb40946a11fead978f2078a2c65",
+      "eval_sha256": "b274cdc623e57ff1b4f673aedef929ba2b01419d13097248c3c74a5dbd80ccfd",
+      "repository": "https://github.com/Abhillashjadhav/no-ai-slop",
+      "skill_sha256": "73f87f7f79bd3540c4d8494b5c43d37d25584be6886212e1516fdd8d1c539846"
+    }
+  },
+  "post_edit_recritic": {
+    "anti_slop_findings": [],
+    "executed": true,
+    "gates": {
+      "authority_conversion": {
+        "reason_codes": [
+          "authority-and-decision-reflected"
+        ],
+        "status": "PASS"
+      },
+      "citation": {
+        "reason_codes": [
+          "traceable-body-read-evidence"
+        ],
+        "status": "PASS"
+      },
+      "honesty": {
+        "reason_codes": [
+          "no-unsupported-high-risk-claim-detected"
+        ],
+        "status": "PASS"
+      },
+      "proof": {
+        "reason_codes": [
+          "goal-does-not-require-proof"
+        ],
+        "status": "NOT_REQUIRED"
+      },
+      "relevance": {
+        "reason_codes": [
+          "target-audience-and-problem-reflected"
+        ],
+        "status": "PASS"
+      }
+    },
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    },
+    "score": {
+      "band": "advance-to-gates",
+      "candidate_id": "candidate-3",
+      "earned_closer": 5,
+      "effective_total": 24,
+      "hook_cap_applied": false,
+      "hook_strength": 4,
+      "middle_escalation": 5,
+      "raw_total": 24,
+      "specificity_and_source_quality": 5,
+      "voice_fidelity": 5
+    },
+    "unchanged_score_reused": false
+  },
+  "regeneration_count": 0,
+  "schema_version": 1,
+  "scout": {
+    "freshness": "verified against primary sources on the researched_at date",
+    "researched_at": "2026-08-09T22:30:00+05:30",
+    "sources": [
+      {
+        "body_read": true,
+        "caveats": "The announcement describes a preview product.",
+        "date_kind": "published",
+        "id": "source-1",
+        "source_date": "2026-07-28",
+        "source_quality": "primary",
+        "title": "Google Managed Agents budget controls announcement",
+        "url": "https://blog.google/innovation-and-ai/technology/developers-tools/expanding-managed-agents-gemini-api-3-6-flash-hooks/"
+      },
+      {
+        "body_read": true,
+        "caveats": "Preview documentation; the cap is best-effort rather than an exact atomic ceiling.",
+        "date_kind": "accessed",
+        "id": "source-2",
+        "source_date": "2026-08-09",
+        "source_quality": "primary",
+        "title": "Gemini API Antigravity Agent budget documentation",
+        "url": "https://ai.google.dev/gemini-api/docs/antigravity-agent"
+      }
+    ],
+    "status": "PASS"
+  },
+  "thesis": {
+    "selected_thesis": "A runtime budget is incomplete unless the product defines what happens when the budget is exhausted before the job is done.",
+    "status": "PASS"
+  },
+  "topic": "Agent budgets and exhaustion behaviour",
+  "visual_qa": {
+    "checks": [
+      {
+        "name": "factual_consistency",
+        "reason": "No visual was selected.",
+        "status": "NOT_REQUIRED"
+      },
+      {
+        "name": "hook_consistency",
+        "reason": "No visual was selected.",
+        "status": "NOT_REQUIRED"
+      },
+      {
+        "name": "no_unsupported_numbers",
+        "reason": "No visual was selected.",
+        "status": "NOT_REQUIRED"
+      },
+      {
+        "name": "clipping_and_overflow",
+        "reason": "No visual was selected.",
+        "status": "NOT_REQUIRED"
+      },
+      {
+        "name": "mobile_legibility",
+        "reason": "No visual was selected.",
+        "status": "NOT_REQUIRED"
+      },
+      {
+        "name": "one_message_per_panel",
+        "reason": "No visual was selected.",
+        "status": "NOT_REQUIRED"
+      },
+      {
+        "name": "post_to_artifact_claim_alignment",
+        "reason": "No visual was selected.",
+        "status": "NOT_REQUIRED"
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    },
+    "overall": "NOT_REQUIRED"
+  },
+  "writer": {
+    "cycles": [
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 1
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "runtime": "codex"
+    }
+  }
+}
