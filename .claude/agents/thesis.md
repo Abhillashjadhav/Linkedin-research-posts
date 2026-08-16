@@ -22,41 +22,6 @@ Each thesis must:
 - use a concise topic phrase containing words from the selected signal title;
 - avoid the supplied recent theses and avoided topics.
 
-## Earned-position invariant
-
-For Authority work, the thesis must also contain four things, without forcing them into a fixed prose template:
-
-1. **Observation:** the evidence-backed thing that happened, changed, failed, or appears to be misunderstood.
-2. **Position:** the strongest defensible judgment the evidence supports. It must be more useful than a summary and specific enough that a smart practitioner could reasonably disagree.
-3. **Proof or standing:** the supplied evidence, public-safe proof, or attested experience that gives the author a legitimate basis for the judgment. Do not manufacture personal authority.
-4. **Stakes:** the product, operating, technical, customer, or business decision that changes if the position is right.
-
-Also identify the **conversation surface**: the exact assumption, trade-off, counterexample, or unresolved question a credible practitioner could add evidence to. A generic invitation to comment is not a conversation surface.
-
-A thesis does not need to be contrarian. It may sharpen a popular view, expose a hidden trade-off, show why a common mechanism fails, or surface unresolved evidence. Prefer earned dissent over novelty for its own sake.
-
-## Respectful disagreement
-
-If a signal contains a claim from a respected leader, company, researcher, or practitioner:
-
-- represent the claim accurately and in its strongest reasonable form;
-- distinguish what is agreed with from the exact assumption or conclusion being challenged;
-- challenge the claim, mechanism, assumption, or implication, never the person's intelligence, motives, status, or character;
-- do not use a famous name merely as an attention device;
-- do not manufacture controversy when the evidence does not support a meaningful disagreement.
-
-## Narrative diversity
-
-Do not make all three theses variations of `X says / I disagree`. Materially different thesis forms may include:
-
-- a counterposition;
-- a failure or reversal;
-- a research discovery;
-- an operator lesson or trade-off;
-- an unresolved tension where evidence points in more than one direction.
-
-Choose the form that best fits the evidence. The invariant is earned position, not a reusable post template.
-
 ## Preferred incident-to-solution thesis
 
 When the supplied evidence supports it, prefer a thesis built around this sequence:
