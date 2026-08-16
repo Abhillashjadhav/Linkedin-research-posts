@@ -54,11 +54,11 @@ The dry run is offline and uses visibly synthetic fixtures. It does not invoke a
 A live invocation no longer exposes the first completed draft batch. It runs up to four candidate cycles and returns prose only when at least one candidate satisfies all of these conditions:
 
 - effective Critic score of **24–25**;
-- hook score of at least **4/5**;
+- hook score of exactly **5/5**;
 - every required authority, proof, honesty, citation, and relevance gate passes; and
 - the opening does not repeat one rejected in an earlier cycle.
 
-Each cycle still contains exactly three candidates and at most one light revision. When a cycle fails, its prose remains hidden. Only bounded angle, opening, score, and gate diagnostics are added to the next Writer prompt, with an explicit instruction to create a genuinely new narrative execution without changing the supplied strategy or inventing evidence.
+Each cycle still contains exactly three candidates and at most one light revision. When a cycle fails, its prose remains hidden. Only bounded angle, opening, score, and gate diagnostics are added to the next Writer prompt. A hook below 5/5 is a hard failure: the next Writer cycle is explicitly told to replace the opening with a materially stronger one without changing the supplied strategy, evidence boundaries, or factual claims.
 
 After four unsuccessful live cycles, the command fails closed and returns no post. When `--package` is selected, rejected cycles may leave private `BLOCKED` audit packages; only a live `READY_FOR_HUMAN_REVIEW` package can clear the coordinator.
 
@@ -80,7 +80,7 @@ git clone --depth 1 https://github.com/Abhillashjadhav/no-ai-slop.git /tmp/no-ai
 The coordinator runs each in-scope day independently. Every executed day ends
 in either `READY_FOR_HUMAN_REVIEW` or an explicit `BLOCKED` trace; a preserved
 published day may instead carry an aggregate-only out-of-scope status. The
-coordinator never lowers the 24/25 threshold. Rejected prose is omitted from the persisted public trace.
+coordinator never lowers the 24/25 threshold or the 5/5 hook requirement. Rejected prose is omitted from the persisted public trace.
 Visual plans are rendered as repository-native SVG files and must pass both
 layout checks and the separate Visual QA stage.
 
@@ -115,7 +115,7 @@ flowchart LR
     E --> F[Critic and deterministic gates]
     F --> G[Integrated and artisanal anti-slop]
     G -->|Below locked bar| D
-    G -->|24–25 and gates pass| H[First comment and artifact]
+    G -->|24–25 + hook 5/5 + gates pass| H[First comment and artifact]
     H --> I[Visual QA]
     I --> J[Human review package]
     J --> K[Manual fact verification]
@@ -248,7 +248,7 @@ make check
 - macOS and Linux are supported; Windows is not currently supported for private-data operation.
 - Legacy single-post live drafting depends on the locally configured Claude service and explicit consent; trace-first campaign mode uses the authenticated Codex CLI with explicit per-stage model settings.
 - The bounded search stops after four live cycles rather than spending indefinitely.
-- A 24–25 Critic score is a machine quality gate, not proof that a human will find the post compelling.
+- A 24–25 Critic score with a 5/5 hook is a machine quality gate, not proof that a human will find the post compelling.
 - Research ingestion, analytics collection, and publication are not automated.
 - Structural citation checks reduce unsupported claims but cannot prove factual truth.
 - Performance learning depends on manually recorded observations.
