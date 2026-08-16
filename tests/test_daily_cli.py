@@ -107,6 +107,23 @@ class ProfileValidationTests(unittest.TestCase):
 
 
 class ThesisValidationTests(unittest.TestCase):
+    def test_locked_discovery_contract_is_unchanged(self) -> None:
+        self.assertEqual(
+            daily_cli.AXES,
+            (
+                "audience_fit",
+                "distinctiveness",
+                "decision_strength",
+                "proof_fit",
+                "simplicity",
+            ),
+        )
+        self.assertEqual(daily_cli.MIN_TOTAL, 23)
+        self.assertEqual(daily_cli.MIN_SIMPLICITY, 4)
+        self.assertEqual(daily_cli.MAX_CYCLES, 3)
+        self.assertEqual(daily_cli._schema("cards")["properties"]["cards"]["minItems"], 3)  # type: ignore[index]
+        self.assertEqual(daily_cli._schema("cards")["properties"]["cards"]["maxItems"], 3)  # type: ignore[index]
+
     def test_cards_require_three_distinct_grounded_simple_theses(self) -> None:
         validated = daily_cli.validate_cards(cards(), signals(), profile())
         self.assertEqual(
@@ -157,12 +174,12 @@ class ThesisValidationTests(unittest.TestCase):
     def test_critic_scores_conversation_surface_inside_existing_rubric(self) -> None:
         with patch.object(
             daily_cli,
-            "_model",
+            "invoke_structured",
             return_value={"scorecards": scorecards(25)},
-        ) as model:
+        ) as invoke:
             validated = daily_cli.score_cards(cards(), profile(), signals())
         self.assertEqual(validated[0]["total"], 25)
-        prompt = str(model.call_args.args[0]).casefold()
+        prompt = str(invoke.call_args.kwargs["task_prompt"]).casefold()
         self.assertIn("conversation surface", prompt)
         self.assertIn("distinctiveness", prompt)
         self.assertIn("2 or lower", prompt)
@@ -208,6 +225,29 @@ class ThesisSearchTests(unittest.TestCase):
             daily_cli.search_theses(
                 profile(), signals(), generator=generator, critic=critic
             )
+        self.assertEqual(counter, 3)
+
+    def test_search_rejects_high_total_when_simplicity_is_below_four(self) -> None:
+        counter = 0
+
+        def generator(_profile: object, _signals: object, _feedback: object) -> list[dict[str, object]]:
+            nonlocal counter
+            counter += 1
+            return cards(f"Low-simplicity-{counter}")
+
+        low_simplicity = scorecards(25)
+        for score in low_simplicity:
+            score["simplicity"] = 3
+
+        def critic(current_cards: object, _profile: object, _signals: object) -> list[dict[str, object]]:
+            assert isinstance(current_cards, list)
+            return daily_cli.validate_scores(low_simplicity, current_cards)
+
+        with self.assertRaisesRegex(workflow.WorkflowError, "No complete three-thesis"):
+            daily_cli.search_theses(
+                profile(), signals(), generator=generator, critic=critic
+            )
+        self.assertEqual(counter, 3)
 
     def test_rejected_thesis_cannot_be_reused(self) -> None:
         first = cards("Repeated")
@@ -243,6 +283,40 @@ class StrategyTests(unittest.TestCase):
 
 
 class CliTests(unittest.TestCase):
+    @patch("authority_os.daily_cli.invoke_structured")
+    def test_scout_uses_codex_live_web_path_without_private_profile(
+        self, invoke: object
+    ) -> None:
+        invoke.return_value = {"items": []}  # type: ignore[attr-defined]
+        with patch.object(daily_cli, "_role", return_value="Scout role"), patch.object(
+            workflow, "prepare_research_items", return_value=signals()
+        ):
+            result = daily_cli.invoke_scout("agent evals", 7, "2026-08-14T00:00:00Z")
+
+        self.assertEqual(result, signals())
+        kwargs = invoke.call_args.kwargs  # type: ignore[attr-defined]
+        self.assertEqual(kwargs["config"].runtime, "codex")
+        self.assertTrue(kwargs["web_search"])
+        self.assertNotIn("proof_inventory", kwargs["task_prompt"])
+
+    @patch("authority_os.daily_cli.invoke_structured")
+    def test_thesis_generator_and_critic_use_zero_tool_codex_calls(
+        self, invoke: object
+    ) -> None:
+        invoke.side_effect = [  # type: ignore[attr-defined]
+            {"cards": cards()},
+            {"scorecards": scorecards(25)},
+        ]
+        with patch.object(daily_cli, "_role", return_value="Thesis role"):
+            generated = daily_cli.generate_cards(profile(), signals(), None)
+        scored = daily_cli.score_cards(generated, profile(), signals())
+
+        self.assertEqual(len(generated), 3)
+        self.assertEqual(scored[0]["total"], 25)
+        for call in invoke.call_args_list:  # type: ignore[attr-defined]
+            self.assertEqual(call.kwargs["config"].runtime, "codex")
+            self.assertFalse(call.kwargs["web_search"])
+
     def test_single_entrypoint_exposes_discovery_help(self) -> None:
         result = subprocess.run(
             [str(CLI), "discover", "--help"],

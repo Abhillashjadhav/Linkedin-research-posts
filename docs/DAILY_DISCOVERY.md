@@ -40,7 +40,7 @@ The profile contains:
   --allow-model-egress
 ```
 
-Scout uses only `WebSearch` and `WebFetch`. It cannot access LinkedIn, email, local files, private data, credentials, or authenticated services. The private authority profile reaches only the zero-tool thesis generator and critic after explicit model-egress consent.
+Scout runs through Codex with live native web search as its only enabled model tool. It searches the current public web and reads source bodies, but cannot use shell, browser automation, apps, plugins, subagents, local files, or repository-writing tools. It must not access LinkedIn, email, private data, credentials, or authenticated services. The private authority profile reaches only the zero-tool Codex thesis generator and critic after explicit model-egress consent.
 
 The command:
 
