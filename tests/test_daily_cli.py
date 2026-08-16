@@ -59,6 +59,9 @@ def cards(prefix: str = "A") -> list[dict[str, object]]:
             "proof_id": "proof-repository",
             "remembered_for": "Connecting agent mechanics to product decisions.",
             "plain_language_summary": f"Agents should earn step {index} with evidence.",
+            "conversation_surface": (
+                f"Practitioners can challenge whether evidence should precede autonomy at step {index}."
+            ),
         }
         for index in range(1, 4)
     ]
@@ -126,6 +129,22 @@ class ThesisValidationTests(unittest.TestCase):
         with self.assertRaises(workflow.WorkflowError):
             daily_cli.validate_cards(long_summary, signals(), profile())
 
+    def test_conversation_surface_is_required_and_cannot_be_engagement_bait(self) -> None:
+        missing = cards()
+        del missing[0]["conversation_surface"]
+        with self.assertRaisesRegex(workflow.WorkflowError, "invalid schema"):
+            daily_cli.validate_cards(missing, signals(), profile())
+
+        generic = cards()
+        generic[0]["conversation_surface"] = "What do you think?"
+        with self.assertRaisesRegex(workflow.WorkflowError, "Conversation surface"):
+            daily_cli.validate_cards(generic, signals(), profile())
+
+        concise = cards()
+        concise[0]["conversation_surface"] = "Latency versus answer quality"
+        validated = daily_cli.validate_cards(concise, signals(), profile())
+        self.assertEqual(validated[0]["conversation_surface"], "Latency versus answer quality")
+
     def test_scorecards_are_strict_and_locally_totalled(self) -> None:
         validated = daily_cli.validate_scores(scorecards(23), cards())
         self.assertEqual(validated[0]["total"], 23)
@@ -134,6 +153,19 @@ class ThesisValidationTests(unittest.TestCase):
         malformed[0]["audience_fit"] = True
         with self.assertRaises(workflow.WorkflowError):
             daily_cli.validate_scores(malformed, cards())
+
+    def test_critic_scores_conversation_surface_inside_existing_rubric(self) -> None:
+        with patch.object(
+            daily_cli,
+            "_model",
+            return_value={"scorecards": scorecards(25)},
+        ) as model:
+            validated = daily_cli.score_cards(cards(), profile(), signals())
+        self.assertEqual(validated[0]["total"], 25)
+        prompt = str(model.call_args.args[0]).casefold()
+        self.assertIn("conversation surface", prompt)
+        self.assertIn("distinctiveness", prompt)
+        self.assertIn("2 or lower", prompt)
 
 
 class ThesisSearchTests(unittest.TestCase):
@@ -157,6 +189,8 @@ class ThesisSearchTests(unittest.TestCase):
         self.assertEqual(result[0]["total"], 25)
         self.assertIsNone(calls[0])
         self.assertIsInstance(calls[1], dict)
+        assert isinstance(calls[1], dict)
+        self.assertIn("conversation_surface", calls[1]["rejected"][0])
 
     def test_search_fails_closed_after_exhaustion(self) -> None:
         counter = 0

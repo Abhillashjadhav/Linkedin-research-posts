@@ -32,7 +32,15 @@ PROOF_KEYS = {"id", "label", "public_safe_claim", "evidence_type"}
 CARD_KEYS = {
     "id", "signal_ids", "topic", "thesis", "why_now", "reader_problem",
     "product_decision", "proof_id", "remembered_for", "plain_language_summary",
+    "conversation_surface",
 }
+GENERIC_CONVERSATION_SURFACES = (
+    "what do you think",
+    "agree or disagree",
+    "share your thoughts",
+    "thoughts below",
+    "comment below",
+)
 
 
 def _schema(kind: str) -> dict[str, object]:
@@ -69,6 +77,11 @@ def _normal(value: object) -> str:
 
 def _words(value: object) -> int:
     return len(re.findall(r"\b[\w'-]+\b", str(value)))
+
+
+def _generic_conversation_surface(value: object) -> bool:
+    folded = _normal(value)
+    return any(phrase in folded for phrase in GENERIC_CONVERSATION_SURFACES)
 
 
 def _role(name: str) -> str:
@@ -220,6 +233,10 @@ def validate_cards(raw: object, signals: Sequence[Mapping[str, object]], profile
         card["signal_ids"] = ids
         if card["proof_id"] not in proof_ids or _words(card["plain_language_summary"]) > 25:
             raise workflow.WorkflowError("Each thesis needs a valid proof and a summary of 25 words or fewer.")
+        if _generic_conversation_surface(card["conversation_surface"]):
+            raise workflow.WorkflowError(
+                "Conversation surface must name a substantive assumption, trade-off, counterexample, implementation experience, or unresolved evidence."
+            )
         thesis_key = _normal(card["thesis"])
         if thesis_key in thesis_texts:
             raise workflow.WorkflowError("Theses must be materially distinct.")
@@ -232,7 +249,7 @@ def validate_cards(raw: object, signals: Sequence[Mapping[str, object]], profile
 
 def generate_cards(profile: Mapping[str, object], signals: Sequence[Mapping[str, object]], feedback: Mapping[str, object] | None) -> list[dict[str, object]]:
     retry = f"\nUNTRUSTED_PREVIOUS_SCORES\n{json.dumps(feedback, indent=2, sort_keys=True)}\nEND_UNTRUSTED_PREVIOUS_SCORES\nCreate genuinely different theses." if feedback else ""
-    prompt = f"""Create exactly three one-idea authority thesis cards. Turn current signals into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. The topic field must be a concise phrase using words from the selected signal title so stored evidence can be retrieved later. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
+    prompt = f"""Create exactly three one-idea authority thesis cards. Turn current signals into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. It must not be a CTA or a generic question. The topic field must be a concise phrase using words from the selected signal title so stored evidence can be retrieved later. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
 UNTRUSTED_PROFILE
 {json.dumps(dict(profile), indent=2, sort_keys=True)}
 END_UNTRUSTED_PROFILE
@@ -266,7 +283,7 @@ def validate_scores(raw: object, cards: Sequence[Mapping[str, object]]) -> list[
 
 
 def score_cards(cards: Sequence[Mapping[str, object]], profile: Mapping[str, object], signals: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
-    prompt = f"""Score each thesis from 1 to 5 on exactly {", ".join(AXES)}. Audience fit means useful to the target audience. Distinctiveness rejects generic AI-news summaries. Decision strength requires a concrete choice. Proof fit must be natural and honest. Simplicity must work for a non-engineer. Return scores only; do not rewrite, browse, select or draft.
+    prompt = f"""Score each thesis from 1 to 5 on exactly {", ".join(AXES)}. Audience fit means useful to the target audience. Distinctiveness rejects generic AI-news summaries and also requires a substantive conversation surface: a credible practitioner can disagree, add a counterexample, contribute implementation experience, or expose a real trade-off. If conversation_surface is only a CTA, generic question, or empty debate bait, distinctiveness must be 2 or lower. Decision strength requires a concrete choice. Proof fit must be natural and honest. Simplicity must work for a non-engineer. Return scores only; do not rewrite, browse, select or draft.
 UNTRUSTED_PROFILE
 {json.dumps(dict(profile), indent=2, sort_keys=True)}
 END_UNTRUSTED_PROFILE
@@ -297,7 +314,7 @@ def search_theses(
         if all(int(card["total"]) >= MIN_TOTAL and int(card["scores"]["simplicity"]) >= MIN_SIMPLICITY for card in combined):  # type: ignore[index]
             return combined
         rejected.update(_normal(card["thesis"]) for card in cards)
-        feedback = {"cycle": cycle, "required_total": MIN_TOTAL, "required_simplicity": MIN_SIMPLICITY, "rejected": [{"id": card["id"], "thesis": card["thesis"], "scores": card["scores"], "total": card["total"]} for card in combined]}
+        feedback = {"cycle": cycle, "required_total": MIN_TOTAL, "required_simplicity": MIN_SIMPLICITY, "rejected": [{"id": card["id"], "thesis": card["thesis"], "conversation_surface": card["conversation_surface"], "scores": card["scores"], "total": card["total"]} for card in combined]}
     raise workflow.WorkflowError("No complete three-thesis set cleared the authority bar. Improve the audience, proof inventory or signals.")
 
 
@@ -374,6 +391,7 @@ def command(args: argparse.Namespace) -> int:
         draft = f"./bin/linkedin-os draft --topic {json.dumps(str(card['topic']))} --goal authority --format text --strategy-input {json.dumps(strategy_rel)} --db {json.dumps(db_rel)} --allow-model-egress --package"
         print(f"{card['id']}: {card['plain_language_summary']} [{card['total']}/25; simplicity={card['scores']['simplicity']}/5]")
         print(f"Decision: {card['product_decision']}")
+        print(f"Conversation: {card['conversation_surface']}")
         print(f"Draft command: {draft}")
     print("No thesis was selected and no post was generated or published.")
     return 0
