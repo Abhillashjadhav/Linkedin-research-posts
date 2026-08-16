@@ -11,8 +11,6 @@ import argparse
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +18,7 @@ from typing import Callable, Mapping, Sequence
 
 from . import __main__ as legacy_cli
 from . import storage, workflow
+from .model_runtime import ModelConfig, invoke_structured
 
 AXES = ("audience_fit", "distinctiveness", "decision_strength", "proof_fit", "simplicity")
 MIN_TOTAL = 23
@@ -41,6 +40,11 @@ GENERIC_CONVERSATION_SURFACES = (
     "thoughts below",
     "comment below",
 )
+
+DISCOVERY_MODEL = "gpt-5.6-sol"
+SCOUT_MODEL = ModelConfig("codex", DISCOVERY_MODEL, "high")
+THESIS_MODEL = ModelConfig("codex", DISCOVERY_MODEL, "high")
+THESIS_CRITIC_MODEL = ModelConfig("codex", DISCOVERY_MODEL, "ultra")
 
 
 def _schema(kind: str) -> dict[str, object]:
@@ -100,43 +104,6 @@ def _role(name: str) -> str:
     return text.strip()
 
 
-def _model(prompt: str, system: str, schema: Mapping[str, object], tools: str, label: str, turns: int = 1) -> Mapping[str, object]:
-    executable = shutil.which("claude")
-    if not executable:
-        raise workflow.WorkflowError("Claude CLI is unavailable; install and authenticate it first.")
-    command = [
-        executable, "--print", "--safe-mode", "--output-format", "json",
-        "--json-schema", json.dumps(schema, separators=(",", ":")),
-        "--system-prompt", system,
-    ]
-    command.extend(["--allowedTools", tools] if tools else ["--tools", ""])
-    command.extend([
-        "--max-turns", str(turns), "--permission-mode", "dontAsk", "--no-chrome",
-        "--disable-slash-commands", "--no-session-persistence",
-    ])
-    try:
-        result = subprocess.run(command, input=prompt, cwd=workflow.REPO_ROOT, capture_output=True, text=True, timeout=420, check=False)
-    except subprocess.TimeoutExpired as exc:
-        raise workflow.WorkflowError(f"{label} timed out.") from exc
-    except OSError as exc:
-        raise workflow.WorkflowError(f"{label} could not start.") from exc
-    if result.returncode:
-        raise workflow.WorkflowError(f"{label} failed. Run `claude doctor`; stderr was not printed.")
-    try:
-        envelope = json.loads(result.stdout)
-        if isinstance(envelope, Mapping) and isinstance(envelope.get("structured_output"), Mapping):
-            return envelope["structured_output"]  # type: ignore[return-value]
-        if isinstance(envelope, Mapping) and isinstance(envelope.get("result"), str):
-            nested = json.loads(str(envelope["result"]))
-            if isinstance(nested, Mapping):
-                return nested
-        if isinstance(envelope, Mapping):
-            return envelope
-    except (json.JSONDecodeError, TypeError) as exc:
-        raise workflow.WorkflowError(f"{label} returned invalid JSON.") from exc
-    raise workflow.WorkflowError(f"{label} returned an unexpected response.")
-
-
 def _private_json(path: Path, label: str) -> object:
     supplied = path.expanduser()
     if not supplied.is_absolute():
@@ -186,7 +153,15 @@ def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, obj
     prompt = f"""Find five defensible GenAI product signals published during the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, evaluations, reliability, enterprise AI and AI product management'}.
 Search broadly and read each source body. Prefer official engineering/research blogs, documentation, papers, repositories, government and standards sources. Return concise evidence summaries, not copied prose or post drafts. Never access LinkedIn, email, private data, local files, credentials or authenticated services."""
-    result = _model(prompt, _role("scout"), _schema("research"), "WebSearch,WebFetch", "Scout", turns=10)
+    result = invoke_structured(
+        config=SCOUT_MODEL,
+        role_prompt=_role("scout"),
+        task_prompt=prompt,
+        schema=_schema("research"),
+        timeout=420,
+        web_search=True,
+        stage_label="Scout",
+    )
     items = result.get("items")
     if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
         raise workflow.WorkflowError("Scout must return an items list.")
@@ -256,7 +231,15 @@ END_UNTRUSTED_PROFILE
 UNTRUSTED_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}
 END_UNTRUSTED_SIGNALS{retry}"""
-    result = _model(prompt, _role("thesis"), _schema("cards"), "", "Thesis generator")
+    result = invoke_structured(
+        config=THESIS_MODEL,
+        role_prompt=_role("thesis"),
+        task_prompt=prompt,
+        schema=_schema("cards"),
+        timeout=420,
+        web_search=False,
+        stage_label="Thesis generator",
+    )
     return validate_cards(result.get("cards"), signals, profile)
 
 
@@ -293,7 +276,15 @@ END_UNTRUSTED_SIGNALS
 UNTRUSTED_CARDS
 {json.dumps(list(cards), indent=2, sort_keys=True)}
 END_UNTRUSTED_CARDS"""
-    result = _model(prompt, "You are a strict authority-thesis critic. Score only.", _schema("scores"), "", "Thesis critic")
+    result = invoke_structured(
+        config=THESIS_CRITIC_MODEL,
+        role_prompt="You are a strict authority-thesis critic. Score only.",
+        task_prompt=prompt,
+        schema=_schema("scores"),
+        timeout=420,
+        web_search=False,
+        stage_label="Thesis critic",
+    )
     return validate_scores(result.get("scorecards"), cards)
 
 

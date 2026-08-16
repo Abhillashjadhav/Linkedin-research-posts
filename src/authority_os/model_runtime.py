@@ -1,4 +1,4 @@
-"""Zero-tool structured model calls with explicit, persisted configuration."""
+"""Capability-bounded structured Codex calls with explicit configuration."""
 
 from __future__ import annotations
 
@@ -14,6 +14,24 @@ from .workflow import WorkflowError
 
 
 ALLOWED_REASONING = {"low", "medium", "high", "xhigh", "max", "ultra"}
+NON_WEB_TOOL_FEATURES = frozenset(
+    {
+        "apps",
+        "browser_use",
+        "browser_use_external",
+        "browser_use_full_cdp_access",
+        "computer_use",
+        "goals",
+        "image_generation",
+        "in_app_browser",
+        "multi_agent",
+        "plugins",
+        "remote_plugin",
+        "shell_tool",
+        "skill_search",
+        "view_image",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,12 +62,16 @@ def invoke_structured(
     task_prompt: str,
     schema: Mapping[str, object],
     timeout: int = 180,
+    web_search: bool = False,
+    stage_label: str = "Campaign model stage",
 ) -> dict[str, object]:
-    """Invoke Codex in an empty, read-only workspace and return validated JSON.
+    """Invoke Codex with either live web search or no model tools.
 
     The CLI receives prompts over stdin, has no persisted conversation, ignores user
-    configuration, and cannot mutate the repository. Provider stderr is deliberately
-    not reflected in failures because it may contain account or path details.
+    configuration, and runs in an empty, read-only workspace. All non-web tool
+    features are disabled. Web search is either explicitly live or explicitly
+    removed. Provider stderr is deliberately not reflected in failures because it
+    may contain account or path details.
     """
 
     safe_config = config.validate()
@@ -57,6 +79,11 @@ def invoke_structured(
         raise WorkflowError("Campaign model prompts must not be blank.")
     if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
         raise WorkflowError("Campaign model timeout must be a positive integer.")
+    if type(web_search) is not bool:
+        raise WorkflowError("Model web-search capability must be explicit.")
+    if not isinstance(stage_label, str) or not stage_label.strip():
+        raise WorkflowError("Model stage label must not be blank.")
+    label = stage_label.strip()
     executable = shutil.which("codex")
     if not executable:
         raise WorkflowError("Codex CLI is unavailable; install and authenticate it first.")
@@ -78,8 +105,10 @@ def invoke_structured(
             json.dumps(schema, sort_keys=True, separators=(",", ":")),
             encoding="utf-8",
         )
-        command = [
-            executable,
+        command = [executable]
+        if web_search:
+            command.append("--search")
+        command.extend([
             "exec",
             "--ephemeral",
             "--ignore-user-config",
@@ -90,12 +119,18 @@ def invoke_structured(
             safe_config.model,
             "--config",
             f'model_reasoning_effort="{safe_config.reasoning}"',
+        ])
+        if not web_search:
+            command.extend(["--config", 'web_search="disabled"'])
+        for feature in sorted(NON_WEB_TOOL_FEATURES):
+            command.extend(["--disable", feature])
+        command.extend([
             "--output-schema",
             str(schema_path),
             "--output-last-message",
             str(output_path),
             "-",
-        ]
+        ])
         try:
             completed = subprocess.run(
                 command,
@@ -107,17 +142,15 @@ def invoke_structured(
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            raise WorkflowError("Campaign model stage timed out.") from exc
+            raise WorkflowError(f"{label} timed out.") from exc
         except OSError as exc:
-            raise WorkflowError("Campaign model stage could not start.") from exc
+            raise WorkflowError(f"{label} could not start.") from exc
         if completed.returncode:
-            raise WorkflowError(
-                "Campaign model stage failed; provider output was redacted."
-            )
+            raise WorkflowError(f"{label} failed; provider output was redacted.")
         try:
             parsed = json.loads(output_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise WorkflowError("Campaign model stage returned invalid JSON.") from exc
+            raise WorkflowError(f"{label} returned invalid JSON.") from exc
     if not isinstance(parsed, dict):
-        raise WorkflowError("Campaign model stage must return one JSON object.")
+        raise WorkflowError(f"{label} must return one JSON object.")
     return parsed
