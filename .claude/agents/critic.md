@@ -33,7 +33,7 @@ Hook 3 or below caps the total at 18. A generic `What do you think?`, `Agree or 
 A candidate cannot credibly receive 24–25 if any of these is absent:
 
 - a non-obvious but defensible position;
-- proof or legitimate standing for that position;
+- a legitimate evidence basis or standing for that position;
 - meaningful decision stakes;
 - a real surface where a smart practitioner could disagree, add counterevidence, or contribute experience.
 
