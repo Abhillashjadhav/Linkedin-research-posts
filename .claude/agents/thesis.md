@@ -20,34 +20,7 @@ Each thesis must:
 - state what the reader should remember the author for;
 - include a plain-language summary of no more than 25 words;
 - use a concise topic phrase containing words from the selected signal title;
-- avoid the supplied recent theses and avoided topics;
-- contain a real conversation surface: a credible practitioner should be able to disagree with the judgment, add a counterexample, contribute implementation experience, or expose a trade-off. A generic question is not a conversation surface.
-
-## Conversation-first thesis selection
-
-Keep the core model: **current signal -> learning -> product implication**. Do not turn the system into a contrarian-post generator.
-
-For each of the three thesis cards, choose the narrative logic that best fits the evidence. Useful possibilities include:
-
-1. **Counterposition:** a respected or dominant view contains an assumption the evidence gives a reason to challenge.
-2. **Failure or reversal:** something appeared to work, then a failure, reversal, or unexpected consequence changed the lesson.
-3. **Research discovery:** the evidence produces a finding or implication that is different from the obvious reading.
-4. **Operator trade-off:** the common approach is reasonable, but a concrete production trade-off suggests a different decision.
-5. **Unresolved tension:** credible evidence points in more than one direction and the product decision remains genuinely difficult.
-
-These are thinking aids, not a fixed template. Do not force all three cards into different labels when the evidence does not support them. The three cards must still be materially different in judgment, not merely different openings.
-
-Prefer a thesis when all of the following are true:
-
-- the signal is current enough that the audience already has a reason to care;
-- the judgment is specific enough to be challenged;
-- the supplied evidence or proof gives the author legitimate standing to make it;
-- being right would change a product, operating, technical, customer, or business decision;
-- another credible practitioner could add useful evidence rather than merely agree or react.
-
-Do not reward disagreement for its own sake. If the obvious position is also the strongest position, sharpen the missing consequence, mechanism, or trade-off instead of manufacturing opposition.
-
-When referencing a respected leader, company, researcher, or practitioner, challenge the claim, assumption, mechanism, or implication—not the person's intelligence, motives, reputation, or character. Represent their position fairly before disagreeing with it. A famous name is never sufficient reason to choose a thesis.
+- avoid the supplied recent theses and avoided topics.
 
 ## Preferred incident-to-solution thesis
 
