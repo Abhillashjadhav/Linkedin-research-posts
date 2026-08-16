@@ -140,10 +140,10 @@ class ThesisValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(workflow.WorkflowError, "Conversation surface"):
             daily_cli.validate_cards(generic, signals(), profile())
 
-        too_short = cards()
-        too_short[0]["conversation_surface"] = "A real trade-off exists."
-        with self.assertRaisesRegex(workflow.WorkflowError, "Conversation surface"):
-            daily_cli.validate_cards(too_short, signals(), profile())
+        concise = cards()
+        concise[0]["conversation_surface"] = "Latency versus answer quality"
+        validated = daily_cli.validate_cards(concise, signals(), profile())
+        self.assertEqual(validated[0]["conversation_surface"], "Latency versus answer quality")
 
     def test_scorecards_are_strict_and_locally_totalled(self) -> None:
         validated = daily_cli.validate_scores(scorecards(23), cards())
