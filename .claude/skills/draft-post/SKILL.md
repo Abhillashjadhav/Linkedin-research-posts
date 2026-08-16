@@ -50,7 +50,15 @@ The CLI runs up to four live candidate cycles. Each cycle still owns exactly thr
 - every required authority, proof, honesty, citation, and relevance gate passes; and
 - its opening does not repeat one rejected in an earlier cycle.
 
+For Authority work, the editorial path must also expose **Observation → Position → Proof → Stakes** without imposing that as a paragraph template. The position must create a substantive conversation surface: a credible practitioner could disagree with the assumption, add counterevidence, or contribute implementation experience. A generic CTA does not satisfy this requirement.
+
+Narrative form must vary with the evidence. Counterposition, failure/reversal, research discovery, operator trade-off, and unresolved tension are all valid. Do not force every post into `X says / I disagree`; direct disagreement with a respected leader is optional and, when used, must challenge the claim rather than the person.
+
 When a cycle fails, do not expose its prose. Feed only bounded score, gate, angle, and opening diagnostics into the next Writer attempt, instructing it to produce a genuinely new narrative execution without altering the supplied strategy or inventing evidence. If four live cycles fail, return no post and ask for stronger evidence or strategy.
+
+## Distribution-series boundary
+
+Curated AI-product learning maps are a separate Reach archetype. Do not silently convert every Authority post into a resource list, and do not draft the planned five-persona resource series unless the user explicitly selects that Reach work. The distribution series may share evidence and performance learning, but it has a different job: saves, shares, discovery, and qualified profile visits.
 
 ## Return the result
 
