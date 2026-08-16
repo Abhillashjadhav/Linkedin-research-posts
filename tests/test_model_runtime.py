@@ -48,6 +48,7 @@ class ModelRuntimeTests(unittest.TestCase):
         for option in (
             "--ephemeral",
             "--ignore-user-config",
+            "--ignore-rules",
             "--skip-git-repo-check",
             "--output-schema",
             "--output-last-message",
@@ -61,6 +62,10 @@ class ModelRuntimeTests(unittest.TestCase):
             if value == "--disable"
         }
         self.assertTrue(model_runtime.NON_WEB_TOOL_FEATURES <= disabled)
+        self.assertTrue(
+            {"shell_tool", "unified_exec", "multi_agent", "apps", "plugins"}
+            <= disabled
+        )
         kwargs = run.call_args.kwargs  # type: ignore[attr-defined]
         self.assertNotEqual(Path(kwargs["cwd"]), model_runtime.Path.cwd())
         self.assertIn("Research only public sources.", kwargs["input"])
@@ -84,12 +89,14 @@ class ModelRuntimeTests(unittest.TestCase):
         command = run.call_args.args[0]  # type: ignore[attr-defined]
         self.assertNotIn("--search", command)
         self.assertIn('web_search="disabled"', command)
+        self.assertIn("--ignore-rules", command)
         disabled = {
             command[index + 1]
             for index, value in enumerate(command[:-1])
             if value == "--disable"
         }
         self.assertTrue(model_runtime.NON_WEB_TOOL_FEATURES <= disabled)
+        self.assertTrue({"shell_tool", "unified_exec"} <= disabled)
 
     @patch("authority_os.model_runtime.shutil.which", return_value="/opt/codex")
     def test_invalid_or_failed_model_output_fails_closed_without_provider_leaks(
