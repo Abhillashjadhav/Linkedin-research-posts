@@ -29,7 +29,7 @@ def successful_run(command: list[str], **_kwargs: object) -> subprocess.Complete
 class ModelRuntimeTests(unittest.TestCase):
     @patch("authority_os.model_runtime.subprocess.run", side_effect=successful_run)
     @patch("authority_os.model_runtime.shutil.which", return_value="/opt/codex")
-    def test_live_web_call_uses_supported_codex_search_in_isolated_read_only_exec(
+    def test_live_web_call_uses_explicit_live_mode_in_isolated_read_only_exec(
         self, which: object, run: object
     ) -> None:
         result = model_runtime.invoke_structured(
@@ -44,7 +44,7 @@ class ModelRuntimeTests(unittest.TestCase):
         self.assertEqual(result, {"answer": "ok"})
         which.assert_called_once_with("codex")  # type: ignore[attr-defined]
         command = run.call_args.args[0]  # type: ignore[attr-defined]
-        self.assertEqual(command[:3], ["/opt/codex", "--search", "exec"])
+        self.assertEqual(command[:2], ["/opt/codex", "exec"])
         for option in (
             "--ephemeral",
             "--ignore-user-config",
@@ -55,6 +55,7 @@ class ModelRuntimeTests(unittest.TestCase):
         ):
             self.assertIn(option, command)
         self.assertEqual(command[command.index("--sandbox") + 1], "read-only")
+        self.assertIn('web_search="live"', command)
         self.assertNotIn('web_search="disabled"', command)
         disabled = {
             command[index + 1]
@@ -89,6 +90,7 @@ class ModelRuntimeTests(unittest.TestCase):
         command = run.call_args.args[0]  # type: ignore[attr-defined]
         self.assertNotIn("--search", command)
         self.assertIn('web_search="disabled"', command)
+        self.assertNotIn('web_search="live"', command)
         self.assertIn("--ignore-rules", command)
         disabled = {
             command[index + 1]
