@@ -81,7 +81,7 @@ def _words(value: object) -> int:
 
 def _generic_conversation_surface(value: object) -> bool:
     folded = _normal(value)
-    return _words(folded) < 6 or any(phrase in folded for phrase in GENERIC_CONVERSATION_SURFACES)
+    return any(phrase in folded for phrase in GENERIC_CONVERSATION_SURFACES)
 
 
 def _role(name: str) -> str:
