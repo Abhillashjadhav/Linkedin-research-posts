@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from authority_os import quality_cli, workflow
+from authority_os import campaign, quality_cli, workflow
 
 
 def attempt_output(
@@ -144,6 +144,40 @@ class QualitySearchTests(unittest.TestCase):
         self.assertNotIn("Second body", rendered)
         self.assertNotIn("Third body", rendered)
 
+    def test_four_of_five_hook_regenerates_even_at_24_total(self) -> None:
+        responses = [
+            attempt_output(
+                first_score=24,
+                first_hook=4,
+                first_opening="Four-of-five opening must be rejected.",
+            ),
+            attempt_output(
+                first_score=24,
+                first_hook=5,
+                first_opening="Five-of-five replacement opening.",
+            ),
+        ]
+
+        def fake_command(_args: object) -> int:
+            print(responses.pop(0), end="")
+            return 0
+
+        output = io.StringIO()
+        with (
+            patch.object(quality_cli.legacy_cli, "command_draft", fake_command),
+            patch.object(quality_cli, "MAX_QUALITY_CYCLES", 2),
+            redirect_stdout(output),
+        ):
+            result = quality_cli.command_draft(self._args())
+
+        rendered = output.getvalue()
+        self.assertEqual(result, 0)
+        self.assertIn("Quality cycle 1/2 rejected", rendered)
+        self.assertIn("hook=4/5", rendered)
+        self.assertIn("Quality search passed on cycle 2/2", rendered)
+        self.assertIn("Five-of-five replacement opening", rendered)
+        self.assertNotIn("Four-of-five opening must be rejected", rendered)
+
     def test_score_without_required_gates_regenerates(self) -> None:
         responses = [
             attempt_output(first_score=25, first_gates=False),
@@ -242,6 +276,45 @@ class QualitySearchTests(unittest.TestCase):
         self.assertIn("Fixture envelope validated:", output.getvalue())
         self.assertIn("No approval package was generated", output.getvalue())
 
+    def test_campaign_path_uses_five_of_five_hook_and_hook_retry_contract(self) -> None:
+        args = SimpleNamespace(
+            run_spec="spec.json",
+            trace_output="outputs/run",
+            no_ai_slop_skill="SKILL.md",
+            no_ai_slop_eval="eval.md",
+            campaign_day="Monday",
+        )
+        observed: dict[str, object] = {}
+
+        def fake_default(stage, config, role_prompt, task_prompt, schema):
+            observed["task_prompt"] = task_prompt
+            return {}
+
+        def fake_run_campaign(**kwargs):
+            self.assertEqual(campaign.MIN_HOOK, 5)
+            invoker = kwargs["invoker"]
+            with patch.object(campaign, "default_stage_invoker", fake_default):
+                invoker(
+                    "writer",
+                    object(),
+                    "role",
+                    "This is a bounded regeneration. diagnostics: hook_strength=4",
+                    {},
+                )
+            return {"days": [{"status": "BLOCKED"}]}
+
+        output = io.StringIO()
+        with (
+            patch.object(campaign, "MIN_HOOK", 4),
+            patch.object(campaign, "run_campaign", side_effect=fake_run_campaign),
+            redirect_stdout(output),
+        ):
+            result = quality_cli.command_draft(args)
+
+        self.assertEqual(result, 0)
+        self.assertIn("HOOK_REGENERATION_CONTRACT", str(observed["task_prompt"]))
+        self.assertIn("hook below 5/5 is a hard failure", str(observed["task_prompt"]).casefold())
+
 
 class RetryPromptTests(unittest.TestCase):
     def test_retry_prompt_adds_diagnostics_and_restores_original_builder(self) -> None:
@@ -251,12 +324,18 @@ class RetryPromptTests(unittest.TestCase):
         ):
             patched_original = workflow.build_writer_prompt
             with quality_cli._writer_retry_prompt(
-                {"rejected_cycle": 1, "rejected_candidates": [{"opening": "Old"}]}
+                {
+                    "rejected_cycle": 1,
+                    "rejected_candidates": [
+                        {"opening": "Old", "critic_axes": {"hook_strength": 4}}
+                    ],
+                }
             ):
                 prompt = workflow.build_writer_prompt()
                 self.assertIn("QUALITY_SEARCH_RETRY_INSTRUCTION", prompt)
                 self.assertIn('"rejected_cycle": 1', prompt)
                 self.assertIn("Do not reuse a rejected opening", prompt)
+                self.assertIn("hook below 5/5 is a hard failure", prompt.casefold())
             self.assertIs(workflow.build_writer_prompt, patched_original)
         self.assertIs(workflow.build_writer_prompt, original)
 
