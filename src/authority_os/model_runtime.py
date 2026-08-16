@@ -22,14 +22,20 @@ NON_WEB_TOOL_FEATURES = frozenset(
         "browser_use_full_cdp_access",
         "computer_use",
         "goals",
+        "hooks",
         "image_generation",
         "in_app_browser",
         "multi_agent",
         "plugins",
         "remote_plugin",
         "shell_tool",
+        "skill_mcp_dependency_install",
         "skill_search",
+        "tool_call_mcp_elicitation",
+        "tool_suggest",
+        "unified_exec",
         "view_image",
+        "workspace_dependencies",
     }
 )
 
@@ -65,13 +71,13 @@ def invoke_structured(
     web_search: bool = False,
     stage_label: str = "Campaign model stage",
 ) -> dict[str, object]:
-    """Invoke Codex with either live web search or no model tools.
+    """Invoke Codex with either live web search or no external model tools.
 
     The CLI receives prompts over stdin, has no persisted conversation, ignores user
-    configuration, and runs in an empty, read-only workspace. All non-web tool
-    features are disabled. Web search is either explicitly live or explicitly
-    removed. Provider stderr is deliberately not reflected in failures because it
-    may contain account or path details.
+    configuration and exec-policy rules, and runs in an empty, read-only workspace.
+    Shell variants and non-web integrations are explicitly disabled. Web search is
+    either explicitly live or explicitly removed. Provider stderr is deliberately not
+    reflected in failures because it may contain account or path details.
     """
 
     safe_config = config.validate()
@@ -112,6 +118,7 @@ def invoke_structured(
             "exec",
             "--ephemeral",
             "--ignore-user-config",
+            "--ignore-rules",
             "--skip-git-repo-check",
             "--sandbox",
             "read-only",
