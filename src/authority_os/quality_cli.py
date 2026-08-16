@@ -379,12 +379,28 @@ def command_draft(args: object) -> int:
             raise workflow.WorkflowError(
                 "Campaign drafting requires --trace-output, --no-ai-slop-skill, and --no-ai-slop-eval."
             )
+        campaign.MIN_HOOK = MIN_HOOK_SCORE
+
+        def campaign_invoker(stage, config, role_prompt, task_prompt, schema):
+            if stage == "writer" and "This is a bounded regeneration." in task_prompt:
+                task_prompt = (
+                    f"{task_prompt}\n\nHOOK_REGENERATION_CONTRACT\n"
+                    "A hook below 5/5 is a hard failure. Use the diagnostic hook_strength to "
+                    "replace the rejected opening with a materially stronger one. Do not change "
+                    "the locked thesis, evidence boundaries, or factual claims merely to improve "
+                    "the hook."
+                )
+            return campaign.default_stage_invoker(
+                stage, config, role_prompt, task_prompt, schema
+            )
+
         summary = campaign.run_campaign(
             spec_path=run_spec,
             output_root=output,
             no_ai_slop_skill=skill,
             no_ai_slop_eval=evaluation,
             only_day=getattr(args, "campaign_day", None),
+            invoker=campaign_invoker,
         )
         statuses = [str(item["status"]) for item in summary["days"]]
         print(f"Campaign trace: {output}")
