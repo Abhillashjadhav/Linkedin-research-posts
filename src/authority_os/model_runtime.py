@@ -76,8 +76,9 @@ def invoke_structured(
     The CLI receives prompts over stdin, has no persisted conversation, ignores user
     configuration and exec-policy rules, and runs in an empty, read-only workspace.
     Shell variants and non-web integrations are explicitly disabled. Web search is
-    either explicitly live or explicitly removed. Provider stderr is deliberately not
-    reflected in failures because it may contain account or path details.
+    explicitly configured as live or disabled for the exec invocation. Provider stderr
+    is deliberately not reflected in failures because it may contain account or path
+    details.
     """
 
     safe_config = config.validate()
@@ -111,10 +112,8 @@ def invoke_structured(
             json.dumps(schema, sort_keys=True, separators=(",", ":")),
             encoding="utf-8",
         )
-        command = [executable]
-        if web_search:
-            command.append("--search")
-        command.extend([
+        command = [
+            executable,
             "exec",
             "--ephemeral",
             "--ignore-user-config",
@@ -126,9 +125,9 @@ def invoke_structured(
             safe_config.model,
             "--config",
             f'model_reasoning_effort="{safe_config.reasoning}"',
-        ])
-        if not web_search:
-            command.extend(["--config", 'web_search="disabled"'])
+            "--config",
+            f'web_search="{"live" if web_search else "disabled"}"',
+        ]
         for feature in sorted(NON_WEB_TOOL_FEATURES):
             command.extend(["--disable", feature])
         command.extend([
