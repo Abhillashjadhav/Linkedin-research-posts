@@ -174,12 +174,12 @@ class ThesisValidationTests(unittest.TestCase):
     def test_critic_scores_conversation_surface_inside_existing_rubric(self) -> None:
         with patch.object(
             daily_cli,
-            "_model",
+            "invoke_structured",
             return_value={"scorecards": scorecards(25)},
-        ) as model:
+        ) as invoke:
             validated = daily_cli.score_cards(cards(), profile(), signals())
         self.assertEqual(validated[0]["total"], 25)
-        prompt = str(model.call_args.args[0]).casefold()
+        prompt = str(invoke.call_args.kwargs["task_prompt"]).casefold()
         self.assertIn("conversation surface", prompt)
         self.assertIn("distinctiveness", prompt)
         self.assertIn("2 or lower", prompt)
