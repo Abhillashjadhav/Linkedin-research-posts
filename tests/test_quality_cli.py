@@ -276,7 +276,7 @@ class QualitySearchTests(unittest.TestCase):
         self.assertIn("Fixture envelope validated:", output.getvalue())
         self.assertIn("No approval package was generated", output.getvalue())
 
-    def test_campaign_path_uses_five_of_five_hook_and_hook_retry_contract(self) -> None:
+    def test_campaign_path_carries_post_edit_four_of_five_hook_back_to_writer(self) -> None:
         args = SimpleNamespace(
             run_spec="spec.json",
             trace_output="outputs/run",
@@ -286,8 +286,16 @@ class QualitySearchTests(unittest.TestCase):
         )
         observed: dict[str, object] = {}
 
-        def fake_default(stage, config, role_prompt, task_prompt, schema):
-            observed["task_prompt"] = task_prompt
+        def fake_default(stage, _config, _role_prompt, task_prompt, _schema):
+            if stage == "post_edit_recritic":
+                return {
+                    "scorecards": [
+                        {"candidate_id": "candidate-1", "hook_strength": 4}
+                    ]
+                }
+            if stage == "writer":
+                observed["task_prompt"] = task_prompt
+                return {}
             return {}
 
         def fake_run_campaign(**kwargs):
@@ -295,10 +303,17 @@ class QualitySearchTests(unittest.TestCase):
             invoker = kwargs["invoker"]
             with patch.object(campaign, "default_stage_invoker", fake_default):
                 invoker(
+                    "post_edit_recritic",
+                    object(),
+                    "role",
+                    "Re-score the edited candidate.",
+                    {},
+                )
+                invoker(
                     "writer",
                     object(),
                     "role",
-                    "This is a bounded regeneration. diagnostics: hook_strength=4",
+                    "This is a bounded regeneration.",
                     {},
                 )
             return {"days": [{"status": "BLOCKED"}]}
@@ -312,8 +327,10 @@ class QualitySearchTests(unittest.TestCase):
             result = quality_cli.command_draft(args)
 
         self.assertEqual(result, 0)
-        self.assertIn("HOOK_REGENERATION_CONTRACT", str(observed["task_prompt"]))
-        self.assertIn("hook below 5/5 is a hard failure", str(observed["task_prompt"]).casefold())
+        prompt = str(observed["task_prompt"])
+        self.assertIn("HOOK_REGENERATION_CONTRACT", prompt)
+        self.assertIn("previous hook was 4/5", prompt.casefold())
+        self.assertIn("hook below 5/5 is a hard failure", prompt.casefold())
 
 
 class RetryPromptTests(unittest.TestCase):
