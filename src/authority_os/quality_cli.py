@@ -380,19 +380,36 @@ def command_draft(args: object) -> int:
                 "Campaign drafting requires --trace-output, --no-ai-slop-skill, and --no-ai-slop-eval."
             )
         campaign.MIN_HOOK = MIN_HOOK_SCORE
+        last_hook_failure: int | None = None
 
         def campaign_invoker(stage, config, role_prompt, task_prompt, schema):
-            if stage == "writer" and "This is a bounded regeneration." in task_prompt:
+            nonlocal last_hook_failure
+            if stage == "writer" and last_hook_failure is not None:
                 task_prompt = (
                     f"{task_prompt}\n\nHOOK_REGENERATION_CONTRACT\n"
-                    "A hook below 5/5 is a hard failure. Use the diagnostic hook_strength to "
-                    "replace the rejected opening with a materially stronger one. Do not change "
-                    "the locked thesis, evidence boundaries, or factual claims merely to improve "
-                    "the hook."
+                    f"The previous hook was {last_hook_failure}/5. A hook below 5/5 is a hard "
+                    "failure. Replace the rejected opening with a materially stronger one. Do "
+                    "not change the locked thesis, evidence boundaries, or factual claims merely "
+                    "to improve the hook."
                 )
-            return campaign.default_stage_invoker(
+                last_hook_failure = None
+            result = campaign.default_stage_invoker(
                 stage, config, role_prompt, task_prompt, schema
             )
+            if stage in {"critic", "post_edit_recritic"}:
+                scorecards = result.get("scorecards")
+                if isinstance(scorecards, list):
+                    hooks = [
+                        int(item["hook_strength"])
+                        for item in scorecards
+                        if isinstance(item, Mapping)
+                        and type(item.get("hook_strength")) is int
+                    ]
+                    if hooks and max(hooks) < MIN_HOOK_SCORE:
+                        last_hook_failure = max(hooks)
+                    elif stage == "post_edit_recritic":
+                        last_hook_failure = None
+            return result
 
         summary = campaign.run_campaign(
             spec_path=run_spec,
