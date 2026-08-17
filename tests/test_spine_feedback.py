@@ -194,7 +194,7 @@ class SummaryTests(unittest.TestCase):
 
     def test_later_snapshot_cannot_reclassify_immutable_post_context(self) -> None:
         first = record(1)
-        changed = dict(record(1, observed_at="2026-08-21T04:00:00Z"))
+        changed = dict(record(1, observed_at="2026-08-20T12:00:00Z"))
         changed["recorded_at"] = "2026-08-22T00:00:00Z"
         changed["selected_spine"] = "failure_reversal"
         with self.assertRaisesRegex(workflow.WorkflowError, "immutable post context"):
