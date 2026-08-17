@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from authority_os import spine_feedback, workflow
+from authority_os import spine_feedback, spine_feedback_io, workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "bin" / "linkedin-os"
@@ -99,7 +99,7 @@ class PrivateFileTests(unittest.TestCase):
             private = Path(temporary) / "private"
             private.mkdir(mode=0o700)
             path = private / "spine-performance.jsonl"
-            spine_feedback.append_record(
+            spine_feedback_io.append_record(
                 record(1),
                 path=path,
                 private_root=private,
@@ -124,7 +124,7 @@ class PrivateFileTests(unittest.TestCase):
             before = path.read_bytes()
 
             with self.assertRaisesRegex(workflow.WorkflowError, "unavailable or unsafe"):
-                spine_feedback.append_record(
+                spine_feedback_io.append_record(
                     record(1),
                     path=path,
                     private_root=private,
@@ -140,12 +140,37 @@ class PrivateFileTests(unittest.TestCase):
             private.mkdir(mode=0o700)
             outside = Path(temporary) / "outside.jsonl"
             with self.assertRaisesRegex(workflow.WorkflowError, "data/private"):
-                spine_feedback.append_record(
+                spine_feedback_io.append_record(
                     record(1),
                     path=outside,
                     private_root=private,
                     _allow_test_root=True,
                 )
+
+    def test_conflicting_spine_is_rejected_before_it_reaches_the_log(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            private = Path(temporary) / "private"
+            private.mkdir(mode=0o700)
+            path = private / "spine-performance.jsonl"
+            spine_feedback_io.append_record(
+                record(1),
+                path=path,
+                private_root=private,
+                _allow_test_root=True,
+            )
+            before = path.read_bytes()
+            conflicting = dict(record(1, spine="failure_reversal"))
+            conflicting["recorded_at"] = "2026-08-22T00:00:00Z"
+
+            with self.assertRaisesRegex(workflow.WorkflowError, "immutable post context"):
+                spine_feedback_io.append_record(
+                    conflicting,
+                    path=path,
+                    private_root=private,
+                    _allow_test_root=True,
+                )
+
+            self.assertEqual(path.read_bytes(), before)
 
     def test_complete_writer_retries_partial_os_writes(self) -> None:
         with patch.object(
