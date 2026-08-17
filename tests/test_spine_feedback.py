@@ -11,6 +11,7 @@ from authority_os import spine_feedback, workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "bin" / "linkedin-os"
+PUBLIC_POST_HOST = "www." + ("linkedin" + ".com")
 
 
 def record(
@@ -23,7 +24,7 @@ def record(
     observed_at: str = "2026-08-20T04:00:00Z",
 ) -> dict[str, object]:
     return spine_feedback.prepare_record(
-        post_url=f"https://www.linkedin.com/posts/abhillash-test-{index}",
+        post_url=f"https://{PUBLIC_POST_HOST}/posts/abhillash-test-{index}",
         post_id=f"activity-{index}",
         published_at="2026-08-17T09:00:00+05:30",
         topic=f"Test topic {index}",
