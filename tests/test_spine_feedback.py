@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from authority_os import spine_feedback, workflow
 
@@ -44,6 +45,25 @@ class RecordValidationTests(unittest.TestCase):
         self.assertEqual(prepared["weekday"], "Monday")
         self.assertIsNone(prepared["saves"])
         self.assertIsNone(prepared["qualified_comments"])
+
+    def test_local_weekday_survives_round_trip_across_utc_date_boundary(self) -> None:
+        prepared = spine_feedback.prepare_record(
+            post_url=f"https://{PUBLIC_POST_HOST}/posts/midnight-test",
+            post_id="activity-midnight",
+            published_at="2026-08-17T00:30:00+05:30",
+            topic="Midnight publication",
+            attention_source="web",
+            selected_spine="research_discovery",
+            impressions=100,
+            engagements=1,
+            observed_at="2026-08-18T00:00:00Z",
+            recorded_at="2026-08-19T00:00:00Z",
+        )
+        self.assertEqual(prepared["weekday"], "Monday")
+        self.assertEqual(
+            spine_feedback.validate_record(prepared)["weekday"],
+            "Monday",
+        )
 
     def test_invalid_spine_url_and_attention_source_fail_closed(self) -> None:
         raw = record(1)
@@ -126,6 +146,15 @@ class PrivateFileTests(unittest.TestCase):
                     private_root=private,
                     _allow_test_root=True,
                 )
+
+    def test_complete_writer_retries_partial_os_writes(self) -> None:
+        with patch.object(
+            spine_feedback.os,
+            "write",
+            side_effect=[2, 2, 2],
+        ) as writer:
+            spine_feedback._write_all(123, b"abcdef")
+        self.assertEqual(writer.call_count, 3)
 
 
 class SummaryTests(unittest.TestCase):
