@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from authority_os import daily_spine_cli
+from authority_os import daily_spine_cli, workflow
 
 
 def profile() -> dict[str, object]:
@@ -58,9 +58,13 @@ def cards() -> list[dict[str, object]]:
             "proof_id": "proof-repo",
             "remembered_for": "Connecting agent mechanics to product decisions.",
             "plain_language_summary": f"Agents should earn step {index} with evidence.",
-            "conversation_surface": "Autonomy versus reversibility in production systems.",
+            "conversation_surface": (
+                "Autonomy versus reversibility in production systems."
+            ),
             "recommended_spine": spines[index - 1],
-            "spine_fit_reason": "The evidence naturally exposes a decision that practitioners can challenge.",
+            "spine_fit_reason": (
+                "The evidence naturally exposes a decision that practitioners can challenge."
+            ),
         }
         for index in range(1, 4)
     ]
@@ -73,23 +77,25 @@ class SpineCardTests(unittest.TestCase):
 
         invalid = cards()
         invalid[0]["recommended_spine"] = "viral_story"
-        with self.assertRaisesRegex(Exception, "recommended_spine"):
+        with self.assertRaisesRegex(workflow.WorkflowError, "recommended_spine"):
             daily_spine_cli.validate_cards(invalid, signals(), profile())
 
     def test_spine_reason_is_required_and_bounded(self) -> None:
         blank = cards()
         blank[0]["spine_fit_reason"] = ""
-        with self.assertRaisesRegex(Exception, "spine_fit_reason"):
+        with self.assertRaisesRegex(workflow.WorkflowError, "spine_fit_reason"):
             daily_spine_cli.validate_cards(blank, signals(), profile())
 
         long = cards()
         long[0]["spine_fit_reason"] = "x" * 321
-        with self.assertRaisesRegex(Exception, "spine_fit_reason"):
+        with self.assertRaisesRegex(workflow.WorkflowError, "spine_fit_reason"):
             daily_spine_cli.validate_cards(long, signals(), profile())
 
     def test_schema_exposes_exact_five_spines(self) -> None:
         schema = daily_spine_cli._schema("cards")
-        enum = schema["properties"]["cards"]["items"]["properties"]["recommended_spine"]["enum"]
+        enum = schema["properties"]["cards"]["items"]["properties"][
+            "recommended_spine"
+        ]["enum"]
         self.assertEqual(tuple(enum), daily_spine_cli.CONTENT_SPINES)
 
     def test_generation_marks_spine_as_advisory_not_weekday_routing(self) -> None:
