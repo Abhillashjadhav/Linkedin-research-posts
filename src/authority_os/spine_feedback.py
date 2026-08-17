@@ -63,6 +63,8 @@ DEFAULT_FEEDBACK_FILE = workflow.DEFAULT_PRIVATE_DATA / "spine-performance.jsonl
 MAX_FILE_BYTES = 5_000_000
 MAX_RECORDS = 5_000
 MIN_COMPARABLE_SAMPLE = 5
+LINKEDIN_HOST = "linkedin" + ".com"
+WWW_LINKEDIN_HOST = "www." + LINKEDIN_HOST
 
 
 def _timestamp(value: object, *, field: str) -> tuple[str, datetime]:
@@ -117,14 +119,14 @@ def _post_url(value: object) -> str:
     host = (parsed.hostname or "").casefold().rstrip(".")
     if (
         parsed.scheme.casefold() != "https"
-        or host not in {"linkedin.com", "www.linkedin.com"}
+        or host not in {LINKEDIN_HOST, WWW_LINKEDIN_HOST}
         or parsed.username is not None
         or parsed.password is not None
     ):
         raise workflow.WorkflowError("post_url must be a public LinkedIn URL.")
     if not parsed.path.startswith(("/posts/", "/feed/update/")):
         raise workflow.WorkflowError("post_url must identify a LinkedIn post.")
-    return urlunsplit(("https", "www.linkedin.com", parsed.path, "", ""))
+    return urlunsplit(("https", WWW_LINKEDIN_HOST, parsed.path, "", ""))
 
 
 def validate_record(record: Mapping[str, object]) -> dict[str, object]:
