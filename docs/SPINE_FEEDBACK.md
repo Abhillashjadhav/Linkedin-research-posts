@@ -9,11 +9,11 @@ The recommendation is not a Writer template, weekday rule, approval, or publishi
 
 ## Private performance snapshots
 
-After a post is manually published outside this runtime, an observed snapshot can be recorded locally:
+After a post is manually published outside this runtime, copy its public post URL and record an observed snapshot locally:
 
 ```sh
 ./bin/linkedin-os record-spine-performance \
-  --post-url 'https://www.linkedin.com/posts/...' \
+  --post-url '<public post URL>' \
   --published-at '2026-08-17T09:00:00+05:30' \
   --topic 'agent reliability' \
   --attention-source x_and_web \
