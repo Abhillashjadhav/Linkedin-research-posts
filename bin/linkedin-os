@@ -15,12 +15,12 @@ fi
 
 if [ "${1:-}" = "record-spine-performance" ]; then
   shift
-  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.spine_feedback record "$@"
+  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.spine_feedback_io record "$@"
 fi
 
 if [ "${1:-}" = "spine-review" ]; then
   shift
-  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.spine_feedback review "$@"
+  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.spine_feedback_io review "$@"
 fi
 
 MODULE="authority_os.integrated_cli"
