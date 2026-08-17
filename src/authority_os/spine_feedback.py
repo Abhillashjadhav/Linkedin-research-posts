@@ -82,6 +82,11 @@ def _timestamp(value: object, *, field: str) -> tuple[str, datetime]:
     return normalised.isoformat().replace("+00:00", "Z"), parsed
 
 
+def _local_timestamp(parsed: datetime) -> str:
+    rendered = parsed.isoformat()
+    return rendered.replace("+00:00", "Z") if parsed.utcoffset() == timezone.utc.utcoffset(parsed) else rendered
+
+
 def _metric(value: object, *, field: str, optional: bool = False) -> int | None:
     if optional and value is None:
         return None
@@ -132,12 +137,12 @@ def _post_url(value: object) -> str:
 def validate_record(record: Mapping[str, object]) -> dict[str, object]:
     if not isinstance(record, Mapping) or set(record) != RECORD_FIELDS:
         raise workflow.WorkflowError("Spine performance record has an invalid schema.")
-    published_at, published_local = _timestamp(
+    published_utc, published_local = _timestamp(
         record["published_at"], field="published_at"
     )
     observed_at, _ = _timestamp(record["observed_at"], field="observed_at")
     recorded_at, _ = _timestamp(record["recorded_at"], field="recorded_at")
-    if observed_at < published_at:
+    if observed_at < published_utc:
         raise workflow.WorkflowError("observed_at cannot precede published_at.")
     if recorded_at < observed_at:
         raise workflow.WorkflowError("recorded_at cannot precede observed_at.")
@@ -164,7 +169,7 @@ def validate_record(record: Mapping[str, object]) -> dict[str, object]:
     validated: dict[str, object] = {
         "post_url": _post_url(record["post_url"]),
         "post_id": post_id,
-        "published_at": published_at,
+        "published_at": _local_timestamp(published_local),
         "weekday": weekday,
         "topic": _text(record["topic"], field="topic", maximum=240),
         "attention_source": record["attention_source"],
@@ -204,7 +209,7 @@ def prepare_record(
         {
             "post_url": post_url,
             "post_id": post_id,
-            "published_at": published_at,
+            "published_at": _local_timestamp(local_published),
             "weekday": local_published.strftime("%A"),
             "topic": topic,
             "attention_source": attention_source,
@@ -473,7 +478,10 @@ def _latest_records(
             str(previous["recorded_at"]),
         ):
             latest[key] = record
-    return sorted(latest.values(), key=lambda item: str(item["published_at"]))
+    return sorted(
+        latest.values(),
+        key=lambda item: _timestamp(item["published_at"], field="published_at")[0],
+    )
 
 
 def _median(values: Sequence[float | int]) -> float | int | None:
