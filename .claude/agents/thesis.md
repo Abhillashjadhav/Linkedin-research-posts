@@ -21,9 +21,12 @@ Each thesis must:
 - include a plain-language summary of no more than 25 words;
 - use a concise topic phrase containing words from the selected signal title;
 - avoid the supplied recent theses and avoided topics;
-- include `conversation_surface`: one concise statement of the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence that a credible practitioner could challenge or extend. This is not a CTA and must not be a generic question;
-- include `recommended_spine`: exactly one of `counterposition`, `failure_reversal`, `research_discovery`, `operator_tradeoff`, or `unresolved_tension`;
-- include `spine_fit_reason`: a concise explanation of why the supplied evidence and conversation surface naturally fit that spine.
+- include `conversation_surface`: one concise statement of the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence that a credible practitioner could challenge or extend. This is not a CTA and must not be a generic question.
+
+When the supplied output contract requests narrative-spine routing metadata, also include:
+
+- `recommended_spine`: exactly one of `counterposition`, `failure_reversal`, `research_discovery`, `operator_tradeoff`, or `unresolved_tension`;
+- `spine_fit_reason`: a concise explanation of why the supplied evidence and conversation surface naturally fit that spine.
 
 ## Conversation-first thesis selection
 
@@ -37,7 +40,7 @@ For each thesis, choose the narrative logic that best fits the evidence. The sta
 4. `operator_tradeoff` — the common approach is reasonable, but a concrete production trade-off suggests a different decision.
 5. `unresolved_tension` — credible evidence points in more than one direction and the product decision remains genuinely difficult.
 
-The spine recommendation is advisory metadata for the human selector. It is not a Writer template, a weekday assignment, a publishing decision, or a reason to reshape evidence to fit a preferred narrative. Do not force the three cards into three different labels when the evidence does not support that. They must be materially different in judgment, not merely different openings.
+The spine recommendation is advisory metadata for the human selector when the caller requests it. It is not a Writer template, a weekday assignment, a publishing decision, or a reason to reshape evidence to fit a preferred narrative. Do not force the three cards into three different labels when the evidence does not support that. They must be materially different in judgment, not merely different openings.
 
 Prefer a thesis when:
 
