@@ -93,6 +93,26 @@ class PrivateFileTests(unittest.TestCase):
             self.assertEqual(len(loaded), 1)
             self.assertEqual(loaded[0]["selected_spine"], "counterposition")
 
+    def test_existing_unsafe_feedback_file_is_rejected_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            private = Path(temporary) / "private"
+            private.mkdir(mode=0o700)
+            path = private / "spine-performance.jsonl"
+            path.write_bytes(b"do-not-repair\n")
+            path.chmod(0o644)
+            before = path.read_bytes()
+
+            with self.assertRaisesRegex(workflow.WorkflowError, "unavailable or unsafe"):
+                spine_feedback.append_record(
+                    record(1),
+                    path=path,
+                    private_root=private,
+                    _allow_test_root=True,
+                )
+
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+
     def test_feedback_path_cannot_escape_private_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             private = Path(temporary) / "private"
@@ -113,7 +133,9 @@ class SummaryTests(unittest.TestCase):
             record(index, impressions=800 + 100 * index, engagements=8 + index)
             for index in range(5)
         ]
-        rows.append(record(99, impressions=227_249, engagements=684, breakout=True))
+        rows.append(
+            record(99, impressions=227_249, engagements=684, breakout=True)
+        )
         summary = spine_feedback.summarise(rows)
         counter = summary["by_spine"]["counterposition"]
         self.assertEqual(summary["excluded_breakout_outliers"], 1)
@@ -126,7 +148,12 @@ class SummaryTests(unittest.TestCase):
         self.assertFalse(summary["strategy_mutated"])
 
     def test_latest_snapshot_per_post_wins_without_inflating_sample_size(self) -> None:
-        first = record(1, impressions=500, engagements=5, observed_at="2026-08-19T04:00:00Z")
+        first = record(
+            1,
+            impressions=500,
+            engagements=5,
+            observed_at="2026-08-19T04:00:00Z",
+        )
         latest = dict(record(1, impressions=1_000, engagements=10))
         latest["recorded_at"] = "2026-08-22T00:00:00Z"
         summary = spine_feedback.summarise([first, latest])
@@ -135,8 +162,19 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(counter["median_impressions"], 1_000)
         self.assertEqual(counter["sample_status"], "INSUFFICIENT_SAMPLE")
 
+    def test_later_snapshot_cannot_reclassify_immutable_post_context(self) -> None:
+        first = record(1)
+        changed = dict(record(1, observed_at="2026-08-21T04:00:00Z"))
+        changed["recorded_at"] = "2026-08-22T00:00:00Z"
+        changed["selected_spine"] = "failure_reversal"
+        with self.assertRaisesRegex(workflow.WorkflowError, "immutable post context"):
+            spine_feedback.summarise([first, changed])
+
     def test_outliers_can_be_included_explicitly_for_breakout_inspection(self) -> None:
-        rows = [record(1), record(99, impressions=227_249, engagements=684, breakout=True)]
+        rows = [
+            record(1),
+            record(99, impressions=227_249, engagements=684, breakout=True),
+        ]
         summary = spine_feedback.summarise(rows, include_outliers=True)
         self.assertEqual(summary["baseline_records"], 2)
         self.assertEqual(summary["excluded_breakout_outliers"], 0)
