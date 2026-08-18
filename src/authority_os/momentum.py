@@ -21,6 +21,7 @@ MOMENTUM_CANDIDATES = 10
 MOMENTUM_TOP_K = 5
 MIN_AUTHORITY_MOMENTUM = 14
 MIN_REACH_MOMENTUM = 20
+MIN_OBSERVED_AXES = 4
 AUTHORITY_TOPIC_AXES = (
     "audience_fit",
     "judgment_fit",
@@ -55,15 +56,15 @@ def _axis_observation_schema() -> dict[str, object]:
         "type": "object",
         "properties": {
             "status": {"type": "string", "enum": ["OBSERVED", "UNKNOWN"]},
-            "score": {
+            "basis_value": {
                 "anyOf": [
-                    {"type": "integer", "minimum": 0, "maximum": 5},
+                    {"type": "number", "minimum": 0},
                     {"type": "null"},
                 ]
             },
             "evidence": {"type": "string"},
         },
-        "required": ["status", "score", "evidence"],
+        "required": ["status", "basis_value", "evidence"],
         "additionalProperties": False,
     }
 
@@ -149,13 +150,39 @@ def _validate_public_url(value: object) -> str:
     return url
 
 
+def _band(value: float, thresholds: Sequence[float]) -> int:
+    return sum(1 for threshold in thresholds if value >= threshold)
+
+
+def _score_axis(axis: str, basis_value: float) -> int:
+    """Map observed public evidence to 0-5 with a fixed local rubric."""
+    if basis_value < 0:
+        raise workflow.WorkflowError("Momentum basis values cannot be negative.")
+    if axis == "conversation_breadth":
+        return min(5, _band(basis_value, (1, 2, 3, 5, 8)))
+    if axis == "engagement_strength":
+        return min(5, _band(basis_value, (1, 10, 50, 200, 1000)))
+    if axis == "acceleration":
+        return min(5, _band(basis_value, (1, 10, 25, 50, 100)))
+    if axis == "cross_platform_confirmation":
+        return min(5, int(basis_value))
+    if axis == "freshness":
+        if basis_value <= 24:
+            return 5
+        if basis_value <= 48:
+            return 4
+        if basis_value <= 72:
+            return 3
+        if basis_value <= 120:
+            return 2
+        if basis_value <= 168:
+            return 1
+        return 0
+    raise workflow.WorkflowError("Unknown momentum axis.")
+
+
 def _confidence(candidate: Mapping[str, object]) -> str:
-    observed = sum(
-        1
-        for axis in MOMENTUM_AXES
-        if isinstance(candidate.get(axis), Mapping)
-        and candidate[axis].get("status") == "OBSERVED"  # type: ignore[index]
-    )
+    observed = int(candidate.get("observed_axes", 0))
     platforms = candidate.get("platforms")
     urls = candidate.get("representative_urls")
     platform_count = len(platforms) if isinstance(platforms, list) else 0
@@ -209,27 +236,44 @@ def validate_candidates(raw: object) -> list[dict[str, object]]:
         candidate["representative_urls"] = clean_urls
 
         scores: dict[str, int] = {}
-        all_observed = True
         for axis in MOMENTUM_AXES:
             observation = candidate[axis]
-            if not isinstance(observation, Mapping) or set(observation) != {"status", "score", "evidence"}:
+            if not isinstance(observation, Mapping) or set(observation) != {"status", "basis_value", "evidence"}:
                 raise workflow.WorkflowError("Momentum axis observation has an invalid schema.")
             status = observation["status"]
-            score = observation["score"]
+            basis = observation["basis_value"]
             evidence = observation["evidence"]
             if status not in {"OBSERVED", "UNKNOWN"} or not isinstance(evidence, str) or not evidence.strip():
                 raise workflow.WorkflowError("Momentum observations need status and evidence.")
             if status == "OBSERVED":
-                if type(score) is not int or not 0 <= score <= 5:
-                    raise workflow.WorkflowError("Observed momentum scores must be integers from 0 to 5.")
-                scores[axis] = int(score)
+                if isinstance(basis, bool) or not isinstance(basis, (int, float)) or basis < 0:
+                    raise workflow.WorkflowError("Observed momentum evidence needs a non-negative numeric basis_value.")
+                basis_value = float(basis)
+                if axis == "cross_platform_confirmation" and int(basis_value) != len(clean_platforms):
+                    raise workflow.WorkflowError("Cross-platform basis_value must equal the distinct platform count.")
+                score = _score_axis(axis, basis_value)
+                scores[axis] = score
+                candidate[axis] = {
+                    "status": "OBSERVED",
+                    "basis_value": basis,
+                    "score": score,
+                    "evidence": evidence.strip(),
+                }
             else:
-                if score is not None:
-                    raise workflow.WorkflowError("Unknown momentum evidence must use score=null, never zero.")
-                all_observed = False
-            candidate[axis] = {"status": status, "score": score, "evidence": evidence.strip()}
+                if basis is not None:
+                    raise workflow.WorkflowError("Unknown momentum evidence must use basis_value=null, never a fabricated zero.")
+                candidate[axis] = {
+                    "status": "UNKNOWN",
+                    "basis_value": None,
+                    "score": None,
+                    "evidence": evidence.strip(),
+                }
+        observed_axes = len(scores)
+        observed_total = sum(scores.values())
         candidate["scores"] = scores
-        candidate["total"] = sum(scores.values()) if all_observed else None
+        candidate["observed_axes"] = observed_axes
+        candidate["observed_total"] = observed_total
+        candidate["total"] = observed_total if observed_axes >= MIN_OBSERVED_AXES else None
         candidate["confidence"] = _confidence(candidate)
         validated.append(candidate)
     if seen_ids != expected:
@@ -246,12 +290,17 @@ def rank_candidates(
     for candidate in candidates:
         item = dict(candidate)
         total = item.get("total")
-        item["momentum_eligible"] = type(total) is int and int(total) >= minimum
+        item["momentum_eligible"] = (
+            type(total) is int
+            and int(item.get("observed_axes", 0)) >= MIN_OBSERVED_AXES
+            and int(total) >= minimum
+        )
         ranked.append(item)
     confidence_rank = {"HIGH": 2, "MEDIUM": 1, "LOW": 0}
     ranked.sort(
         key=lambda item: (
             -(int(item["total"]) if type(item.get("total")) is int else -1),
+            -int(item.get("observed_axes", 0)),
             -confidence_rank.get(str(item.get("confidence")), 0),
             str(item["topic"]).casefold(),
         )
@@ -267,14 +316,14 @@ def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, obj
 Scope: {topic or 'agentic AI, agents, evaluations, reliability, context engineering, enterprise AI, developer tooling, model economics and AI product management'}.
 Use only free public-web evidence available through search/fetch. Inspect multiple independent surfaces where observable: Google Trends public pages, Hacker News, Reddit, YouTube, publicly indexed X/Twitter or LinkedIn pages/search snippets, primary-source launches/research, and reputable reporting. Do not use authenticated sessions, paid APIs, private data, engagement APIs, credentials, or local files.
 
-For every topic score these five axes from 0-5 ONLY when public evidence is actually observable:
-- conversation_breadth: independent authors/sources discussing the same topic;
-- engagement_strength: visible comments/upvotes/views/likes/reposts or comparable public interaction;
-- acceleration: evidence that discussion increased in the recent 24-72h versus an earlier part of the window;
-- cross_platform_confirmation: the same conversation appears on independent public surfaces;
-- freshness: substantive conversation is active now, not merely historically relevant.
+For every topic report observed evidence for five axes. DO NOT assign 0-5 scores; Python applies the fixed rubric locally. Return basis_value only when the underlying number is actually observable:
+- conversation_breadth basis_value = count of independent public authors/sources discussing the same underlying topic;
+- engagement_strength basis_value = total visible engagement units across representative items (likes/reactions + replies/comments + reposts/points/upvotes where visible; exclude raw video/page views so one platform cannot dominate);
+- acceleration basis_value = percentage growth in a comparable public signal in the recent 24-72h versus an earlier part of the research window; if no comparable before/after measurement is visible, mark UNKNOWN;
+- cross_platform_confirmation basis_value = count of distinct public surfaces in the platforms list carrying the same conversation;
+- freshness basis_value = age in hours of the newest substantive public signal as of {as_of}.
 
-Each axis must return status OBSERVED with an integer score and concrete evidence, or status UNKNOWN with score null and an explanation. Missing engagement or trend data is UNKNOWN, never zero. Never infer exact X/Twitter volume, ranking, or '#1 hottest' status from web search. Provide representative public HTTPS URLs and the observed platforms. Use topic-1 through topic-10 exactly once. Return evidence and scores only; do not write a post or use the private authority profile."""
+Each axis must return status OBSERVED with a non-negative numeric basis_value and concrete evidence, or status UNKNOWN with basis_value null and an explanation. Missing evidence is UNKNOWN, never zero. Never infer exact X/Twitter volume, ranking, or '#1 hottest' status from web search. Provide representative public HTTPS URLs and the observed platforms. Use topic-1 through topic-10 exactly once. Return evidence only; do not write a post or use the private authority profile."""
     result = invoke_structured(
         config=MOMENTUM_MODEL,
         role_prompt=_role("scout"),
@@ -360,7 +409,11 @@ def print_top(candidates: Sequence[Mapping[str, object]]) -> None:
     print(f"Top {MOMENTUM_TOP_K} topics by {MOMENTUM_LABEL} (not an exact X/Twitter ranking):")
     for item in candidates[:MOMENTUM_TOP_K]:
         total = item.get("total")
-        total_text = f"{total}/25" if type(total) is int else "UNKNOWN"
+        observed_axes = int(item.get("observed_axes", 0))
+        if type(total) is int:
+            total_text = f"{total}/25" if observed_axes == 5 else f"{total}+/25 ({observed_axes}/5 axes observed)"
+        else:
+            total_text = f"UNKNOWN ({observed_axes}/5 axes observed)"
         authority = item.get("authority_fit")
         authority_total = authority.get("total") if isinstance(authority, Mapping) else None
         authority_text = f"{authority_total}/25" if type(authority_total) is int else "n/a"
