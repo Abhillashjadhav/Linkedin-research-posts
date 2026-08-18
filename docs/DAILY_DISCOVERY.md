@@ -57,7 +57,9 @@ Before source selection, the Scout returns exactly ten distinct candidate conver
 
 The Scout may use free public evidence observable through web search/fetch, including Google Trends pages, Hacker News, Reddit, YouTube, publicly indexed X/Twitter or LinkedIn results, primary-source launches/research, and reputable reporting.
 
-A score is allowed only when the relevant signal is observable. If engagement, acceleration, or another axis cannot be verified, the axis is `UNKNOWN` with `score=null`; missing data is never converted to zero. Python computes totals and ranking locally from the returned observations.
+Scout does not choose the 0–5 scores. It returns auditable `basis_value` observations; Python applies a fixed local rubric. Breadth is based on independent source/author count, engagement on visible interaction counts (excluding raw views), acceleration on comparable percentage growth, cross-platform confirmation on distinct surfaces, and freshness on the age of the newest substantive signal.
+
+If engagement, acceleration, or another basis cannot be verified, the axis is `UNKNOWN` with `basis_value=null`; missing data is never converted to a fabricated zero. Four observed axes are required for a usable lower-bound momentum score. A partial result is printed as `N+/25 (4/5 axes observed)` and carries at most MEDIUM confidence. Python computes every axis score, total, threshold decision, and ranking locally from the returned observations.
 
 The output is explicitly labelled **observed cross-platform conversation momentum**. It is not an exact X/Twitter post count, engagement ranking, or claim that a topic is “#1 hottest”. Exact X ranking would require direct quantitative X data, which this free public-web workflow does not use.
 
