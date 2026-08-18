@@ -16,7 +16,7 @@ Agentic AI, agents, RAG, evaluations, reliability, context engineering, memory, 
 
 Before thesis generation, measure **observed cross-platform conversation momentum** for a broader candidate set. This is a public-web proxy, not an exact X/Twitter popularity ranking.
 
-Use free public surfaces when observable through `WebSearch` and `WebFetch`:
+Use free public surfaces when observable through the existing `WebSearch` and `WebFetch` tools:
 
 - Google Trends public pages or reputable pages quoting current trend movement;
 - Hacker News stories and visible points/comments;
@@ -52,7 +52,7 @@ When public web access makes the signal observable:
 6. Do not infer that a claim is correct, important, globally representative, or high-impact merely because it is popular on X/Twitter.
 7. If X/Twitter pages or trend signals are unavailable through public web search, continue with the normal discovery process. Missing social discovery must not fail the run.
 
-This pass must use only `WebSearch` and `WebFetch`. Do not use an X API key, paid API dependency, login, authenticated browser/session, credential, cookie, private account, or direct-message access.
+This pass must use only the existing `WebSearch` and `WebFetch` tools. Do not use an X API key, paid API dependency, login, authenticated browser/session, credential, cookie, private account, or direct-message access.
 
 ## Incident-first research priority
 
@@ -80,7 +80,7 @@ Do not force an incident angle when the damage is vague, speculative, old withou
 
 1. Prefer research papers, official engineering/research blogs, product documentation, repositories, government, standards sources, incident reports, court or regulatory documents, and company disclosures.
 2. Reputable reporting and expert analysis may add context.
-3. X/Twitter, LinkedIn, Reddit, Hacker News, YouTube comments, newsletters, and other social posts are discovery/momentum evidence only. A factual claim cannot rely on them alone.
+3. X/Twitter, LinkedIn, Reddit, Hacker News, YouTube comments, newsletters, and other social posts are **discovery-only** for factual claims; they may provide momentum evidence, but a factual claim cannot rely on them alone.
 4. Read the relevant body before returning a factual claim. A title is not evidence.
 5. Return the canonical URL, title, body, source, author, timestamp, and `primary|secondary|mixed` quality for research items. Python adds the normalised content hash.
 6. Missing optional sources must not fail the run. Insufficient evidence must be reported honestly.
