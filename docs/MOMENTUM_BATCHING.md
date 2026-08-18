@@ -5,6 +5,7 @@ The zero-paid-API momentum layer is intentionally split into bounded live-web st
 ```text
 Shallow topic discovery: 10 topics
 → momentum enrichment in two-topic batches
+→ up to three top-level batches run concurrently
 → timed-out batch splits to one-topic research automatically
 → local validation + deterministic Python scoring
 → ranked top 5
@@ -17,11 +18,11 @@ The first call returns only `id`, `topic`, and `why_now`. It does not calculate 
 
 Each enrichment call collects the observable basis values required by the existing momentum rubric: conversation breadth, visible engagement, acceleration, cross-platform confirmation, and freshness. Missing evidence remains `UNKNOWN`/`null`.
 
-The normal enrichment size is two topics. If a multi-topic live-web call times out, the adapter splits that batch and retries each half. A one-topic timeout fails explicitly rather than looping forever. Non-timeout schema, evidence, or model errors are never retried as smaller batches.
+The normal enrichment size is two topics. Independent top-level batches use a bounded three-worker pool to reduce wall-clock time. If a multi-topic live-web call times out, that worker splits the batch and retries each half. A one-topic timeout fails explicitly rather than looping forever. Non-timeout schema, evidence, or model errors are never retried as smaller batches.
 
-The enrichment batches must preserve the exact topic IDs and topic text discovered in the first pass. Duplicate IDs, missing IDs, renamed topics, or the wrong number of batch candidates fail closed. After all ten topics return, the existing local validator rechecks the complete set before any ranking occurs.
+The enrichment batches must preserve the exact topic IDs and topic text discovered in the first pass. Duplicate IDs, missing IDs, renamed topics, or the wrong number of batch candidates fail closed. Parallel completion order never changes topic order: all ten topics are reassembled by original batch order before the existing local validator and deterministic ranker run.
 
-The CLI prints concise progress before topic discovery and before/after each enrichment call so a long live-web request is visible rather than appearing hung.
+The CLI prints concise progress before topic discovery, when parallel enrichment starts, and as each batch completes so a long live-web request is visible rather than appearing hung.
 
 The scoring boundary is unchanged: the model reports observable evidence and numeric basis values; Python derives the 0–5 scores and ranking. Authority fit remains separate and cannot reorder conversation momentum.
 
