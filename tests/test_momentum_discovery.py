@@ -27,10 +27,10 @@ def profile() -> dict[str, object]:
     }
 
 
-def observation(score: int | None, evidence: str = "Observed public signal") -> dict[str, object]:
+def observation(value: float | None, evidence: str = "Observed public signal") -> dict[str, object]:
     return {
-        "status": "OBSERVED" if score is not None else "UNKNOWN",
-        "score": score,
+        "status": "OBSERVED" if value is not None else "UNKNOWN",
+        "basis_value": value,
         "evidence": evidence,
     }
 
@@ -38,7 +38,6 @@ def observation(score: int | None, evidence: str = "Observed public signal") -> 
 def momentum_candidates() -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
     for index in range(1, 11):
-        score = 5 if index == 1 else max(0, 5 - index // 3)
         result.append(
             {
                 "id": f"topic-{index}",
@@ -51,7 +50,11 @@ def momentum_candidates() -> list[dict[str, object]]:
                     f"https://example.com/{index}/c",
                 ],
                 "caveats": "Public-web proxy; exact X volume is unavailable.",
-                **{axis: observation(score) for axis in momentum.MOMENTUM_AXES},
+                "conversation_breadth": observation(max(1, 11 - index)),
+                "engagement_strength": observation(max(1, 1200 - index * 100)),
+                "acceleration": observation(max(1, 120 - index * 10)),
+                "cross_platform_confirmation": observation(3),
+                "freshness": observation(index * 12),
             }
         )
     return result
@@ -68,6 +71,16 @@ def authority_scores(candidates: list[dict[str, object]]) -> list[dict[str, obje
 
 
 class MomentumValidationTests(unittest.TestCase):
+    def test_scores_are_derived_locally_from_observed_basis(self) -> None:
+        validated = momentum.validate_candidates(momentum_candidates())
+        first = validated[0]
+        self.assertEqual(first["scores"]["conversation_breadth"], 5)
+        self.assertEqual(first["scores"]["engagement_strength"], 5)
+        self.assertEqual(first["scores"]["acceleration"], 5)
+        self.assertEqual(first["scores"]["cross_platform_confirmation"], 3)
+        self.assertEqual(first["scores"]["freshness"], 5)
+        self.assertEqual(first["total"], 23)
+
     def test_missing_engagement_is_unknown_not_zero(self) -> None:
         candidates = momentum_candidates()
         candidates[0]["engagement_strength"] = observation(
@@ -78,17 +91,24 @@ class MomentumValidationTests(unittest.TestCase):
 
         self.assertIsNone(first["engagement_strength"]["score"])
         self.assertEqual(first["engagement_strength"]["status"], "UNKNOWN")
-        self.assertIsNone(first["total"])
+        self.assertEqual(first["observed_axes"], 4)
         self.assertEqual(first["confidence"], "MEDIUM")
+        self.assertIsInstance(first["total"], int)
 
         invalid = momentum_candidates()
         invalid[0]["engagement_strength"] = {
             "status": "UNKNOWN",
-            "score": 0,
+            "basis_value": 0,
             "evidence": "Missing was incorrectly encoded as zero.",
         }
-        with self.assertRaisesRegex(workflow.WorkflowError, "score=null"):
+        with self.assertRaisesRegex(workflow.WorkflowError, "basis_value=null"):
             momentum.validate_candidates(invalid)
+
+    def test_cross_platform_basis_must_match_platform_count(self) -> None:
+        candidates = momentum_candidates()
+        candidates[0]["cross_platform_confirmation"] = observation(5)
+        with self.assertRaisesRegex(workflow.WorkflowError, "platform count"):
+            momentum.validate_candidates(candidates)
 
     def test_momentum_rank_cannot_be_changed_by_authority_fit(self) -> None:
         validated = momentum.validate_candidates(momentum_candidates())
@@ -119,9 +139,24 @@ class MomentumValidationTests(unittest.TestCase):
 
     def test_authority_floor_is_applied_locally(self) -> None:
         candidates = momentum_candidates()
-        for axis in momentum.MOMENTUM_AXES:
-            candidates[0][axis] = observation(2)
-            candidates[1][axis] = observation(3)
+        candidates[0].update(
+            {
+                "conversation_breadth": observation(2),
+                "engagement_strength": observation(10),
+                "acceleration": observation(10),
+                "cross_platform_confirmation": observation(3),
+                "freshness": observation(100),
+            }
+        )
+        candidates[1].update(
+            {
+                "conversation_breadth": observation(8),
+                "engagement_strength": observation(1000),
+                "acceleration": observation(100),
+                "cross_platform_confirmation": observation(3),
+                "freshness": observation(12),
+            }
+        )
         validated = momentum.validate_candidates(candidates)
         ranked = momentum.rank_candidates(
             validated, minimum=momentum.MIN_AUTHORITY_MOMENTUM
@@ -150,15 +185,14 @@ class MomentumRuntimeTests(unittest.TestCase):
     def test_momentum_scout_is_live_web_and_receives_no_private_profile(self, invoke: object) -> None:
         invoke.return_value = {"candidates": momentum_candidates()}  # type: ignore[attr-defined]
         with patch.object(momentum, "_role", return_value="Scout role"):
-            result = momentum.invoke_scout(
-                None, 7, "2026-08-18T00:00:00Z"
-            )
+            result = momentum.invoke_scout(None, 7, "2026-08-18T00:00:00Z")
         self.assertEqual(len(result), 10)
         kwargs = invoke.call_args.kwargs  # type: ignore[attr-defined]
         self.assertTrue(kwargs["web_search"])
         self.assertEqual(kwargs["config"].runtime, "codex")
         self.assertNotIn("proof_inventory", kwargs["task_prompt"])
-        self.assertIn("unknown", kwargs["task_prompt"].casefold())
+        self.assertIn("do not assign 0-5 scores", kwargs["task_prompt"].casefold())
+        self.assertIn("basis_value", kwargs["task_prompt"])
 
     @patch("authority_os.momentum.invoke_structured")
     def test_authority_fit_is_scored_separately_without_web(self, invoke: object) -> None:
