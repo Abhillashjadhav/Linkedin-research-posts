@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from . import daily_cli as base
-from . import storage, workflow
+from . import momentum, storage, workflow
 from .spine_feedback import CONTENT_SPINES
 
 
@@ -137,6 +137,36 @@ def search_theses(
     )
 
 
+def _invoke_signal_scout(
+    topic: str | None,
+    days: int,
+    as_of: str,
+    candidate_topics: Sequence[str],
+) -> list[dict[str, object]]:
+    ranked_scope = "\n- ".join(candidate_topics)
+    prompt = f"""Find five defensible GenAI product signals published during the {days} days ending {as_of}.
+Scope: {topic or 'agentic AI, evaluations, reliability, enterprise AI and AI product management'}.
+Only investigate these momentum-qualified topic candidates unless another source is needed to verify the same underlying claim:
+- {ranked_scope}
+Search broadly and read each source body. Prefer official engineering/research blogs, documentation, papers, repositories, government and standards sources. Return concise evidence summaries, not copied prose or post drafts. Public social pages may nominate a claim, but factual evidence must come from the normal primary/reputable source rules. Never access authenticated LinkedIn/X pages, email, private data, local files, credentials or authenticated services."""
+    result = base.invoke_structured(
+        config=base.SCOUT_MODEL,
+        role_prompt=base._role("scout"),
+        task_prompt=prompt,
+        schema=base._schema("research"),
+        timeout=420,
+        web_search=True,
+        stage_label="Scout",
+    )
+    items = result.get("items")
+    if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
+        raise workflow.WorkflowError("Scout must return an items list.")
+    prepared = workflow.prepare_research_items(items)
+    if not 3 <= len(prepared) <= 7:
+        raise workflow.WorkflowError("Discovery needs three to seven defensible signals.")
+    return prepared
+
+
 def command(args: argparse.Namespace) -> int:
     if not args.allow_web_research:
         raise workflow.WorkflowError("Discovery requires --allow-web-research.")
@@ -149,7 +179,58 @@ def command(args: argparse.Namespace) -> int:
         "+00:00", "Z"
     )
     workflow.parse_published_at(as_of)
-    items = base.invoke_scout(args.topic, args.days, as_of)
+
+    folder = base._under_private(
+        args.output_dir
+        or base.OUTPUT_ROOT / as_of[:10] / as_of[11:19].replace(":", "")
+    )
+    base.legacy_cli._ensure_owner_only_directory(folder)
+
+    momentum_candidates = momentum.invoke_scout(args.topic, args.days, as_of)
+    ranked = momentum.rank_candidates(
+        momentum_candidates,
+        minimum=momentum.MIN_AUTHORITY_MOMENTUM,
+    )
+    top_five = ranked[: momentum.MOMENTUM_TOP_K]
+    authority_scores = momentum.score_authority_fit(top_five, profile)
+    top_five = momentum.attach_authority_fit(top_five, authority_scores)
+
+    momentum_package = base.write_private_json(
+        folder / "momentum.json",
+        {
+            "schema_version": 1,
+            "created_at": as_of,
+            "label": momentum.MOMENTUM_LABEL,
+            "topic": args.topic,
+            "days": args.days,
+            "threshold": momentum.MIN_AUTHORITY_MOMENTUM,
+            "ranking_claim_limit": (
+                "Public-web proxy only; not an exact X/Twitter popularity ranking."
+            ),
+            "candidates": top_five,
+            "publishing_status": "DISABLED",
+            "human_selection_required": True,
+        },
+    )
+    momentum.print_top(top_five)
+    print(
+        f"Momentum evidence stored: "
+        f"{momentum_package.relative_to(workflow.REPO_ROOT)}."
+    )
+
+    eligible = [item for item in top_five if item.get("momentum_eligible") is True]
+    if len(eligible) < 3:
+        raise workflow.WorkflowError(
+            "Fewer than three topics cleared the authority conversation-momentum floor; "
+            "no thesis generation was attempted."
+        )
+
+    items = _invoke_signal_scout(
+        args.topic,
+        args.days,
+        as_of,
+        [str(item["topic"]) for item in eligible],
+    )
     signals = base.project_signals(items)
     theses = search_theses(profile, signals)
 
@@ -158,11 +239,6 @@ def command(args: argparse.Namespace) -> int:
     inserted, duplicates = storage.insert_research_items(
         db, items, evidence_origin="private-import"
     )
-    folder = base._under_private(
-        args.output_dir
-        or base.OUTPUT_ROOT / as_of[:10] / as_of[11:19].replace(":", "")
-    )
-    base.legacy_cli._ensure_owner_only_directory(folder)
     package = base.write_private_json(
         folder / "theses.json",
         {
@@ -170,6 +246,8 @@ def command(args: argparse.Namespace) -> int:
             "created_at": as_of,
             "topic": args.topic,
             "days": args.days,
+            "momentum_label": momentum.MOMENTUM_LABEL,
+            "conversation_momentum": top_five,
             "signals": signals,
             "theses": theses,
             "publishing_status": "DISABLED",
