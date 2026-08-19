@@ -75,5 +75,4 @@ def invoke_scout(
     for batch_index, _batch in batches:
         enriched.extend(completed[batch_index])
 
-    print("Momentum: all 10 topics enriched; ranking locally.", flush=True)
-    return base.base.base.validate_candidates(enriched)
+    return base.finalize_enrichment(seeds, enriched)
