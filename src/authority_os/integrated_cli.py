@@ -36,7 +36,9 @@ def _qualifying_candidates(*args: Any, **kwargs: Any):
 
 
 def _quality_feedback(attempt: quality_cli.AttemptResult, cycle: int) -> dict[str, object]:
+    global _active_resonance_diagnostics
     feedback = dict(_original_feedback(attempt, cycle))
+    resonance_diagnostics = dict(_active_resonance_diagnostics)
     rejected = feedback.get("rejected_candidates")
     if isinstance(rejected, list):
         by_id = {candidate.candidate_id: candidate for candidate in attempt.candidates}
@@ -53,8 +55,8 @@ def _quality_feedback(attempt: quality_cli.AttemptResult, cycle: int) -> dict[st
                 if candidate is not None
                 else []
             )
-            if candidate_id in _active_resonance_diagnostics:
-                copied["resonance_diagnostic"] = _active_resonance_diagnostics[candidate_id]
+            if candidate_id in resonance_diagnostics:
+                copied["resonance_diagnostic"] = resonance_diagnostics[candidate_id]
             enriched.append(copied)
         feedback["rejected_candidates"] = enriched
     feedback["anti_slop_required"] = True
@@ -70,6 +72,8 @@ def _quality_feedback(attempt: quality_cli.AttemptResult, cycle: int) -> dict[st
             else ""
         )
     ).strip()
+    if _active_single_selector is not None:
+        _active_resonance_diagnostics = {}
     return feedback
 
 
