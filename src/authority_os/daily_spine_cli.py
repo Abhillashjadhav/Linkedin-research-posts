@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from . import daily_cli as base
-from . import momentum, storage, workflow
+from . import momentum, storage, topic_value, workflow
 from .spine_feedback import CONTENT_SPINES
 
 
@@ -106,13 +106,13 @@ def generate_cards(
         if feedback
         else ""
     )
-    prompt = f"""Create exactly three one-idea authority thesis cards. Turn current signals into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. The spine is advisory only; do not force a template or choose by weekday. The topic field must be a concise phrase using words from the selected signal title so stored evidence can be retrieved later. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
+    prompt = f"""Create exactly three one-idea authority thesis cards from the Topic-Value-selected signals. Each supplied signal may contain topic_value annotations naming the selected situation, reader-value route, gravity, reader payoff, and the authority contribution available to this author. Preserve that selected reader value; do not replace it with a generic AI-news thesis. Turn the situation into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. The spine is advisory only; do not force a template or choose by weekday. The topic field must be a concise phrase using words from the selected signal title so stored evidence can be retrieved later. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
 UNTRUSTED_PROFILE
 {json.dumps(dict(profile), indent=2, sort_keys=True)}
 END_UNTRUSTED_PROFILE
-UNTRUSTED_SIGNALS
+UNTRUSTED_TOPIC_VALUE_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}
-END_UNTRUSTED_SIGNALS{retry}"""
+END_UNTRUSTED_TOPIC_VALUE_SIGNALS{retry}"""
     result = base.invoke_structured(
         config=base.THESIS_MODEL,
         role_prompt=base._role("thesis"),
@@ -148,7 +148,7 @@ def _invoke_signal_scout(
 Scope: {topic or 'agentic AI, evaluations, reliability, enterprise AI and AI product management'}.
 Only investigate these momentum-qualified topic candidates unless another source is needed to verify the same underlying claim:
 - {ranked_scope}
-Search broadly and read each source body. Prefer official engineering/research blogs, documentation, papers, repositories, government and standards sources. Return concise evidence summaries, not copied prose or post drafts. Public social pages may nominate a claim, but factual evidence must come from the normal primary/reputable source rules. Never access authenticated LinkedIn/X pages, email, private data, local files, credentials or authenticated services."""
+Search broadly and read each source body. Prefer official engineering/research blogs, documentation, papers, repositories, government and standards sources. Collect enough body evidence for a later selector to answer: what concretely changed, who in the target audience would care, what capability/decision/utility the reader receives, how consequential it is, and what inspectable evidence supports it. Return concise evidence summaries, not copied prose, topic rankings, theses, or post drafts. Public social pages may nominate a claim, but factual evidence must come from the normal primary/reputable source rules. Never access authenticated LinkedIn/X pages, email, private data, local files, credentials or authenticated services."""
     result = base.invoke_structured(
         config=base.SCOUT_MODEL,
         role_prompt=base._role("scout"),
@@ -222,7 +222,7 @@ def command(args: argparse.Namespace) -> int:
     if len(eligible) < 3:
         raise workflow.WorkflowError(
             "Fewer than three topics cleared the authority conversation-momentum floor; "
-            "no thesis generation was attempted."
+            "no topic-value selection or thesis generation was attempted."
         )
 
     items = _invoke_signal_scout(
@@ -231,7 +231,37 @@ def command(args: argparse.Namespace) -> int:
         as_of,
         [str(item["topic"]) for item in eligible],
     )
-    signals = base.project_signals(items)
+    raw_signals = base.project_signals(items)
+
+    topic_value_candidates = topic_value.invoke_discovery_selector(profile, raw_signals)
+    signals = topic_value.project_discovery_signals(raw_signals, topic_value_candidates)
+    topic_value_package = base.write_private_json(
+        folder / "topic-value.json",
+        {
+            "schema_version": 1,
+            "created_at": as_of,
+            "target_audience": profile["target_audience"],
+            "authority_goal": profile["authority_goal"],
+            "candidates": topic_value_candidates,
+            "selected_signal_ids": [str(item["id"]) for item in signals],
+            "publishing_status": "DISABLED",
+            "human_selection_required": True,
+        },
+    )
+    print(
+        f"Topic Value evidence stored: "
+        f"{topic_value_package.relative_to(workflow.REPO_ROOT)}."
+    )
+    print("Three situations cleared Topic Value before thesis generation:")
+    for candidate in topic_value_candidates:
+        print(
+            f"{candidate['id']}: {candidate['reader_value_type']} | "
+            f"gravity={candidate['gravity']} | priority={candidate['priority']} | "
+            f"score={candidate['total']}/25"
+        )
+        print(f"Situation: {candidate['situation']}")
+        print(f"Reader value: {candidate['reader_value']}")
+
     theses = search_theses(profile, signals)
 
     db = base._under_private(args.db)
@@ -248,6 +278,8 @@ def command(args: argparse.Namespace) -> int:
             "days": args.days,
             "momentum_label": momentum.MOMENTUM_LABEL,
             "conversation_momentum": top_five,
+            "topic_value_candidates": topic_value_candidates,
+            "raw_signals": raw_signals,
             "signals": signals,
             "theses": theses,
             "publishing_status": "DISABLED",
