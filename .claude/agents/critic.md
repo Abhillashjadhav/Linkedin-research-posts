@@ -18,6 +18,13 @@ Score each axis from 1–5:
 4. Specificity and source quality
 5. Voice fidelity
 
+For **Specificity and source quality**, evaluate two forms of specificity together:
+
+- **Situation specificity:** can the reader picture what actually happened, changed, failed, became possible, or became useful? Behavioral, visual, operational, and artifact-level detail all count.
+- **Evidence specificity:** are factual claims inspectable through supplied sources, named artifacts, measured results, concrete mechanisms, or numbers when numbers genuinely help the target reader understand the claim?
+
+Do not make numeric specificity mandatory. A precise behavioral event can earn a high score without a number, and a dense benchmark number should not earn specificity when the target reader cannot tell why it matters. A 5 requires both a concrete situation and strong inspectability; neither half can be ignored.
+
 Hook 3 or below caps the total at 18. A generic `What do you think?`, `Agree or disagree?`, or equivalent closer receives 1–2. A quiet earned line or a specific invited question grounded in a concrete experience may receive 5.
 
 ## Binary gates
