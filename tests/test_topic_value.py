@@ -1,0 +1,109 @@
+from __future__ import annotations
+
+import unittest
+
+from authority_os import topic_value, workflow
+
+
+def candidate(
+    *,
+    reader_value_type: str = "CAPABILITY_DISCOVERY",
+    gravity_score: int = 3,
+    brand_strip_pass: bool = True,
+    feed_value_possible: bool = True,
+    reader_relevance: int = 5,
+    reader_value: int = 5,
+    evidence_strength: int = 4,
+    authority_fit: int = 4,
+) -> dict[str, object]:
+    scores = {
+        "reader_relevance": reader_relevance,
+        "reader_value": reader_value,
+        "gravity": gravity_score,
+        "evidence_strength": evidence_strength,
+        "authority_fit": authority_fit,
+    }
+    status = (
+        "PASS"
+        if topic_value.topic_value_passes(
+            scores,
+            brand_strip_pass=brand_strip_pass,
+            feed_value_possible=feed_value_possible,
+            supports_authority_goal=True,
+        )
+        else "BLOCKED"
+    )
+    return {
+        "id": "topic-1",
+        "source_ids": ["signal-1"],
+        "situation": "A model can complete the task but still take an inadmissible path.",
+        "what_changed": "The execution path now matters to the product decision.",
+        "who_cares": "AI product leaders shipping agents with tools.",
+        "reader_value_type": reader_value_type,
+        "reader_value": "The reader gets a concrete release decision to reconsider.",
+        "gravity": topic_value.gravity_level(gravity_score),
+        "authority_add": "Translate the evidence into an operating rule for release decisions.",
+        "brand_strip_pass": brand_strip_pass,
+        "feed_value_possible": feed_value_possible,
+        "supports_authority_goal": True,
+        "scores": scores,
+        "status": status,
+        "diagnosis": "Grounded candidate.",
+    }
+
+
+class TopicValueThresholdTests(unittest.TestCase):
+    def test_medium_gravity_discovery_can_pass_when_reader_value_is_high(self) -> None:
+        item = candidate(gravity_score=3)
+        self.assertEqual(item["status"], "PASS")
+        self.assertEqual(topic_value.priority_for(item), "DISCOVERY")
+
+    def test_high_gravity_high_authority_candidate_becomes_flagship(self) -> None:
+        item = candidate(
+            reader_value_type="DECISION_CHANGE",
+            gravity_score=5,
+            authority_fit=5,
+        )
+        self.assertEqual(item["status"], "PASS")
+        self.assertEqual(topic_value.priority_for(item), "FLAGSHIP")
+
+    def test_brand_name_cannot_rescue_weak_underlying_material(self) -> None:
+        item = candidate(brand_strip_pass=False)
+        self.assertEqual(item["status"], "BLOCKED")
+        self.assertEqual(topic_value.priority_for(item), "REJECT")
+
+    def test_click_dependent_topic_is_blocked(self) -> None:
+        item = candidate(feed_value_possible=False)
+        self.assertEqual(item["status"], "BLOCKED")
+
+    def test_low_reader_relevance_is_blocked_even_with_other_high_scores(self) -> None:
+        item = candidate(reader_relevance=3, gravity_score=5, authority_fit=5)
+        self.assertEqual(item["status"], "BLOCKED")
+
+
+class TopicValueProjectionTests(unittest.TestCase):
+    def test_project_discovery_signals_filters_and_annotates_selected_sources(self) -> None:
+        signals = [
+            {"id": "signal-1", "title": "Useful change"},
+            {"id": "signal-2", "title": "Generic announcement"},
+        ]
+        item = candidate()
+        selected = topic_value.project_discovery_signals(signals, [item])
+        self.assertEqual([signal["id"] for signal in selected], ["signal-1"])
+        annotations = selected[0]["topic_value"]
+        self.assertEqual(annotations[0]["reader_value_type"], "CAPABILITY_DISCOVERY")
+        self.assertEqual(annotations[0]["gravity"], "MEDIUM")
+
+    def test_validation_rejects_unknown_source_ids(self) -> None:
+        item = candidate()
+        item["source_ids"] = ["signal-missing"]
+        with self.assertRaisesRegex(workflow.WorkflowError, "invalid source"):
+            topic_value._validate_candidates(  # type: ignore[attr-defined]
+                [item],
+                valid_source_ids={"signal-1"},
+                count=1,
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
