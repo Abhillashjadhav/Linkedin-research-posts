@@ -1,11 +1,11 @@
-"""Tests for advisory narrative-spine routing in daily discovery."""
+"""Tests for Topic Value and advisory narrative-spine routing in daily discovery."""
 
 from __future__ import annotations
 
 import unittest
 from unittest.mock import patch
 
-from authority_os import daily_spine_cli, workflow
+from authority_os import daily_spine_cli, topic_value, workflow
 
 
 def profile() -> dict[str, object]:
@@ -35,6 +35,37 @@ def signals() -> list[dict[str, object]]:
             "published_at": "2026-08-17T00:00:00Z",
             "source_quality": "primary",
             "canonical_url": f"https://example.com/{index}",
+        }
+        for index in range(1, 4)
+    ]
+
+
+def value_candidates() -> list[dict[str, object]]:
+    return [
+        {
+            "id": f"topic-{index}",
+            "source_ids": [f"signal-{index}"],
+            "situation": f"A concrete agent reliability situation {index} changed a release decision.",
+            "what_changed": "A release decision now requires inspectable evidence.",
+            "who_cares": "Senior AI product leaders.",
+            "reader_value_type": "DECISION_CHANGE",
+            "reader_value": "A reusable release decision changes.",
+            "gravity": "HIGH",
+            "authority_add": "Translate the evidence into a production operating rule.",
+            "brand_strip_pass": True,
+            "feed_value_possible": True,
+            "supports_authority_goal": True,
+            "scores": {
+                "reader_relevance": 5,
+                "reader_value": 5,
+                "gravity": 5,
+                "evidence_strength": 5,
+                "authority_fit": 5,
+            },
+            "status": "PASS",
+            "diagnosis": "Strong material.",
+            "total": 25,
+            "priority": "FLAGSHIP",
         }
         for index in range(1, 4)
     ]
@@ -111,6 +142,20 @@ class SpineCardTests(unittest.TestCase):
         self.assertIn("do not force a template", prompt)
         self.assertIn("do not draft a post", prompt)
         self.assertIn("weekday", prompt)
+
+    def test_thesis_generation_receives_only_topic_value_selected_signals(self) -> None:
+        selected = topic_value.project_discovery_signals(signals(), value_candidates())
+        self.assertTrue(all("topic_value" in signal for signal in selected))
+        with patch.object(
+            daily_spine_cli.base,
+            "invoke_structured",
+            return_value={"cards": cards()},
+        ) as invoke:
+            daily_spine_cli.generate_cards(profile(), selected, None)
+        prompt = str(invoke.call_args.kwargs["task_prompt"]).casefold()
+        self.assertIn("topic-value-selected signals", prompt)
+        self.assertIn("preserve that selected reader value", prompt)
+        self.assertIn("flagship", prompt)
 
     def test_downstream_strategy_contract_remains_five_fields(self) -> None:
         card = daily_spine_cli.validate_cards(cards(), signals(), profile())[0]
