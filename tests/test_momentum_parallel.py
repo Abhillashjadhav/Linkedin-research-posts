@@ -7,7 +7,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from authority_os import momentum_parallel
+from authority_os import momentum_parallel, workflow
 
 
 def seeds() -> list[dict[str, str]]:
@@ -55,9 +55,9 @@ class ParallelMomentumTests(unittest.TestCase):
             "_research_adaptive",
             side_effect=research,
         ) as research_mock, patch.object(
-            momentum_parallel.base.base.base,
-            "validate_candidates",
-            side_effect=lambda value: value,
+            momentum_parallel.base,
+            "finalize_enrichment",
+            side_effect=lambda _seeds, value: value,
         ):
             result = momentum_parallel.invoke_scout(
                 None, 7, "2026-08-18T00:00:00Z"
@@ -70,6 +70,51 @@ class ParallelMomentumTests(unittest.TestCase):
             [item["id"] for item in result],
             [f"topic-{index}" for index in range(1, 11)],
         )
+
+    def test_parallel_path_passes_partial_results_to_coverage_finalizer(self) -> None:
+        topic_seeds = seeds()
+
+        def research(batch: object, **_kwargs: object) -> list[dict[str, object]]:
+            assert isinstance(batch, list)
+            return [
+                {**seed, "enriched": True}
+                for seed in batch
+                if seed["id"] != "topic-1"
+            ]
+
+        with patch.object(
+            momentum_parallel.base.base,
+            "discover_topics",
+            return_value=topic_seeds,
+        ), patch.object(
+            momentum_parallel.base,
+            "_research_adaptive",
+            side_effect=research,
+        ), patch.object(
+            momentum_parallel.base,
+            "finalize_enrichment",
+            side_effect=lambda _seeds, value: value,
+        ) as finalizer:
+            result = momentum_parallel.invoke_scout(
+                None, 7, "2026-08-18T00:00:00Z"
+            )
+
+        self.assertEqual(len(result), 9)
+        self.assertNotIn("topic-1", {str(item["id"]) for item in result})
+        finalizer.assert_called_once()
+
+    def test_non_timeout_worker_error_still_fails_closed(self) -> None:
+        with patch.object(
+            momentum_parallel.base.base,
+            "discover_topics",
+            return_value=seeds(),
+        ), patch.object(
+            momentum_parallel.base,
+            "_research_adaptive",
+            side_effect=workflow.WorkflowError("invalid momentum evidence"),
+        ):
+            with self.assertRaisesRegex(workflow.WorkflowError, "invalid momentum evidence"):
+                momentum_parallel.invoke_scout(None, 7, "2026-08-18T00:00:00Z")
 
     def test_worker_pool_is_bounded(self) -> None:
         self.assertEqual(momentum_parallel.BATCH_SIZE, 2)
