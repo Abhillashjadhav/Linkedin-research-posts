@@ -1,15 +1,19 @@
-"""Single-entrypoint integration of high-bar and anti-slop draft gates."""
+"""Single-entrypoint integration of high-bar, resonance, and anti-slop gates."""
 
 from __future__ import annotations
 
+import io
 from collections.abc import Mapping
+from contextlib import redirect_stdout
+from pathlib import Path
 from typing import Any
 
-from . import anti_slop, quality_cli
+from . import anti_slop, quality_cli, resonance
 
 
 _original_qualifying = quality_cli._qualifying_candidates
 _original_feedback = quality_cli._quality_feedback
+_original_command_draft = quality_cli.command_draft
 
 
 def _qualifying_candidates(*args: Any, **kwargs: Any):
@@ -44,8 +48,73 @@ def _quality_feedback(attempt: quality_cli.AttemptResult, cycle: int) -> dict[st
     return feedback
 
 
+def _command_draft(args: object) -> int:
+    """Run selection before campaign Writer and resonance after the craft pipeline."""
+
+    run_spec = getattr(args, "run_spec", None)
+    output = getattr(args, "trace_output", None)
+    allow_model_egress = getattr(args, "allow_model_egress", False)
+    if run_spec is None or output is None or allow_model_egress is not True:
+        return _original_command_draft(args)
+
+    output_root = Path(output)
+    original_spec = run_spec
+    prepared_spec, selectors = resonance.prepare_campaign_spec(
+        Path(run_spec),
+        output_root=output_root,
+        only_day=getattr(args, "campaign_day", None),
+    )
+    setattr(args, "run_spec", prepared_spec)
+    captured = io.StringIO()
+    try:
+        with redirect_stdout(captured):
+            result = _original_command_draft(args)
+    finally:
+        setattr(args, "run_spec", original_spec)
+
+    if result != 0:
+        print(captured.getvalue(), end="")
+        return result
+
+    overlays = resonance.apply_post_gate(
+        output_root,
+        selectors,
+        only_day=getattr(args, "campaign_day", None),
+    )
+    blocked = {
+        day: assessment
+        for day, assessment in overlays.items()
+        if assessment.get("status") == "BLOCKED"
+    }
+    if blocked:
+        for day, assessment in blocked.items():
+            print(
+                f"Resonance gate blocked {day}: score={assessment.get('total', 'n/a')}/25; "
+                f"diagnosis={assessment.get('diagnosis', 'weak feed entry')}"
+            )
+        print("Craft approval cannot override a resonance failure. Publishing remains disabled.")
+        return 1
+
+    print(captured.getvalue(), end="")
+    for day, selector in selectors.items():
+        if getattr(args, "campaign_day", None) not in (None, day):
+            continue
+        assessment = overlays.get(day)
+        print(
+            f"Resonance Selector: {day} {selector.get('status')} "
+            f"({selector.get('total', 'n/a')}/25)."
+        )
+        if assessment is not None:
+            print(
+                f"Resonance Critic: {day} {assessment.get('status')} "
+                f"({assessment.get('total', 'n/a')}/25)."
+            )
+    return result
+
+
 quality_cli._qualifying_candidates = _qualifying_candidates  # type: ignore[assignment]
 quality_cli._quality_feedback = _quality_feedback  # type: ignore[assignment]
+quality_cli.command_draft = _command_draft  # type: ignore[assignment]
 
 
 def main(argv: list[str] | None = None) -> int:
