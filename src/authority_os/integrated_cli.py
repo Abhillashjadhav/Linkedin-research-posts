@@ -1,4 +1,4 @@
-"""Single-entrypoint integration of high-bar, resonance, and anti-slop gates."""
+"""Single-entrypoint integration of topic-value, resonance, high-bar, and anti-slop gates."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def _quality_feedback(attempt: quality_cli.AttemptResult, cycle: int) -> dict[st
 
 
 def _command_draft(args: object) -> int:
-    """Run selection before campaign Writer and resonance after the craft pipeline."""
+    """Run Topic Value + Resonance before Writer and feed resonance after craft."""
 
     run_spec = getattr(args, "run_spec", None)
     output = getattr(args, "trace_output", None)
@@ -90,15 +90,29 @@ def _command_draft(args: object) -> int:
         for day, assessment in blocked.items():
             print(
                 f"Resonance gate blocked {day}: score={assessment.get('total', 'n/a')}/25; "
+                f"feed_value={assessment.get('feed_value', 'n/a')}; "
+                f"value_before_ask={assessment.get('value_before_ask', 'n/a')}; "
                 f"diagnosis={assessment.get('diagnosis', 'weak feed entry')}"
             )
-        print("Craft approval cannot override a resonance failure. Publishing remains disabled.")
+        print(
+            "Craft approval cannot override Topic Value, resonance, or feed-value failure. "
+            "Publishing remains disabled."
+        )
         return 1
 
     print(captured.getvalue(), end="")
     for day, selector in selectors.items():
         if getattr(args, "campaign_day", None) not in (None, day):
             continue
+        topic_result = selector.get("topic_value")
+        if isinstance(topic_result, Mapping):
+            print(
+                f"Topic Value Selector: {day} {topic_result.get('status')} "
+                f"({topic_result.get('total', 'n/a')}/25; "
+                f"route={topic_result.get('reader_value_type', 'n/a')}; "
+                f"gravity={topic_result.get('gravity', 'n/a')}; "
+                f"priority={topic_result.get('priority', 'n/a')})."
+            )
         assessment = overlays.get(day)
         print(
             f"Resonance Selector: {day} {selector.get('status')} "
@@ -107,7 +121,9 @@ def _command_draft(args: object) -> int:
         if assessment is not None:
             print(
                 f"Resonance Critic: {day} {assessment.get('status')} "
-                f"({assessment.get('total', 'n/a')}/25)."
+                f"({assessment.get('total', 'n/a')}/25; "
+                f"feed_value={assessment.get('feed_value', 'n/a')}; "
+                f"value_before_ask={assessment.get('value_before_ask', 'n/a')})."
             )
     return result
 
