@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from . import daily_spine_cli as base
-from . import momentum_parallel
+from . import momentum_parallel, thesis_accumulator
 
 # Reuse the existing daily discovery contract while swapping only the live-web
-# momentum adapter. All downstream thesis, privacy and publishing boundaries stay
-# owned by daily_spine_cli.
+# momentum adapter and thesis-set search strategy. All downstream privacy,
+# evidence, strategy and publishing boundaries stay owned by daily_spine_cli.
 base.momentum = momentum_parallel
+base.base.search_theses = thesis_accumulator.search_theses
 
 parser = base.parser
 command = base.command
