@@ -235,6 +235,11 @@ class MomentumRuntimeTests(unittest.TestCase):
         prompt = invoke.call_args.kwargs["task_prompt"]  # type: ignore[attr-defined]
         self.assertIn("momentum-qualified topic candidates", prompt)
         self.assertIn("Agent coordination", prompt)
+        self.assertIn("[Capability Launch]", prompt)
+        self.assertIn("same exact title", prompt)
+        self.assertIn("runnable artifact", prompt)
+        self.assertIn("original creator demo page", prompt)
+        self.assertIn("never download", prompt)
 
 
 if __name__ == "__main__":

@@ -102,6 +102,36 @@ def cards() -> list[dict[str, object]]:
 
 
 class SpineCardTests(unittest.TestCase):
+    def test_capability_launch_routes_only_grounded_thesis_to_vertical_video(self) -> None:
+        launch_signals = signals()
+        launch_signals[1]["title"] = (
+            "[Capability Launch] Local agent debugger by Mira Rao"
+        )
+        self.assertEqual(
+            daily_spine_cli.draft_format_for(cards()[0], launch_signals),
+            "text",
+        )
+        self.assertEqual(
+            daily_spine_cli.draft_format_for(cards()[1], launch_signals),
+            "vertical-video",
+        )
+
+    def test_thesis_generation_cannot_ignore_selected_capability_launch(self) -> None:
+        launch_signals = [
+            *signals(),
+            {
+                "id": "signal-4",
+                "title": "[Capability Launch] Local agent debugger by Mira Rao",
+                "body": "A body-read creator demo and runnable artifact.",
+                "source": "Creator repository",
+                "published_at": "2026-08-17T00:00:00Z",
+                "source_quality": "primary",
+                "canonical_url": "https://example.com/launch",
+            },
+        ]
+        with self.assertRaisesRegex(workflow.WorkflowError, "ignored"):
+            daily_spine_cli.validate_cards(cards(), launch_signals, profile())
+
     def test_extended_card_contract_accepts_only_stable_spines(self) -> None:
         validated = daily_spine_cli.validate_cards(cards(), signals(), profile())
         self.assertEqual(validated[0]["recommended_spine"], "counterposition")
@@ -142,6 +172,8 @@ class SpineCardTests(unittest.TestCase):
         self.assertIn("do not force a template", prompt)
         self.assertIn("do not draft a post", prompt)
         self.assertIn("weekday", prompt)
+        self.assertIn("capability launch", prompt)
+        self.assertIn("video changes the downstream format", prompt)
 
     def test_thesis_generation_receives_only_topic_value_selected_signals(self) -> None:
         selected = topic_value.project_discovery_signals(signals(), value_candidates())

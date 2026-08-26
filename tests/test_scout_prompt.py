@@ -30,6 +30,17 @@ class ScoutPromptTests(unittest.TestCase):
         self.assertIn("repeated independent indicators of momentum", role)
         self.assertIn("do not infer that a claim is correct", role)
 
+    def test_scout_prioritises_video_capabilities_without_bypassing_the_os(self) -> None:
+        role = daily_cli._role("scout").casefold()
+        self.assertIn("video-backed capability-launch priority", role)
+        self.assertIn("sourcing priority, not", role)
+        self.assertIn("a shortcut", role)
+        self.assertIn("topic value", role)
+        self.assertIn("critic", role)
+        self.assertIn("visual qa", role)
+        self.assertIn("same exact title", role)
+        self.assertIn("do not download or republish a video", role)
+
 
 if __name__ == "__main__":
     unittest.main()

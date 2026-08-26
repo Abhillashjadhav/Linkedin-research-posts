@@ -16,6 +16,36 @@ from .spine_feedback import CONTENT_SPINES
 
 CARD_KEYS = frozenset((*base.CARD_KEYS, "recommended_spine", "spine_fit_reason"))
 MAX_SPINE_FIT_REASON_CHARS = 320
+CAPABILITY_LAUNCH_TITLE_PREFIX = "[Capability Launch]"
+
+
+def capability_launch_signal_ids(
+    signals: Sequence[Mapping[str, object]],
+) -> set[str]:
+    """Return externally launched capabilities that earned a traced Scout record."""
+
+    prefix = CAPABILITY_LAUNCH_TITLE_PREFIX.casefold()
+    return {
+        str(signal["id"])
+        for signal in signals
+        if isinstance(signal.get("id"), str)
+        and isinstance(signal.get("title"), str)
+        and str(signal["title"]).strip().casefold().startswith(prefix)
+    }
+
+
+def draft_format_for(
+    card: Mapping[str, object],
+    signals: Sequence[Mapping[str, object]],
+) -> str:
+    """Prefer video only for a thesis grounded in a qualified capability launch."""
+
+    signal_ids = card.get("signal_ids")
+    if not isinstance(signal_ids, Sequence) or isinstance(signal_ids, (str, bytes)):
+        return "text"
+    if set(str(value) for value in signal_ids) & capability_launch_signal_ids(signals):
+        return "vertical-video"
+    return "text"
 
 
 def _schema(kind: str) -> dict[str, object]:
@@ -84,6 +114,14 @@ def validate_cards(
         routing[thesis_id] = (str(spine), reason)
         base_cards.append({key: raw_card[key] for key in base.CARD_KEYS})
     validated = base.validate_cards(base_cards, signals, profile)
+    launch_ids = capability_launch_signal_ids(signals)
+    if launch_ids and not any(
+        set(str(value) for value in card["signal_ids"]) & launch_ids
+        for card in validated
+    ):
+        raise workflow.WorkflowError(
+            "Thesis generation ignored a Topic-Value-selected capability launch."
+        )
     return [
         {
             **card,
@@ -106,7 +144,7 @@ def generate_cards(
         if feedback
         else ""
     )
-    prompt = f"""Create exactly three one-idea authority thesis cards from the Topic-Value-selected signals. Each supplied signal may contain topic_value annotations naming the selected situation, reader-value route, gravity, reader payoff, and the authority contribution available to this author. Preserve that selected reader value; do not replace it with a generic AI-news thesis. Turn the situation into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. The spine is advisory only; do not force a template or choose by weekday. The topic field must be a concise phrase using words from the selected signal title so stored evidence can be retrieved later. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
+    prompt = f"""Create exactly three one-idea authority thesis cards from the Topic-Value-selected signals. Each supplied signal may contain topic_value annotations naming the selected situation, reader-value route, gravity, reader payoff, and the authority contribution available to this author. Preserve that selected reader value; do not replace it with a generic AI-news thesis. Turn the situation into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. The spine is advisory only; do not force a template or choose by weekday. When a signal title begins {CAPABILITY_LAUNCH_TITLE_PREFIX}, at least one card must use that launch. Credit the named builder, explain the capability and reader benefit before abstract commentary, preserve the demonstrated result and limitation, and never turn creator-reported evidence into independent verification. Video changes the downstream format, not the evidence or writing bar. The topic field must be a concise phrase using words from the selected signal title so stored evidence can be retrieved later. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
 UNTRUSTED_PROFILE
 {json.dumps(dict(profile), indent=2, sort_keys=True)}
 END_UNTRUSTED_PROFILE
@@ -144,11 +182,15 @@ def _invoke_signal_scout(
     candidate_topics: Sequence[str],
 ) -> list[dict[str, object]]:
     ranked_scope = "\n- ".join(candidate_topics)
-    prompt = f"""Find five defensible GenAI product signals published during the {days} days ending {as_of}.
+    prompt = f"""Find five defensible GenAI product source records published during the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, evaluations, reliability, enterprise AI and AI product management'}.
 Only investigate these momentum-qualified topic candidates unless another source is needed to verify the same underlying claim:
 - {ranked_scope}
-Search broadly and read each source body. Prefer official engineering/research blogs, documentation, papers, repositories, government and standards sources. Collect enough body evidence for a later selector to answer: what concretely changed, who in the target audience would care, what capability/decision/utility the reader receives, how consequential it is, and what inspectable evidence supports it. Return concise evidence summaries, not copied prose, topic rankings, theses, or post drafts. Public social pages may nominate a claim, but factual evidence must come from the normal primary/reputable source rules. Never access authenticated LinkedIn/X pages, email, private data, local files, credentials or authenticated services."""
+Search broadly and read each source body. Prefer official engineering/research blogs, documentation, papers, repositories, government and standards sources. Collect enough body evidence for a later selector to answer: what concretely changed, who in the target audience would care, what capability/decision/utility the reader receives, how consequential it is, and what inspectable evidence supports it.
+
+Because this channel teaches practical GenAI, prefer at least one recent capability launched by a named independent builder or small team when one of the momentum-qualified candidates has all of these: a creator-controlled primary source, public creator identity, direct public demo-video page, and runnable public repository or product. Represent that one launch with two body-read records using the same exact title `{CAPABILITY_LAUNCH_TITLE_PREFIX} <capability> by <creator>`: one canonical URL must be the runnable artifact and the other the original creator demo page. Across the two concise bodies preserve the creator, launch date, exact demonstrated result, reader benefit, novelty basis, verification status, reuse-permission status, and one material limitation. Do not return a capability-launch record if either URL or attribution is missing. Do not call a creator unknown, claim first-ever novelty without proof, or treat the creator demo as independent verification.
+
+Return concise evidence summaries, not copied prose, topic rankings, theses, or post drafts. Public social pages may nominate a claim, but factual evidence must come from the normal primary/reputable source rules. Preserve original video links for credit and review; never download or imply permission to republish them. Never access authenticated LinkedIn/X pages, email, private data, local files, credentials or authenticated services."""
     result = base.invoke_structured(
         config=base.SCOUT_MODEL,
         role_prompt=base._role("scout"),
@@ -282,6 +324,9 @@ def command(args: argparse.Namespace) -> int:
             "raw_signals": raw_signals,
             "signals": signals,
             "theses": theses,
+            "draft_format_by_thesis": {
+                str(card["id"]): draft_format_for(card, signals) for card in theses
+            },
             "publishing_status": "DISABLED",
             "human_selection_required": True,
         },
@@ -298,9 +343,10 @@ def command(args: argparse.Namespace) -> int:
             base.strategy_for(card, profile),
         )
         strategy_rel = strategy.relative_to(workflow.REPO_ROOT).as_posix()
+        output_format = draft_format_for(card, signals)
         draft = (
             f"./bin/linkedin-os draft --topic {json.dumps(str(card['topic']))} "
-            f"--goal authority --format text --strategy-input {json.dumps(strategy_rel)} "
+            f"--goal authority --format {output_format} --strategy-input {json.dumps(strategy_rel)} "
             f"--db {json.dumps(db_rel)} --allow-model-egress --package"
         )
         print(
@@ -312,6 +358,12 @@ def command(args: argparse.Namespace) -> int:
         print(
             f"Spine: {card['recommended_spine']} — {card['spine_fit_reason']}"
         )
+        if output_format == "vertical-video":
+            print(
+                "Video priority: creator demo and runnable capability are traced; "
+                "all normal writing, evidence, voice, quality, artifact, and human-review "
+                "boundaries still apply."
+            )
         print(f"Draft command: {draft}")
     print("No thesis was selected and no post was generated or published.")
     return 0

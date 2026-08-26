@@ -104,6 +104,41 @@ class TopicValueProjectionTests(unittest.TestCase):
                 count=1,
             )
 
+    def test_capability_selection_keeps_runnable_and_demo_evidence_together(self) -> None:
+        evidence = [
+            {
+                "id": "signal-1",
+                "title": "[Capability Launch] Local agent debugger by Mira Rao",
+            },
+            {
+                "id": "signal-2",
+                "title": "[Capability Launch] Local agent debugger by Mira Rao",
+            },
+            {"id": "signal-3", "title": "Reliability decision"},
+            {"id": "signal-4", "title": "Evaluation utility"},
+        ]
+        candidates = []
+        for index, source_id in enumerate(("signal-1", "signal-3", "signal-4"), 1):
+            item = candidate()
+            item["id"] = f"topic-{index}"
+            item["source_ids"] = [source_id]
+            item["situation"] = f"Grounded situation {index} for the target reader."
+            candidates.append(item)
+
+        def invoker(*_args: object, **_kwargs: object) -> dict[str, object]:
+            return {"candidates": candidates}
+
+        profile = {
+            "target_audience": "AI product leaders",
+            "authority_goal": "Teach practical production AI decisions",
+        }
+        with self.assertRaisesRegex(workflow.WorkflowError, "runnable artifact"):
+            topic_value.invoke_discovery_selector(
+                profile,
+                evidence,
+                invoker=invoker,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

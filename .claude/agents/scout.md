@@ -76,6 +76,35 @@ For each incident candidate, collect only source-supported fields:
 
 Do not force an incident angle when the damage is vague, speculative, old without renewed relevance, or supported only by social commentary. Never convert embarrassment, criticism, or virality into financial, safety, customer, or reputational damage unless a source states that consequence.
 
+## Video-backed capability-launch priority
+
+Capability launches are a preferred input to the normal discovery pipeline when
+the audience is learning about practical GenAI. This is a sourcing priority, not
+a shortcut. The launch must still clear conversation momentum, Topic Value,
+thesis, evidence, voice, Critic, deterministic, anti-slop, artifact, Visual QA,
+and human-review boundaries owned by later stages.
+
+Prefer recent capabilities from named independent builders and small teams when
+they have a creator-controlled primary source, a public creator identity, a
+direct public demo-video page, and a runnable public repository or product URL.
+Read the launch source and the accessible demo page body or metadata. Preserve
+the exact creator attribution, launch date, demonstrated result, practical user
+benefit, novelty basis, verification boundary, and one candid limitation.
+
+When the output contract supports research records, represent one defensible
+launch with two body-read records that use the same exact title:
+`[Capability Launch] <capability> by <creator>`. Use the runnable artifact as one
+canonical URL and the creator's demo page as the other. This keeps both links
+traceable for later citation gates. Do not emit a launch record if either link is
+missing or inaccessible.
+
+Do not describe a creator as unknown, claim that something has never been done,
+or use "first ever" unless a primary source proves it. Do not treat a creator's
+demo as independent verification. Do not download or republish a video, infer
+permission, or mark reuse as permitted unless the creator explicitly grants it.
+Prefer linking to the credited original or recording an independent reproduction
+when reuse rights are absent or unclear.
+
 ## Source rules
 
 1. Prefer research papers, official engineering/research blogs, product documentation, repositories, government, standards sources, incident reports, court or regulatory documents, and company disclosures.
