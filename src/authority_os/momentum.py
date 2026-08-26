@@ -338,7 +338,7 @@ def rank_candidates(
 def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, object]]:
     prompt = f"""Find exactly ten materially distinct GenAI/product conversation topics with observable public momentum during the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, agents, evaluations, reliability, context engineering, enterprise AI, developer tooling, model economics and AI product management'}.
-Use only free public-web evidence available through search/fetch. Inspect multiple independent surfaces where observable: Google Trends public pages, Hacker News, Reddit, YouTube, publicly indexed X/Twitter or LinkedIn pages/search snippets, primary-source launches/research, and reputable reporting. Do not use authenticated sessions, paid APIs, private data, engagement APIs, credentials, or local files.
+Use only free public-web evidence available through search/fetch. Inspect multiple independent surfaces where observable: Google Trends public pages, Hacker News, Reddit, YouTube, public Substack newsletters/posts, publicly indexed X/Twitter or LinkedIn pages/search snippets, primary-source launches/research, and reputable reporting. Multiple Substack posts count as one platform for cross-platform confirmation. Do not use authenticated sessions, paid APIs, private data, engagement APIs, credentials, local files, subscriptions, email signup, or paywall circumvention.
 
 For every topic report observed evidence for five axes. DO NOT assign 0-5 scores; Python applies the fixed rubric locally. Return basis_value only when the underlying number is actually observable:
 - conversation_breadth basis_value = count of independent public authors/sources discussing the same underlying topic;

@@ -196,6 +196,12 @@ Original demo videos are linked and credited. They are never downloaded or
 republished unless explicit reuse permission is present; an independently
 recorded reproduction is the safe default.
 
+Discovery explicitly includes public Substack newsletters and publicly indexed
+X/Twitter posts or search-result snippets. The Scout never logs in, subscribes,
+provides an email address, or bypasses a paywall. Social and newsletter signals
+can establish momentum; underlying capability claims still require the normal
+primary-source and runnable-artifact checks.
+
 ## Safety model
 
 - Publishing, scheduling, messaging, and authenticated browser automation are absent.

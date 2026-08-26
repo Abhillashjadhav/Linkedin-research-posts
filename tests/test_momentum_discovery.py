@@ -198,6 +198,9 @@ class MomentumRuntimeTests(unittest.TestCase):
         self.assertNotIn("proof_inventory", kwargs["task_prompt"])
         self.assertIn("do not assign 0-5 scores", kwargs["task_prompt"].casefold())
         self.assertIn("basis_value", kwargs["task_prompt"])
+        self.assertIn("public Substack newsletters/posts", kwargs["task_prompt"])
+        self.assertIn("publicly indexed X/Twitter", kwargs["task_prompt"])
+        self.assertIn("Multiple Substack posts count as one platform", kwargs["task_prompt"])
 
     @patch("authority_os.momentum.invoke_structured")
     def test_authority_fit_is_scored_separately_without_web(self, invoke: object) -> None:
@@ -245,6 +248,9 @@ class MomentumRuntimeTests(unittest.TestCase):
         self.assertIn("runnable artifact", prompt)
         self.assertIn("original creator demo page", prompt)
         self.assertIn("never download", prompt)
+        self.assertIn("public Substack newsletters", prompt)
+        self.assertIn("publicly indexed X/Twitter", prompt)
+        self.assertIn("not independent verification", prompt)
 
 
 if __name__ == "__main__":

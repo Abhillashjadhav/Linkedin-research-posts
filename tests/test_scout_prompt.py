@@ -24,6 +24,15 @@ class ScoutPromptTests(unittest.TestCase):
         self.assertIn("authenticated browser/session", role)
         self.assertIn("missing social discovery must not fail the run", role)
 
+    def test_scout_searches_public_substack_without_subscription_or_paywall_access(self) -> None:
+        role = daily_cli._role("scout").casefold()
+        self.assertIn("substack discovery pass", role)
+        self.assertIn("public substack newsletters", role)
+        self.assertIn("without login, subscription, email signup", role)
+        self.assertIn("multiple substack posts still count as one platform", role)
+        self.assertIn("never subscribe", role)
+        self.assertIn("bypass a paywall", role)
+
     def test_scout_role_prefers_global_momentum_without_equating_popularity_with_truth(self) -> None:
         role = daily_cli._role("scout").casefold()
         self.assertIn("prefer globally relevant genai/product conversations", role)

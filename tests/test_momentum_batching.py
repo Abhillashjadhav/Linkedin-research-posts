@@ -69,11 +69,16 @@ class BatchedMomentumTests(unittest.TestCase):
         self.assertIn("independent builders", calls[0].kwargs["task_prompt"])
         self.assertIn("public creator demo video", calls[0].kwargs["task_prompt"])
         self.assertIn("receive no momentum exception", calls[0].kwargs["task_prompt"])
+        self.assertIn("public Substack newsletters", calls[0].kwargs["task_prompt"])
+        self.assertIn("publicly indexed X/Twitter", calls[0].kwargs["task_prompt"])
+        self.assertIn("bypass a paywall", calls[0].kwargs["task_prompt"])
         self.assertIn("topic-1", calls[1].kwargs["task_prompt"])
         self.assertNotIn("topic-6", calls[1].kwargs["task_prompt"])
         self.assertIn("topic-6", calls[2].kwargs["task_prompt"])
         self.assertIn("runnable artifact", calls[1].kwargs["task_prompt"])
         self.assertIn("not independent confirmation", calls[1].kwargs["task_prompt"])
+        self.assertIn("public Substack newsletters/posts", calls[1].kwargs["task_prompt"])
+        self.assertIn("Multiple Substack posts count as one platform", calls[1].kwargs["task_prompt"])
 
     @patch("authority_os.momentum_batched.invoke_structured")
     def test_duplicate_or_missing_ids_across_batches_fail_closed(self, invoke: object) -> None:
