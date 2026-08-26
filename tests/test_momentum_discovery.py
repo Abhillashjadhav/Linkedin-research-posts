@@ -104,11 +104,16 @@ class MomentumValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(workflow.WorkflowError, "basis_value=null"):
             momentum.validate_candidates(invalid)
 
-    def test_cross_platform_basis_must_match_platform_count(self) -> None:
+    def test_cross_platform_basis_is_derived_from_distinct_platforms(self) -> None:
         candidates = momentum_candidates()
         candidates[0]["cross_platform_confirmation"] = observation(5)
-        with self.assertRaisesRegex(workflow.WorkflowError, "platform count"):
-            momentum.validate_candidates(candidates)
+        validated = momentum.validate_candidates(candidates)
+        cross_platform = validated[0]["cross_platform_confirmation"]
+
+        self.assertEqual(cross_platform["basis_value"], 3)
+        self.assertEqual(cross_platform["score"], 3)
+        self.assertIn("Local reconciliation", cross_platform["evidence"])
+        self.assertIn("reported 5", cross_platform["evidence"])
 
     def test_momentum_rank_cannot_be_changed_by_authority_fit(self) -> None:
         validated = momentum.validate_candidates(momentum_candidates())

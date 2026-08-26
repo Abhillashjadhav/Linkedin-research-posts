@@ -25,6 +25,31 @@ def enriched(seed: dict[str, str]) -> dict[str, object]:
     return {**seed, "enriched": True}
 
 
+def observed(value: int | float) -> dict[str, object]:
+    return {
+        "status": "OBSERVED",
+        "basis_value": value,
+        "evidence": "Observed public evidence.",
+    }
+
+
+def researched(seed: dict[str, str]) -> dict[str, object]:
+    return {
+        **seed,
+        "platforms": ["GitHub", "YouTube"],
+        "representative_urls": [
+            "https://github.com/example/project",
+            "https://www.youtube.com/watch?v=example",
+        ],
+        "caveats": "Public-web evidence only.",
+        "conversation_breadth": observed(3),
+        "engagement_strength": observed(50),
+        "acceleration": observed(25),
+        "cross_platform_confirmation": observed(4),
+        "freshness": observed(24),
+    }
+
+
 class AdaptiveMomentumTests(unittest.TestCase):
     def test_invoke_scout_starts_with_two_topic_batches_and_prints_progress(self) -> None:
         topic_seeds = seeds()
@@ -122,6 +147,19 @@ class AdaptiveMomentumTests(unittest.TestCase):
         self.assertIn("topic-1", rendered)
         self.assertIn("partial coverage", rendered)
         self.assertIn("no timeout was converted to zero", rendered)
+
+    def test_partial_validation_derives_cross_platform_basis_from_platforms(self) -> None:
+        candidate = researched(seeds()[1])
+
+        validated = momentum_resilient.validate_partial_candidates(
+            [candidate],
+            expected_ids=["topic-2"],
+        )
+        cross_platform = validated[0]["cross_platform_confirmation"]
+
+        self.assertEqual(cross_platform["basis_value"], 2)
+        self.assertEqual(cross_platform["score"], 2)
+        self.assertIn("Local reconciliation", cross_platform["evidence"])
 
     def test_non_timeout_error_is_not_split_or_retried(self) -> None:
         with patch.object(

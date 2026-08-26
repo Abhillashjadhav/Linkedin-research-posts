@@ -154,18 +154,24 @@ def validate_partial_candidates(
                     raise workflow.WorkflowError(
                         "Observed momentum evidence needs a non-negative numeric basis_value."
                     )
-                basis_value = float(basis)
-                if axis == "cross_platform_confirmation" and int(basis_value) != len(clean_platforms):
-                    raise workflow.WorkflowError(
-                        "Cross-platform basis_value must equal the distinct platform count."
-                    )
-                score = base.base._score_axis(axis, basis_value)  # type: ignore[attr-defined]
+                reconciled_basis, reconciliation = base.base._reconcile_observed_basis(  # type: ignore[attr-defined]
+                    axis,
+                    basis,
+                    clean_platforms,
+                )
+                score = base.base._score_axis(  # type: ignore[attr-defined]
+                    axis,
+                    float(reconciled_basis),
+                )
                 scores[axis] = score
+                clean_evidence = evidence.strip()
+                if reconciliation is not None:
+                    clean_evidence = f"{clean_evidence} {reconciliation}"
                 candidate[axis] = {
                     "status": "OBSERVED",
-                    "basis_value": basis,
+                    "basis_value": reconciled_basis,
                     "score": score,
-                    "evidence": evidence.strip(),
+                    "evidence": clean_evidence,
                 }
             else:
                 if basis is not None:

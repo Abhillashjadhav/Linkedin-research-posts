@@ -181,6 +181,25 @@ def _score_axis(axis: str, basis_value: float) -> int:
     raise workflow.WorkflowError("Unknown momentum axis.")
 
 
+def _reconcile_observed_basis(
+    axis: str,
+    basis: int | float,
+    platforms: Sequence[str],
+) -> tuple[int | float, str | None]:
+    """Derive redundant cross-platform counts from the canonical platform list."""
+
+    if axis != "cross_platform_confirmation":
+        return basis, None
+    platform_count = len(platforms)
+    if float(basis) == float(platform_count):
+        return platform_count, None
+    return platform_count, (
+        f"Local reconciliation: the model reported {basis} platform(s), "
+        f"while the distinct observed platform list contains {platform_count}; "
+        "the local score uses the distinct platform list."
+    )
+
+
 def _confidence(candidate: Mapping[str, object]) -> str:
     observed = int(candidate.get("observed_axes", 0))
     platforms = candidate.get("platforms")
@@ -248,16 +267,21 @@ def validate_candidates(raw: object) -> list[dict[str, object]]:
             if status == "OBSERVED":
                 if isinstance(basis, bool) or not isinstance(basis, (int, float)) or basis < 0:
                     raise workflow.WorkflowError("Observed momentum evidence needs a non-negative numeric basis_value.")
-                basis_value = float(basis)
-                if axis == "cross_platform_confirmation" and int(basis_value) != len(clean_platforms):
-                    raise workflow.WorkflowError("Cross-platform basis_value must equal the distinct platform count.")
-                score = _score_axis(axis, basis_value)
+                reconciled_basis, reconciliation = _reconcile_observed_basis(
+                    axis,
+                    basis,
+                    clean_platforms,
+                )
+                score = _score_axis(axis, float(reconciled_basis))
                 scores[axis] = score
+                clean_evidence = evidence.strip()
+                if reconciliation is not None:
+                    clean_evidence = f"{clean_evidence} {reconciliation}"
                 candidate[axis] = {
                     "status": "OBSERVED",
-                    "basis_value": basis,
+                    "basis_value": reconciled_basis,
                     "score": score,
-                    "evidence": evidence.strip(),
+                    "evidence": clean_evidence,
                 }
             else:
                 if basis is not None:
