@@ -71,6 +71,36 @@ def value_candidates() -> list[dict[str, object]]:
     ]
 
 
+def momentum_package() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "created_at": "2026-08-26T19:04:29Z",
+        "label": "observed cross-platform conversation momentum",
+        "topic": "new GenAI capabilities",
+        "days": 14,
+        "threshold": 14,
+        "ranking_claim_limit": "Public-web proxy only.",
+        "publishing_status": "DISABLED",
+        "human_selection_required": True,
+        "candidates": [
+            {
+                "id": f"topic-{index}",
+                "topic": f"Capability {index}",
+                "why_now": "A current launch has observable discussion.",
+                "platforms": ["GitHub", "Hacker News"],
+                "caveats": "Public evidence is partial.",
+                "observed_axes": 4,
+                "total": 14,
+                "confidence": "MEDIUM",
+                "momentum_rank": index,
+                "momentum_eligible": True,
+                "authority_fit": {"total": 20},
+            }
+            for index in range(1, 6)
+        ],
+    }
+
+
 def cards() -> list[dict[str, object]]:
     spines = (
         "counterposition",
@@ -102,6 +132,42 @@ def cards() -> list[dict[str, object]]:
 
 
 class SpineCardTests(unittest.TestCase):
+    def test_saved_momentum_can_resume_only_the_matching_discovery_window(self) -> None:
+        created_at, candidates = daily_spine_cli.validate_momentum_resume(
+            momentum_package(),
+            requested_topic="new GenAI capabilities",
+            requested_days=14,
+            requested_as_of=None,
+        )
+        self.assertEqual(created_at, "2026-08-26T19:04:29Z")
+        self.assertEqual(len(candidates), 5)
+
+    def test_saved_momentum_rejects_a_different_topic(self) -> None:
+        with self.assertRaisesRegex(workflow.WorkflowError, "must match"):
+            daily_spine_cli.validate_momentum_resume(
+                momentum_package(),
+                requested_topic="different topic",
+                requested_days=14,
+                requested_as_of=None,
+            )
+
+    def test_parser_accepts_momentum_resume_checkpoint(self) -> None:
+        args = daily_spine_cli.parser().parse_args(
+            [
+                "--profile",
+                "data/private/profile.json",
+                "--resume-momentum",
+                "data/private/daily-discovery/run/momentum.json",
+                "--topic-count",
+                "1",
+            ]
+        )
+        self.assertEqual(
+            str(args.resume_momentum),
+            "data/private/daily-discovery/run/momentum.json",
+        )
+        self.assertEqual(args.topic_count, 1)
+
     def test_capability_launch_routes_only_grounded_thesis_to_vertical_video(self) -> None:
         launch_signals = signals()
         launch_signals[1]["title"] = (

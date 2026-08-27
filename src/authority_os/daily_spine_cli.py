@@ -209,6 +209,121 @@ Return concise evidence summaries, not copied prose, topic rankings, theses, or 
     return prepared
 
 
+def validate_momentum_resume(
+    raw: object,
+    *,
+    requested_topic: str | None,
+    requested_days: int,
+    requested_as_of: str | None,
+) -> tuple[str, list[dict[str, object]]]:
+    """Validate a previously written momentum checkpoint before resuming."""
+
+    required = {
+        "schema_version",
+        "created_at",
+        "label",
+        "topic",
+        "days",
+        "threshold",
+        "ranking_claim_limit",
+        "candidates",
+        "publishing_status",
+        "human_selection_required",
+    }
+    if not isinstance(raw, Mapping) or not required <= set(raw):
+        raise workflow.WorkflowError("Momentum resume evidence has an invalid schema.")
+    if (
+        raw.get("schema_version") != 1
+        or raw.get("label") != momentum.MOMENTUM_LABEL
+        or raw.get("threshold") != momentum.MIN_AUTHORITY_MOMENTUM
+        or raw.get("publishing_status") != "DISABLED"
+        or raw.get("human_selection_required") is not True
+    ):
+        raise workflow.WorkflowError("Momentum resume evidence has invalid control fields.")
+    if raw.get("topic") != requested_topic or raw.get("days") != requested_days:
+        raise workflow.WorkflowError(
+            "Momentum resume topic and day window must match the discovery command."
+        )
+    created_at = raw.get("created_at")
+    if not isinstance(created_at, str):
+        raise workflow.WorkflowError("Momentum resume evidence needs a valid created_at.")
+    workflow.parse_published_at(created_at)
+    if requested_as_of is not None and requested_as_of != created_at:
+        raise workflow.WorkflowError(
+            "--as-of must match the saved momentum created_at when resuming."
+        )
+
+    raw_candidates = raw.get("candidates")
+    if (
+        not isinstance(raw_candidates, Sequence)
+        or isinstance(raw_candidates, (str, bytes))
+        or len(raw_candidates) != momentum.MOMENTUM_TOP_K
+    ):
+        raise workflow.WorkflowError("Momentum resume evidence must contain five candidates.")
+
+    candidates: list[dict[str, object]] = []
+    seen_ids: set[str] = set()
+    seen_topics: set[str] = set()
+    for rank, raw_candidate in enumerate(raw_candidates, 1):
+        if not isinstance(raw_candidate, Mapping):
+            raise workflow.WorkflowError("Momentum resume candidate must be an object.")
+        candidate = dict(raw_candidate)
+        candidate_id = candidate.get("id")
+        topic = candidate.get("topic")
+        if (
+            not isinstance(candidate_id, str)
+            or not candidate_id.strip()
+            or candidate_id in seen_ids
+            or not isinstance(topic, str)
+            or not topic.strip()
+            or topic.casefold() in seen_topics
+        ):
+            raise workflow.WorkflowError(
+                "Momentum resume candidates need distinct non-blank IDs and topics."
+            )
+        seen_ids.add(candidate_id)
+        seen_topics.add(topic.casefold())
+        if candidate.get("momentum_rank") != rank:
+            raise workflow.WorkflowError("Momentum resume ranks must be ordered one through five.")
+        if type(candidate.get("momentum_eligible")) is not bool:
+            raise workflow.WorkflowError("Momentum resume eligibility must be boolean.")
+        observed_axes = candidate.get("observed_axes")
+        total = candidate.get("total")
+        if (
+            type(observed_axes) is not int
+            or not 0 <= observed_axes <= len(momentum.MOMENTUM_AXES)
+            or (
+                total is not None
+                and (type(total) is not int or not 0 <= total <= 25)
+            )
+        ):
+            raise workflow.WorkflowError("Momentum resume scores are invalid.")
+        if candidate.get("confidence") not in {"LOW", "MEDIUM", "HIGH"}:
+            raise workflow.WorkflowError("Momentum resume confidence is invalid.")
+        for field in ("why_now", "caveats"):
+            if not isinstance(candidate.get(field), str) or not str(candidate[field]).strip():
+                raise workflow.WorkflowError(
+                    f"Momentum resume field {field!r} must be non-blank text."
+                )
+        platforms = candidate.get("platforms")
+        if (
+            not isinstance(platforms, Sequence)
+            or isinstance(platforms, (str, bytes))
+            or not platforms
+            or any(not isinstance(value, str) or not value.strip() for value in platforms)
+        ):
+            raise workflow.WorkflowError("Momentum resume platforms are invalid.")
+        authority_fit = candidate.get("authority_fit")
+        if (
+            not isinstance(authority_fit, Mapping)
+            or type(authority_fit.get("total")) is not int
+            or not 5 <= int(authority_fit["total"]) <= 25
+        ):
+            raise workflow.WorkflowError("Momentum resume authority fit is invalid.")
+        candidates.append(candidate)
+    return created_at, candidates
+
+
 def command(args: argparse.Namespace) -> int:
     if not args.allow_web_research:
         raise workflow.WorkflowError("Discovery requires --allow-web-research.")
@@ -217,53 +332,71 @@ def command(args: argparse.Namespace) -> int:
             "Discovery requires --allow-model-egress before the private profile reaches thesis models."
         )
     profile = base.validate_profile(base._private_json(args.profile, "Authority profile"))
-    as_of = args.as_of or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
-        "+00:00", "Z"
-    )
-    workflow.parse_published_at(as_of)
+    if args.resume_momentum is not None:
+        if args.output_dir is not None:
+            raise workflow.WorkflowError(
+                "--resume-momentum cannot be combined with --output-dir."
+            )
+        momentum_path = base._under_private(args.resume_momentum)
+        as_of, top_five = validate_momentum_resume(
+            base._private_json(momentum_path, "Momentum resume evidence"),
+            requested_topic=args.topic,
+            requested_days=args.days,
+            requested_as_of=args.as_of,
+        )
+        folder = momentum_path.parent
+        print(
+            f"Resuming after momentum from "
+            f"{momentum_path.relative_to(workflow.REPO_ROOT)}."
+        )
+    else:
+        as_of = args.as_of or datetime.now(timezone.utc).replace(
+            microsecond=0
+        ).isoformat().replace("+00:00", "Z")
+        workflow.parse_published_at(as_of)
+        folder = base._under_private(
+            args.output_dir
+            or base.OUTPUT_ROOT / as_of[:10] / as_of[11:19].replace(":", "")
+        )
+        base.legacy_cli._ensure_owner_only_directory(folder)
 
-    folder = base._under_private(
-        args.output_dir
-        or base.OUTPUT_ROOT / as_of[:10] / as_of[11:19].replace(":", "")
-    )
-    base.legacy_cli._ensure_owner_only_directory(folder)
+        momentum_candidates = momentum.invoke_scout(args.topic, args.days, as_of)
+        ranked = momentum.rank_candidates(
+            momentum_candidates,
+            minimum=momentum.MIN_AUTHORITY_MOMENTUM,
+        )
+        top_five = ranked[: momentum.MOMENTUM_TOP_K]
+        authority_scores = momentum.score_authority_fit(top_five, profile)
+        top_five = momentum.attach_authority_fit(top_five, authority_scores)
 
-    momentum_candidates = momentum.invoke_scout(args.topic, args.days, as_of)
-    ranked = momentum.rank_candidates(
-        momentum_candidates,
-        minimum=momentum.MIN_AUTHORITY_MOMENTUM,
-    )
-    top_five = ranked[: momentum.MOMENTUM_TOP_K]
-    authority_scores = momentum.score_authority_fit(top_five, profile)
-    top_five = momentum.attach_authority_fit(top_five, authority_scores)
-
-    momentum_package = base.write_private_json(
-        folder / "momentum.json",
-        {
-            "schema_version": 1,
-            "created_at": as_of,
-            "label": momentum.MOMENTUM_LABEL,
-            "topic": args.topic,
-            "days": args.days,
-            "threshold": momentum.MIN_AUTHORITY_MOMENTUM,
-            "ranking_claim_limit": (
-                "Public-web proxy only; not an exact X/Twitter popularity ranking."
-            ),
-            "candidates": top_five,
-            "publishing_status": "DISABLED",
-            "human_selection_required": True,
-        },
-    )
+        momentum_package = base.write_private_json(
+            folder / "momentum.json",
+            {
+                "schema_version": 1,
+                "created_at": as_of,
+                "label": momentum.MOMENTUM_LABEL,
+                "topic": args.topic,
+                "days": args.days,
+                "threshold": momentum.MIN_AUTHORITY_MOMENTUM,
+                "ranking_claim_limit": (
+                    "Public-web proxy only; not an exact X/Twitter popularity ranking."
+                ),
+                "candidates": top_five,
+                "publishing_status": "DISABLED",
+                "human_selection_required": True,
+            },
+        )
+        print(
+            f"Momentum evidence stored: "
+            f"{momentum_package.relative_to(workflow.REPO_ROOT)}."
+        )
     momentum.print_top(top_five)
-    print(
-        f"Momentum evidence stored: "
-        f"{momentum_package.relative_to(workflow.REPO_ROOT)}."
-    )
 
     eligible = [item for item in top_five if item.get("momentum_eligible") is True]
-    if len(eligible) < 3:
+    if len(eligible) < args.topic_count:
         raise workflow.WorkflowError(
-            "Fewer than three topics cleared the authority conversation-momentum floor; "
+            f"Fewer than {args.topic_count} topic(s) cleared the authority "
+            "conversation-momentum floor; "
             "no topic-value selection or thesis generation was attempted."
         )
 
@@ -275,7 +408,11 @@ def command(args: argparse.Namespace) -> int:
     )
     raw_signals = base.project_signals(items)
 
-    topic_value_candidates = topic_value.invoke_discovery_selector(profile, raw_signals)
+    topic_value_candidates = topic_value.invoke_discovery_selector(
+        profile,
+        raw_signals,
+        count=args.topic_count,
+    )
     signals = topic_value.project_discovery_signals(raw_signals, topic_value_candidates)
     topic_value_package = base.write_private_json(
         folder / "topic-value.json",
@@ -294,7 +431,10 @@ def command(args: argparse.Namespace) -> int:
         f"Topic Value evidence stored: "
         f"{topic_value_package.relative_to(workflow.REPO_ROOT)}."
     )
-    print("Three situations cleared Topic Value before thesis generation:")
+    print(
+        f"{len(topic_value_candidates)} situation(s) cleared Topic Value "
+        "before thesis generation:"
+    )
     for candidate in topic_value_candidates:
         print(
             f"{candidate['id']}: {candidate['reader_value_type']} | "
@@ -370,7 +510,26 @@ def command(args: argparse.Namespace) -> int:
 
 
 def parser() -> argparse.ArgumentParser:
-    return base.parser()
+    result = base.parser()
+    result.add_argument(
+        "--resume-momentum",
+        type=Path,
+        help=(
+            "Resume from a validated momentum.json checkpoint under data/private "
+            "without repeating momentum discovery or authority-fit scoring."
+        ),
+    )
+    result.add_argument(
+        "--topic-count",
+        type=int,
+        choices=(1, 2, 3),
+        default=3,
+        help=(
+            "Number of independently qualified situations required before thesis "
+            "generation; use 1 for a bounded single-topic pilot."
+        ),
+    )
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:

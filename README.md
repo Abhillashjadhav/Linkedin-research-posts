@@ -202,6 +202,11 @@ provides an email address, or bypasses a paywall. Social and newsletter signals
 can establish momentum; underlying capability claims still require the normal
 primary-source and runnable-artifact checks.
 
+For a bounded experiment, `--topic-count 1` allows one qualifying situation to
+advance while preserving every quality gate. If a later stage fails after
+`momentum.json` is stored, `--resume-momentum <path>` validates that checkpoint
+and continues without repeating momentum discovery or authority-fit scoring.
+
 ## Safety model
 
 - Publishing, scheduling, messaging, and authenticated browser automation are absent.
