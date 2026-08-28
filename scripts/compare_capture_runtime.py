@@ -66,6 +66,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         actionable_diagnostics.install()
         from authority_os import social_media_gate_policy
         social_media_gate_policy.install()
+        from authority_os import v1_runtime_tuning
+        v1_runtime_tuning.install()
         from authority_os import quality_optimizer as optimizer
         optimizer.install()
         quality_optimizer = optimizer
