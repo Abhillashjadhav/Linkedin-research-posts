@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "critic_reproducibility": {
+    "mode": "shadow",
+    "sample": "once-per-command",
+    "max_axis_delta": 1
+  }
+}
