@@ -26,6 +26,16 @@ def allowed_ids(count: int) -> tuple[str, ...]:
     return tuple(f"topic-{index}" for index in range(1, count + 1))
 
 
+def id_contract_instruction(count: int) -> str:
+    exact = ", ".join(allowed_ids(count))
+    return (
+        "CANDIDATE_ID_CONTRACT\n"
+        f"Return exactly these candidate IDs once each and no others: {exact}. "
+        "Candidate IDs are bookkeeping labels; do not rename them based on the "
+        "topic, situation, or source."
+    )
+
+
 def schema_with_exact_ids(count: int) -> dict[str, object]:
     """Return the current Topic Value schema with an exact count-specific ID enum."""
 
@@ -65,17 +75,8 @@ def invoke_selector(
 ) -> list[dict[str, object]]:
     """Add the exact ID contract to the model task while preserving base validation."""
 
-    ids = allowed_ids(count)
-
     def contracted_invoker(stage, config, role_prompt, task_prompt, schema):
-        exact = ", ".join(ids)
-        task = (
-            f"{task_prompt}\n\n"
-            "CANDIDATE_ID_CONTRACT\n"
-            f"Return exactly these candidate IDs once each and no others: {exact}. "
-            "Candidate IDs are bookkeeping labels; do not rename them based on the "
-            "topic, situation, or source."
-        )
+        task = f"{task_prompt}\n\n{id_contract_instruction(count)}"
         return invoker(stage, config, role_prompt, task, schema)
 
     return _ORIGINAL_INVOKE_SELECTOR(
