@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from authority_os import quality_cli, social_media_gate_policy, workflow
 
@@ -63,9 +64,12 @@ class SocialMediaGatePolicyTests(unittest.TestCase):
         self.assertFalse(softened.passes_required_gates)
 
     def test_writer_policy_allows_explicit_xx_placeholders_without_inventing_numbers(self) -> None:
-        prompt = social_media_gate_policy._build_writer_prompt_social(  # type: ignore[attr-defined]
-            brief={}, evidence=[], voice_guidance={}
-        )
+        with patch.object(
+            social_media_gate_policy,
+            "_ORIGINAL_BUILD_WRITER_PROMPT",
+            return_value="BASE WRITER PROMPT",
+        ):
+            prompt = social_media_gate_policy._build_writer_prompt_social()  # type: ignore[attr-defined]
         self.assertIn("XX%", prompt)
         self.assertIn("XXx", prompt)
         self.assertIn("human reviewer", prompt.casefold())
