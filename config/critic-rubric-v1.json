@@ -3,11 +3,11 @@
   "rubric_id": "linkedin-authority-critic-v1",
   "axes": {
     "hook_strength": {
-      "1": "Generic, abstract, jargon-first, or architecture-first opening with no concrete situation, useful tension, or reason for the target reader to continue.",
-      "2": "The topic is recognizable, but the opening is broad, expected, technically dense, or weakly relevant; the reader must decode terminology before understanding why it matters.",
-      "3": "A concrete situation or problem is understandable, but the human stake, tension, utility, or novelty is only moderate, delayed, or obscured by technical framing.",
-      "4": "The first two lines are immediately understandable to a smart product reader and present a concrete audience-relevant situation plus truthful tension, consequence, or utility that creates a clear reason to continue without hype.",
-      "5": "The opening has exceptional truthful stop power: it is instantly clear, specific, humanly relevant, and consequential without manufactured stakes, while setting up a promise the body actually fulfills."
+      "1": "Generic, abstract, jargon-first, or architecture-first opening with no concrete target-reader problem, immediate value, or reason to continue.",
+      "2": "The topic is recognizable, but the opening is broad, expected, technically dense, weakly relevant, or makes the reader wait to understand what they get.",
+      "3": "A concrete situation or problem is understandable, but the immediate benefit, human stake, tension, utility, or novelty is delayed, generic, or obscured by technical framing.",
+      "4": "Line 1 pairs a concrete target-reader problem with an immediate benefit, usable artifact, or decision payoff in plain language; the relevance is obvious and truthful tension or curiosity creates a clear reason to continue without hype.",
+      "5": "Line 1 has exceptional truthful stop power: the target reader instantly recognizes the problem as relevant, immediately sees the concrete benefit/artifact/payoff, and feels a strong evidence-earned need to continue; the body fully delivers that promise without clickbait or manufactured stakes."
     },
     "middle_escalation": {
       "1": "The body is mostly a list, specification, architecture walkthrough, summary, repetition, or disconnected observations; understanding does not deepen and technical detail is not translated into why it matters.",
