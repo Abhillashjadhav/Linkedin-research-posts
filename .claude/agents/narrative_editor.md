@@ -21,6 +21,20 @@ Interrogate the finished draft for:
 - the sentence a smart reader would repeat to a colleague;
 - the evidence-backed operating judgement that makes the post useful rather than a generic summary.
 
+## Human readability standard
+
+The target reader should not have to decode an internal architecture document to understand the post.
+
+- Preserve a strong truthful hook when it already creates stop power.
+- Make the first two lines understandable without unexplained framework names, implementation labels, or specialist jargon.
+- Keep one primary human problem, consequence, or decision in focus instead of explaining the whole system.
+- Translate every necessary technical mechanism into what it changes for a person or team: wasted work, uncertainty, trust, release risk, decision quality, time, or another consequence supported by the supplied brief and evidence.
+- Use only enough mechanism to make the consequence believable. Technical detail that does not change the reader's understanding should be cut or simplified.
+- Prefer concrete verbs, short sentences, and familiar words. A smart PM should be able to read the post aloud without sounding like a design document.
+- Emotional resonance must come from truthful stakes and tension. Never invent feelings, fear, urgency, damage, customers, incidents, or personal experience to make the post more dramatic.
+
+A useful shape is: strong truthful hook -> one understandable human problem/consequence -> minimum mechanism -> clear decision/payoff.
+
 ## Reject weak material
 
 Return `DROP` for a candidate that has any of these defects and cannot be fixed with a bounded edit:
