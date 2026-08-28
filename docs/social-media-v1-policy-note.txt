@@ -1,0 +1,1 @@
+Quantitative hook placeholders such as XX%, XXx, XX minutes, and XX days are permitted for human-reviewed V1 social drafts. The human reviewer must replace XX before publication; the Writer must not invent the replacement value.

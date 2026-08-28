@@ -35,8 +35,6 @@ fi
 MODULE="authority_os.integrated_cli"
 for ARG in "$@"; do
   if [ "$ARG" = "--dry-run" ]; then
-    # Preserve the complete deterministic V0 fixture diagnostics used by public
-    # smoke tests. The V1 overlay applies only to live discovery/drafting.
     MODULE="authority_os"
     break
   fi
@@ -61,6 +59,8 @@ from authority_os import critic_anchor_retry
 critic_anchor_retry.install()
 from authority_os import actionable_diagnostics
 actionable_diagnostics.install()
+from authority_os import social_media_gate_policy
+social_media_gate_policy.install()
 from authority_os import quality_optimizer
 quality_optimizer.install()
 from authority_os import integrated_cli

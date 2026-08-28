@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from authority_os import quality_cli, social_media_gate_policy
+from authority_os import quality_cli, social_media_gate_policy, workflow
 
 
 class SocialMediaGatePolicyTests(unittest.TestCase):
@@ -42,13 +42,7 @@ class SocialMediaGatePolicyTests(unittest.TestCase):
             candidate_id="candidate-1",
             angle="mechanism",
             text="Off-strategy post.",
-            axes={axis: 5 for axis in (
-                "hook_strength",
-                "middle_escalation",
-                "earned_closer",
-                "specificity_and_source_quality",
-                "voice_fidelity",
-            )},
+            axes={axis: 5 for axis in workflow.CRITIC_AXES},
             raw_total=25,
             effective_total=25,
             band="advance-to-gates",
@@ -67,6 +61,15 @@ class SocialMediaGatePolicyTests(unittest.TestCase):
         self.assertEqual(softened.gates["honesty"], "HUMAN_REVIEW")
         self.assertEqual(softened.gates["citation"], "HUMAN_REVIEW")
         self.assertFalse(softened.passes_required_gates)
+
+    def test_writer_policy_allows_explicit_xx_placeholders_without_inventing_numbers(self) -> None:
+        prompt = social_media_gate_policy._build_writer_prompt_social(  # type: ignore[attr-defined]
+            brief={}, evidence=[], voice_guidance={}
+        )
+        self.assertIn("XX%", prompt)
+        self.assertIn("XXx", prompt)
+        self.assertIn("human reviewer", prompt.casefold())
+        self.assertIn("never silently substitute a fabricated number", prompt.casefold())
 
 
 if __name__ == "__main__":
