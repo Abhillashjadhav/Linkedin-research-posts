@@ -79,6 +79,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         from authority_os import critic_anchor_retry
 
         critic_anchor_retry.install()
+        from authority_os import actionable_diagnostics
+
+        actionable_diagnostics.install()
         from authority_os import quality_optimizer as optimizer
 
         optimizer.install()
