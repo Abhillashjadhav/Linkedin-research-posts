@@ -52,5 +52,6 @@ v1_completion.install()
 from authority_os import quality_optimizer
 quality_optimizer.install()
 from authority_os import integrated_cli
+quality_optimizer.wire_integrated_dispatch(integrated_cli)
 raise SystemExit(integrated_cli.main())
 ' "$@"
