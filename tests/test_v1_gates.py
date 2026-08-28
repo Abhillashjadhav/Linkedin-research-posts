@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import tempfile
+import unittest
 from pathlib import Path
-
-import pytest
+from unittest import mock
 
 from authority_os import storage, v1_gates, workflow
 
@@ -30,161 +31,188 @@ def _anchored_scorecard(candidate_id: str = "candidate-1", score: int = 4) -> di
     }
 
 
-def test_v1_config_is_per_contract_and_reversible() -> None:
-    config = v1_gates.load_config()
-    contracts = config["contracts"]
-    assert contracts["atomic_value_novelty"]["mode"] == "enforce"
-    assert contracts["research_trust"]["mode"] == "enforce"
-    assert contracts["critic_anchor_integrity"]["mode"] == "enforce"
-    assert contracts["solution_plausibility"]["mode"] == "shadow"
-    assert contracts["reader_attention"]["mode"] == "shadow"
+class V1ContractTests(unittest.TestCase):
+    def test_v1_config_is_per_contract_and_reversible(self) -> None:
+        contracts = v1_gates.load_config()["contracts"]
+        self.assertEqual(contracts["atomic_value_novelty"]["mode"], "enforce")
+        self.assertEqual(contracts["research_trust"]["mode"], "enforce")
+        self.assertEqual(contracts["critic_anchor_integrity"]["mode"], "enforce")
+        self.assertEqual(contracts["solution_plausibility"]["mode"], "shadow")
+        self.assertEqual(contracts["reader_attention"]["mode"], "shadow")
 
+    def test_critic_rubric_has_all_twenty_five_behavioral_anchors(self) -> None:
+        axes = v1_gates.load_critic_rubric()["axes"]
+        self.assertEqual(set(axes), set(workflow.CRITIC_AXES))
+        self.assertEqual(sum(len(levels) for levels in axes.values()), 25)
+        self.assertTrue(
+            all(set(levels) == {"1", "2", "3", "4", "5"} for levels in axes.values())
+        )
 
-def test_critic_rubric_has_all_twenty_five_behavioral_anchors() -> None:
-    rubric = v1_gates.load_critic_rubric()
-    axes = rubric["axes"]
-    assert set(axes) == set(workflow.CRITIC_AXES)
-    assert sum(len(levels) for levels in axes.values()) == 25
-    assert all(set(levels) == {"1", "2", "3", "4", "5"} for levels in axes.values())
+    def test_atomic_value_novelty_uses_separate_private_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            v1_gates, "STATE_ROOT", Path(directory)
+        ):
+            original = "Use trace checkpoints to find the first handoff where an agent workflow loses state."
+            v1_gates.record_atomic_value(original)
+            repeated = v1_gates.evaluate_atomic_novelty(original)
+            different = v1_gates.evaluate_atomic_novelty(
+                "Treat model scores as measurements and require behavioral evidence before they control routing."
+            )
+            self.assertEqual(repeated["status"], "FAIL")
+            self.assertGreaterEqual(repeated["max_similarity"], 0.72)
+            self.assertEqual(different["status"], "PASS")
 
+    def test_social_source_cannot_be_laundered_as_primary_evidence(self) -> None:
+        decision = v1_gates.evaluate_research_trust(
+            {"source_ids": ["signal-1"]},
+            [
+                {
+                    "id": "signal-1",
+                    "canonical_url": "https://www.reddit.com/r/LocalLLaMA/example",
+                    "body": "A public discussion of a claim.",
+                    "source_quality": "primary",
+                }
+            ],
+        )
+        self.assertEqual(decision["status"], "FAIL")
+        self.assertEqual(
+            decision["reason"],
+            "social-source-cannot-be-laundered-as-primary-factual-evidence",
+        )
 
-def test_atomic_value_novelty_uses_separate_private_ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(v1_gates, "STATE_ROOT", tmp_path)
-    original = "Use trace checkpoints to find the first handoff where an agent workflow loses state."
-    v1_gates.record_atomic_value(original)
+    def test_body_read_non_social_source_passes_research_trust(self) -> None:
+        decision = v1_gates.evaluate_research_trust(
+            {"source_ids": ["signal-1"]},
+            [
+                {
+                    "id": "signal-1",
+                    "canonical_url": "https://openai.com/research/example",
+                    "body": "The engineering report describes the mechanism and observed result.",
+                    "source_quality": "primary",
+                }
+            ],
+        )
+        self.assertEqual(decision["status"], "PASS")
 
-    repeated = v1_gates.evaluate_atomic_novelty(
-        "Use trace checkpoints to find the first handoff where an agent workflow loses state."
-    )
-    different = v1_gates.evaluate_atomic_novelty(
-        "Treat model scores as measurements and require behavioral evidence before they control routing."
-    )
+    def test_claim_body_support_is_shadow_diagnostic_not_truth_oracle(self) -> None:
+        decision = v1_gates.evaluate_claim_body_support(
+            {
+                "source_ids": ["signal-1"],
+                "situation": "A deployment changed retry behavior",
+                "what_changed": "The system reported 99% reliability after the change",
+            },
+            [
+                {
+                    "id": "signal-1",
+                    "canonical_url": "https://example.com/report",
+                    "body": "The deployment changed retry behavior but reported no reliability percentage.",
+                    "source_quality": "primary",
+                }
+            ],
+        )
+        self.assertEqual(decision["mode"], "shadow")
+        self.assertEqual(decision["status"], "FAIL")
+        self.assertIs(decision["numbers_supported"], False)
 
-    assert repeated["status"] == "FAIL"
-    assert repeated["max_similarity"] >= 0.72
-    assert different["status"] == "PASS"
-
-
-def test_social_source_cannot_be_laundered_as_primary_evidence() -> None:
-    candidate = {"source_ids": ["signal-1"]}
-    evidence = [
-        {
-            "id": "signal-1",
-            "canonical_url": "https://www.reddit.com/r/LocalLLaMA/example",
-            "body": "A public discussion of a claim.",
-            "source_quality": "primary",
+    def test_anchored_critic_requires_exact_artifact_evidence(self) -> None:
+        candidate = {
+            "id": "candidate-1",
+            "angle": "retries",
+            "text": CANDIDATE_TEXT,
+            "claim_ids": ["source-1"],
         }
-    ]
-    decision = v1_gates.evaluate_research_trust(candidate, evidence)
-    assert decision["status"] == "FAIL"
-    assert decision["reason"] == "social-source-cannot-be-laundered-as-primary-factual-evidence"
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            v1_gates, "STATE_ROOT", Path(directory)
+        ):
+            validated = v1_gates._validate_critic_scorecards_v1(
+                [_anchored_scorecard()], [candidate]
+            )
+            self.assertEqual(validated[0]["raw_total"], 20)
+            self.assertTrue((Path(directory) / v1_gates.CRITIC_AUDIT_NAME).is_file())
+            sanitized = {
+                "candidate_id": "candidate-1",
+                **{axis: 4 for axis in workflow.CRITIC_AXES},
+            }
+            second = v1_gates._validate_critic_scorecards_v1([sanitized], [candidate])
+            self.assertEqual(second[0]["raw_total"], 20)
 
-
-def test_body_read_non_social_source_passes_research_trust() -> None:
-    candidate = {"source_ids": ["signal-1"]}
-    evidence = [
-        {
-            "id": "signal-1",
-            "canonical_url": "https://openai.com/research/example",
-            "body": "The engineering report describes the mechanism and observed result.",
-            "source_quality": "primary",
+    def test_unanchored_live_score_cannot_route_without_prior_anchor_validation(self) -> None:
+        candidate = {
+            "id": "candidate-unseen",
+            "angle": "state",
+            "text": "A different candidate that has never been anchor validated.",
+            "claim_ids": ["source-1"],
         }
-    ]
-    decision = v1_gates.evaluate_research_trust(candidate, evidence)
-    assert decision["status"] == "PASS"
-
-
-def test_claim_body_support_is_shadow_diagnostic_not_a_truth_oracle() -> None:
-    candidate = {
-        "source_ids": ["signal-1"],
-        "situation": "A deployment changed retry behavior",
-        "what_changed": "The system reported 99% reliability after the change",
-    }
-    evidence = [
-        {
-            "id": "signal-1",
-            "canonical_url": "https://example.com/report",
-            "body": "The deployment changed retry behavior but reported no reliability percentage.",
-            "source_quality": "primary",
+        sanitized = {
+            "candidate_id": "candidate-unseen",
+            **{axis: 3 for axis in workflow.CRITIC_AXES},
         }
-    ]
-    decision = v1_gates.evaluate_claim_body_support(candidate, evidence)
-    assert decision["mode"] == "shadow"
-    assert decision["status"] == "FAIL"
-    assert decision["numbers_supported"] is False
+        with self.assertRaisesRegex(workflow.WorkflowError, "anchor evidence is required"):
+            v1_gates._validate_critic_scorecards_v1([sanitized], [candidate])
+
+    def test_anchor_evidence_must_be_copied_from_candidate(self) -> None:
+        candidate = {
+            "id": "candidate-1",
+            "angle": "retries",
+            "text": CANDIDATE_TEXT,
+            "claim_ids": ["source-1"],
+        }
+        anchored = _anchored_scorecard()
+        anchored["anchors"]["hook_strength"]["evidence"] = (
+            "This sentence does not exist in the candidate."
+        )
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            v1_gates, "STATE_ROOT", Path(directory)
+        ):
+            with self.assertRaisesRegex(workflow.WorkflowError, "exact excerpt"):
+                v1_gates._validate_critic_scorecards_v1([anchored], [candidate])
+
+    def test_repeated_score_disagreement_is_measurable_without_new_runtime_stage(self) -> None:
+        first = [
+            {"candidate_id": "candidate-1", **{axis: 4 for axis in workflow.CRITIC_AXES}}
+        ]
+        second = [
+            {
+                "candidate_id": "candidate-1",
+                **{
+                    axis: 5 if axis == "hook_strength" else 4
+                    for axis in workflow.CRITIC_AXES
+                },
+            }
+        ]
+        result = v1_gates.score_disagreement(first, second)
+        self.assertEqual(result["max_axis_disagreement"], 1)
+        self.assertIs(result["stable_within_one_point"], True)
+
+    def test_v1_state_does_not_change_v0_sqlite_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db_path = root / "authority_os.sqlite"
+            storage.initialise(db_path)
+            before = storage.inspect_database_health(db_path)
+            state_root = root / "v1-state"
+            with mock.patch.object(v1_gates, "STATE_ROOT", state_root):
+                v1_gates.record_atomic_value(
+                    "Use atomic value tracking to prevent a new post from repackaging the same reader insight."
+                )
+            after = storage.inspect_database_health(db_path)
+            self.assertEqual(before, after)
+            self.assertEqual(after["schema_version"], storage.SCHEMA_VERSION)
+            self.assertEqual(storage.SCHEMA_VERSION, 4)
+            self.assertTrue((state_root / v1_gates.ATOMIC_LEDGER_NAME).is_file())
+
+    def test_solution_plausibility_extends_existing_resonance_schema_without_new_stage(self) -> None:
+        schema = v1_gates.resonance_post_schema_v1()
+        self.assertIn("solution_plausibility", schema["properties"])
+        self.assertIn("solution_plausibility_reason", schema["properties"])
+        self.assertIn("solution_plausibility", schema["required"])
+        self.assertIn("solution_plausibility_reason", schema["required"])
+
+    def test_topic_value_schema_adds_one_atomic_value_not_another_selector(self) -> None:
+        schema = v1_gates._topic_candidate_schema_v1()
+        self.assertIn("atomic_value", schema["properties"])
+        self.assertIn("atomic_value", schema["required"])
 
 
-def test_anchored_critic_requires_exact_artifact_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(v1_gates, "STATE_ROOT", tmp_path)
-    candidate = {"id": "candidate-1", "angle": "retries", "text": CANDIDATE_TEXT, "claim_ids": ["source-1"]}
-    anchored = _anchored_scorecard()
-
-    validated = v1_gates._validate_critic_scorecards_v1([anchored], [candidate])
-    assert validated[0]["raw_total"] == 20
-    assert (tmp_path / v1_gates.CRITIC_AUDIT_NAME).is_file()
-
-    sanitized = {"candidate_id": "candidate-1", **{axis: 4 for axis in workflow.CRITIC_AXES}}
-    second = v1_gates._validate_critic_scorecards_v1([sanitized], [candidate])
-    assert second[0]["raw_total"] == 20
-
-
-def test_unanchored_live_score_cannot_route_without_prior_anchor_validation() -> None:
-    candidate = {
-        "id": "candidate-unseen",
-        "angle": "state",
-        "text": "A different candidate that has never been anchor validated.",
-        "claim_ids": ["source-1"],
-    }
-    sanitized = {"candidate_id": "candidate-unseen", **{axis: 3 for axis in workflow.CRITIC_AXES}}
-    with pytest.raises(workflow.WorkflowError, match="anchor evidence is required"):
-        v1_gates._validate_critic_scorecards_v1([sanitized], [candidate])
-
-
-def test_anchor_evidence_must_be_copied_from_candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(v1_gates, "STATE_ROOT", tmp_path)
-    candidate = {"id": "candidate-1", "angle": "retries", "text": CANDIDATE_TEXT, "claim_ids": ["source-1"]}
-    anchored = _anchored_scorecard()
-    anchored["anchors"]["hook_strength"]["evidence"] = "This sentence does not exist in the candidate."
-    with pytest.raises(workflow.WorkflowError, match="exact excerpt"):
-        v1_gates._validate_critic_scorecards_v1([anchored], [candidate])
-
-
-def test_repeated_score_disagreement_is_measurable_without_another_runtime_stage() -> None:
-    first = [{"candidate_id": "candidate-1", **{axis: 4 for axis in workflow.CRITIC_AXES}}]
-    second = [{"candidate_id": "candidate-1", **{axis: (5 if axis == "hook_strength" else 4) for axis in workflow.CRITIC_AXES}}]
-    result = v1_gates.score_disagreement(first, second)
-    assert result["max_axis_disagreement"] == 1
-    assert result["stable_within_one_point"] is True
-
-
-def test_v1_state_does_not_change_v0_sqlite_schema(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    db_path = tmp_path / "authority_os.sqlite"
-    storage.initialise(db_path)
-    before = storage.inspect_database_health(db_path)
-
-    state_root = tmp_path / "v1-state"
-    monkeypatch.setattr(v1_gates, "STATE_ROOT", state_root)
-    v1_gates.record_atomic_value(
-        "Use atomic value tracking to prevent a new post from repackaging the same reader insight."
-    )
-
-    after = storage.inspect_database_health(db_path)
-    assert before == after
-    assert after["schema_version"] == storage.SCHEMA_VERSION == 4
-    assert (state_root / v1_gates.ATOMIC_LEDGER_NAME).is_file()
-
-
-def test_solution_plausibility_extends_existing_resonance_schema_without_new_stage() -> None:
-    schema = v1_gates.resonance_post_schema_v1()
-    properties = schema["properties"]
-    required = schema["required"]
-    assert "solution_plausibility" in properties
-    assert "solution_plausibility_reason" in properties
-    assert "solution_plausibility" in required
-    assert "solution_plausibility_reason" in required
-
-
-def test_topic_value_schema_adds_one_atomic_value_not_another_selector() -> None:
-    schema = v1_gates._topic_candidate_schema_v1()
-    assert "atomic_value" in schema["properties"]
-    assert "atomic_value" in schema["required"]
+if __name__ == "__main__":
+    unittest.main()
