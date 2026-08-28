@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 from typing import Mapping, Sequence
 
-from . import campaign, workflow
+from . import campaign, model_runtime, workflow
 
 _INSTALLED = False
 _ORIGINAL_RUN_CRITIC_REVIEW = workflow.run_critic_review
+EDITOR_TIMEOUT_SECONDS = 480
 
 
 def _narrative_schema() -> dict[str, object]:
@@ -108,6 +109,26 @@ def _task(
     )
 
 
+def _live_editor_invoker(
+    _stage: str,
+    config: model_runtime.ModelConfig,
+    role_prompt: str,
+    task_prompt: str,
+    schema: Mapping[str, object],
+) -> dict[str, object]:
+    """Give the high-reasoning readability pass enough bounded time to finish."""
+
+    return model_runtime.invoke_structured(
+        config=config,
+        role_prompt=role_prompt,
+        task_prompt=task_prompt,
+        schema=schema,
+        timeout=EDITOR_TIMEOUT_SECONDS,
+        web_search=False,
+        stage_label="Single-topic Narrative Editor",
+    )
+
+
 def _gate_statuses(
     candidate: Mapping[str, object],
     *,
@@ -133,9 +154,9 @@ def edit_candidates(
     brief: Mapping[str, object],
     evidence: Sequence[Mapping[str, object]],
     proof: workflow.LoadedProof | None = None,
-    invoker=campaign.default_stage_invoker,
+    invoker=_live_editor_invoker,
 ) -> list[dict[str, object]]:
-    """Run the existing Narrative Editor role and fail safe to grounded originals per candidate."""
+    """Run Narrative Editor, falling back only to already-grounded Writer candidates."""
 
     originals = workflow.validate_draft_candidates(
         candidates,
@@ -146,16 +167,24 @@ def edit_candidates(
     if brief.get("goal") != "authority":
         return originals
 
-    result = invoker(
-        "narrative_editor",
-        campaign.StageModels.preferred().narrative_editor,
-        campaign._load_role("narrative_editor"),  # type: ignore[attr-defined]
-        _task(originals, brief, evidence, proof),
-        _narrative_schema(),
-    )
+    try:
+        result = invoker(
+            "narrative_editor",
+            campaign.StageModels.preferred().narrative_editor,
+            campaign._load_role("narrative_editor"),  # type: ignore[attr-defined]
+            _task(originals, brief, evidence, proof),
+            _narrative_schema(),
+        )
+    except workflow.WorkflowError:
+        # Readability editing is a bounded craft overlay. A provider failure must not
+        # erase a grounded Writer result or convert the whole quality loop into an
+        # infrastructure failure. Critic/Resonance still decide whether the original
+        # prose is good enough to advance.
+        return originals
+
     raw = result.get("results")
     if not isinstance(raw, list) or len(raw) != 3:
-        raise workflow.WorkflowError("Single-topic Narrative Editor must return three results.")
+        return originals
 
     by_original = {str(candidate["id"]): candidate for candidate in originals}
     seen: set[str] = set()
@@ -164,24 +193,36 @@ def edit_candidates(
 
     for item in raw:
         if not isinstance(item, Mapping):
-            raise workflow.WorkflowError("Single-topic Narrative Editor result must be an object.")
+            continue
         candidate_id = item.get("id")
-        if not isinstance(candidate_id, str) or candidate_id not in by_original or candidate_id in seen:
-            raise workflow.WorkflowError("Single-topic Narrative Editor returned an unknown or duplicate ID.")
+        if (
+            not isinstance(candidate_id, str)
+            or candidate_id not in by_original
+            or candidate_id in seen
+        ):
+            continue
         seen.add(candidate_id)
         original = by_original[candidate_id]
         if item.get("status") not in {"EDITED", "UNCHANGED"}:
-            raise workflow.WorkflowError("Single-topic Narrative Editor returned an invalid status.")
+            continue
         if item.get("claim_ids") != original["claim_ids"]:
-            raise workflow.WorkflowError("Single-topic Narrative Editor must preserve claim_ids exactly.")
+            continue
         edited_text = item.get("edited_text")
         repeatable = item.get("repeatable_sentence")
-        if not isinstance(edited_text, str) or not edited_text.strip() or not isinstance(repeatable, str):
-            raise workflow.WorkflowError("Single-topic Narrative Editor returned invalid text fields.")
-        if item.get("status") == "UNCHANGED" and workflow._style_normal_form(edited_text) != workflow._style_normal_form(str(original["text"])):
-            raise workflow.WorkflowError("UNCHANGED narrative output changed the draft.")
+        if (
+            not isinstance(edited_text, str)
+            or not edited_text.strip()
+            or not isinstance(repeatable, str)
+        ):
+            continue
+        if (
+            item.get("status") == "UNCHANGED"
+            and workflow._style_normal_form(edited_text)
+            != workflow._style_normal_form(str(original["text"]))
+        ):
+            continue
         if repeatable.strip() and repeatable.strip() not in edited_text:
-            raise workflow.WorkflowError("Narrative repeatable sentence must already exist in the draft.")
+            continue
 
         edited = {
             "id": original["id"],
@@ -199,7 +240,7 @@ def edit_candidates(
                 proof=proof,
             )
         except workflow.WorkflowError:
-            # Editing is never allowed to break the Writer's deterministic envelope.
+            # Invalid editor output never replaces the grounded Writer candidate.
             continue
 
         original_gates = _gate_statuses(
@@ -220,14 +261,15 @@ def edit_candidates(
             edited_gate = edited_gates.get(name)
             if not isinstance(original_gate, Mapping) or not isinstance(edited_gate, Mapping):
                 raise workflow.WorkflowError("Human-readability gate comparison is incomplete.")
-            if original_gate.get("status") != "FAIL" and edited_gate.get("status") == "FAIL":
+            if (
+                original_gate.get("status") != "FAIL"
+                and edited_gate.get("status") == "FAIL"
+            ):
                 regressed = True
                 break
         if not regressed:
             final[index_by_id[candidate_id]] = edited
 
-    if seen != set(by_original):
-        raise workflow.WorkflowError("Single-topic Narrative Editor omitted a candidate.")
     return workflow.validate_draft_candidates(
         final,
         brief=brief,
