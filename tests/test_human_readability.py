@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from authority_os import human_readability, workflow
+from authority_os import human_readability, model_runtime, workflow
 
 
 class HumanReadabilityContractTests(unittest.TestCase):
@@ -74,19 +74,36 @@ class HumanReadabilityContractTests(unittest.TestCase):
                 for candidate in self.candidates
             ]
         }
+        edited = human_readability.edit_candidates(
+            self.candidates,
+            brief=self.brief,
+            evidence=self.evidence,
+            invoker=lambda *_args, **_kwargs: payload,
+        )
+        self.assertEqual(edited, self.candidates)
 
-        def fake_invoker(*_args, **_kwargs):
-            return payload
+    def test_provider_failure_falls_back_to_grounded_writer_candidates(self) -> None:
+        def failing_invoker(*_args, **_kwargs):
+            raise workflow.WorkflowError("Single-topic Narrative Editor timed out.")
 
         edited = human_readability.edit_candidates(
             self.candidates,
             brief=self.brief,
             evidence=self.evidence,
-            invoker=fake_invoker,
+            invoker=failing_invoker,
         )
         self.assertEqual(edited, self.candidates)
 
-    def test_edit_candidates_rejects_claim_id_mutation(self) -> None:
+    def test_malformed_provider_envelope_falls_back_to_writer_candidates(self) -> None:
+        edited = human_readability.edit_candidates(
+            self.candidates,
+            brief=self.brief,
+            evidence=self.evidence,
+            invoker=lambda *_args, **_kwargs: {"results": []},
+        )
+        self.assertEqual(edited, self.candidates)
+
+    def test_claim_id_mutation_is_rejected_per_candidate_without_crashing_run(self) -> None:
         results = []
         for index, candidate in enumerate(self.candidates):
             claim_ids = list(candidate["claim_ids"])
@@ -103,13 +120,37 @@ class HumanReadabilityContractTests(unittest.TestCase):
                 }
             )
 
-        with self.assertRaisesRegex(workflow.WorkflowError, "preserve claim_ids"):
-            human_readability.edit_candidates(
-                self.candidates,
-                brief=self.brief,
-                evidence=self.evidence,
-                invoker=lambda *_args, **_kwargs: {"results": results},
+        edited = human_readability.edit_candidates(
+            self.candidates,
+            brief=self.brief,
+            evidence=self.evidence,
+            invoker=lambda *_args, **_kwargs: {"results": results},
+        )
+        self.assertEqual(edited[0], self.candidates[0])
+        self.assertEqual(edited[1:], self.candidates[1:])
+
+    def test_live_editor_invoker_uses_extended_bounded_timeout(self) -> None:
+        observed: dict[str, object] = {}
+
+        def fake_structured(**kwargs):
+            observed.update(kwargs)
+            return {"results": []}
+
+        config = model_runtime.ModelConfig("codex", "gpt-5.6-sol", "max")
+        with patch.object(model_runtime, "invoke_structured", side_effect=fake_structured):
+            result = human_readability._live_editor_invoker(  # type: ignore[attr-defined]
+                "narrative_editor",
+                config,
+                "role",
+                "task",
+                {"type": "object"},
             )
+        self.assertEqual(result, {"results": []})
+        self.assertEqual(observed["timeout"], human_readability.EDITOR_TIMEOUT_SECONDS)
+        self.assertGreater(human_readability.EDITOR_TIMEOUT_SECONDS, 180)
+        self.assertEqual(observed["stage_label"], "Single-topic Narrative Editor")
+        self.assertIs(observed["config"], config)
+        self.assertIs(observed["web_search"], False)
 
     def test_run_critic_review_routes_narrative_output_before_critic(self) -> None:
         marker = [dict(candidate) for candidate in self.candidates]
