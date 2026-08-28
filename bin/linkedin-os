@@ -45,6 +45,7 @@ if [ "$MODULE" = "authority_os" ]; then
 fi
 
 PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -c '
+import sys
 from authority_os import v1_gates
 v1_gates.install()
 from authority_os import v1_completion
@@ -61,6 +62,9 @@ from authority_os import actionable_diagnostics
 actionable_diagnostics.install()
 from authority_os import social_media_gate_policy
 social_media_gate_policy.install()
+if "--run-spec" not in sys.argv:
+    from authority_os import v1_runtime_tuning
+    v1_runtime_tuning.install()
 from authority_os import quality_optimizer
 quality_optimizer.install()
 from authority_os import integrated_cli
