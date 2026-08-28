@@ -39,18 +39,20 @@ class HumanReadabilityContractTests(unittest.TestCase):
             evidence=cls.evidence,
         )
 
-    def test_task_freezes_strong_hook_plus_simple_human_body_target(self) -> None:
+    def test_task_freezes_problem_benefit_hook_and_simple_human_body_target(self) -> None:
         task = human_readability._task(  # type: ignore[attr-defined]
             self.candidates,
             self.brief,
             self.evidence,
             None,
         )
-        self.assertIn("strong truthful hook", task)
-        self.assertIn("first two lines", task)
+        self.assertIn("LINE 1 MUST pair", task)
+        self.assertIn("concrete reader problem", task)
+        self.assertIn("immediate benefit", task)
+        self.assertIn("already-supplied public", task)
         self.assertIn("one primary human problem or decision", task)
         self.assertIn("Emotion must come from truthful consequence", task)
-        self.assertIn("minimum technical detail", task)
+        self.assertIn("minimum technical mechanism", task)
 
     def test_narrative_schema_disallows_drop_in_single_topic_pass(self) -> None:
         schema = human_readability._narrative_schema()  # type: ignore[attr-defined]
@@ -142,8 +144,6 @@ class HumanReadabilityContractTests(unittest.TestCase):
     def test_non_authority_goal_is_not_narrative_edited_here(self) -> None:
         other = dict(self.brief)
         other["goal"] = "reach"
-        # The input was validated under authority word limits, so check the fast path
-        # by stubbing validation and verifying the model invoker is never called.
         with patch.object(
             workflow,
             "validate_draft_candidates",
@@ -159,26 +159,35 @@ class HumanReadabilityContractTests(unittest.TestCase):
 
 
 class HumanReadabilityAssetTests(unittest.TestCase):
-    def test_v1_critic_anchors_penalize_dense_spec_like_prose(self) -> None:
+    def test_v1_critic_anchors_require_relevant_problem_benefit_hook(self) -> None:
         root = Path(__file__).resolve().parents[1]
         rubric = json.loads((root / "config" / "critic-rubric-v1.json").read_text())
         axes = rubric["axes"]
-        self.assertIn("first two lines", axes["hook_strength"]["4"])
+        self.assertIn("Line 1 pairs", axes["hook_strength"]["4"])
+        self.assertIn("target-reader problem", axes["hook_strength"]["4"])
+        self.assertIn("immediate benefit", axes["hook_strength"]["4"])
+        self.assertIn("recognizes the problem as relevant", axes["hook_strength"]["5"])
         self.assertIn("human or team consequence", axes["middle_escalation"]["4"])
         self.assertIn("technical-spec", axes["voice_fidelity"]["1"])
         self.assertIn("emotionally natural", axes["voice_fidelity"]["5"])
 
-    def test_resonance_requires_human_payoff_not_technical_sophistication(self) -> None:
+    def test_resonance_requires_immediate_human_payoff_not_technical_polish(self) -> None:
         root = Path(__file__).resolve().parents[1]
         role = (root / ".claude" / "agents" / "resonance_critic.md").read_text()
-        self.assertIn("human/team consequence", role)
-        self.assertIn("technical sophistication", role)
+        self.assertIn("line 1 pair", role)
+        self.assertIn("target-reader problem", role)
+        self.assertIn("immediate benefit", role)
+        self.assertIn("technically sophisticated", role)
         self.assertIn("truthful stakes", role)
+        self.assertIn("without clicking", role)
 
-    def test_narrative_editor_preserves_hook_and_simplifies_body(self) -> None:
+    def test_narrative_editor_preserves_a_hook_but_simplifies_its_language(self) -> None:
         root = Path(__file__).resolve().parents[1]
         role = (root / ".claude" / "agents" / "narrative_editor.md").read_text()
-        self.assertIn("Preserve a strong truthful hook", role)
+        self.assertIn("strong problem-first hook structure", role)
+        self.assertIn("Line 1 must pair", role)
+        self.assertIn("immediate benefit", role)
+        self.assertIn("compelling because it is relevant", role)
         self.assertIn("one primary human problem", role)
         self.assertIn("Translate every necessary technical mechanism", role)
 
