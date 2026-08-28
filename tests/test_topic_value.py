@@ -82,6 +82,52 @@ class TopicValueThresholdTests(unittest.TestCase):
 
 
 class TopicValueProjectionTests(unittest.TestCase):
+    def test_discovery_selector_supports_one_high_bar_pilot_topic(self) -> None:
+        item = candidate()
+        item.pop("id")
+
+        def invoker(*_args: object, **_kwargs: object) -> dict[str, object]:
+            return {"candidates": [item]}
+
+        selected = topic_value.invoke_discovery_selector(
+            {
+                "target_audience": "AI product leaders",
+                "authority_goal": "Teach practical production AI decisions",
+            },
+            [{"id": "signal-1", "title": "Useful capability"}],
+            count=1,
+            invoker=invoker,
+        )
+
+        self.assertEqual([item["id"] for item in selected], ["topic-1"])
+
+    def test_topic_ids_are_derived_locally_from_array_order(self) -> None:
+        items = []
+        for index in range(1, 4):
+            item = candidate()
+            item["id"] = "model-generated-duplicate"
+            item["source_ids"] = [f"signal-{index}"]
+            item["situation"] = f"Grounded situation {index}."
+            items.append(item)
+
+        validated = topic_value._validate_candidates(  # type: ignore[attr-defined]
+            items,
+            valid_source_ids={"signal-1", "signal-2", "signal-3"},
+            count=3,
+        )
+
+        self.assertEqual(
+            [item["id"] for item in validated],
+            ["topic-1", "topic-2", "topic-3"],
+        )
+
+    def test_topic_value_schema_does_not_delegate_ids_to_the_model(self) -> None:
+        candidate_schema = topic_value._schema(3)["properties"]["candidates"][  # type: ignore[index,attr-defined]
+            "items"
+        ]
+        self.assertNotIn("id", candidate_schema["properties"])  # type: ignore[index]
+        self.assertNotIn("id", candidate_schema["required"])  # type: ignore[index]
+
     def test_project_discovery_signals_filters_and_annotates_selected_sources(self) -> None:
         signals = [
             {"id": "signal-1", "title": "Useful change"},
@@ -102,6 +148,41 @@ class TopicValueProjectionTests(unittest.TestCase):
                 [item],
                 valid_source_ids={"signal-1"},
                 count=1,
+            )
+
+    def test_capability_selection_keeps_runnable_and_demo_evidence_together(self) -> None:
+        evidence = [
+            {
+                "id": "signal-1",
+                "title": "[Capability Launch] Local agent debugger by Mira Rao",
+            },
+            {
+                "id": "signal-2",
+                "title": "[Capability Launch] Local agent debugger by Mira Rao",
+            },
+            {"id": "signal-3", "title": "Reliability decision"},
+            {"id": "signal-4", "title": "Evaluation utility"},
+        ]
+        candidates = []
+        for index, source_id in enumerate(("signal-1", "signal-3", "signal-4"), 1):
+            item = candidate()
+            item["id"] = f"topic-{index}"
+            item["source_ids"] = [source_id]
+            item["situation"] = f"Grounded situation {index} for the target reader."
+            candidates.append(item)
+
+        def invoker(*_args: object, **_kwargs: object) -> dict[str, object]:
+            return {"candidates": candidates}
+
+        profile = {
+            "target_audience": "AI product leaders",
+            "authority_goal": "Teach practical production AI decisions",
+        }
+        with self.assertRaisesRegex(workflow.WorkflowError, "runnable artifact"):
+            topic_value.invoke_discovery_selector(
+                profile,
+                evidence,
+                invoker=invoker,
             )
 
 

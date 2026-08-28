@@ -28,6 +28,13 @@ Score 1–5 on:
 
 High gravity is valuable but is **not** a hard requirement. A medium-gravity capability discovery with immediate reader value can be worth publishing. A high-gravity abstract topic with no concrete situation is not.
 
+When a body-read signal is explicitly labelled `[Capability Launch]`, prefer it
+over an equally strong generic announcement if the capability is runnable, has a
+public demo, teaches the target reader something useful in the feed, and clears
+the same evidence and authority thresholds. Video availability changes format
+priority only. It never rescues weak reader value, thin evidence, or a promotional
+launch recap.
+
 Run two hard tests:
 
 - **Brand strip:** remove the famous company/model/person name. Does the underlying situation still contain useful information or a meaningful decision? If not, block it.

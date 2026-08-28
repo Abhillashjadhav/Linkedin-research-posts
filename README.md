@@ -183,6 +183,30 @@ Live or private drafting requires both an explicit private strategy file and exp
 
 Opportunity drafting additionally requires a validated public-safe proof manifest under ignored `data/private/`. Artifact contents and private paths are not sent to the model.
 
+### Video-backed capability priority
+
+The normal `discover` run gives priority to recent, runnable GenAI capabilities
+from credited independent builders and small teams when a public creator demo is
+available. They do not bypass the workflow: momentum, Topic Value, thesis,
+Writer, human-language editing, Critic, deterministic gates, anti-slop, artifact
+review, Visual QA, and human review remain required. A selected capability thesis
+is handed to drafting as `vertical-video`; other selected theses retain `text`.
+
+Original demo videos are linked and credited. They are never downloaded or
+republished unless explicit reuse permission is present; an independently
+recorded reproduction is the safe default.
+
+Discovery explicitly includes public Substack newsletters and publicly indexed
+X/Twitter posts or search-result snippets. The Scout never logs in, subscribes,
+provides an email address, or bypasses a paywall. Social and newsletter signals
+can establish momentum; underlying capability claims still require the normal
+primary-source and runnable-artifact checks.
+
+For a bounded experiment, `--topic-count 1` allows one qualifying situation to
+advance while preserving every quality gate. If a later stage fails after
+`momentum.json` is stored, `--resume-momentum <path>` validates that checkpoint
+and continues without repeating momentum discovery or authority-fit scoring.
+
 ## Safety model
 
 - Publishing, scheduling, messaging, and authenticated browser automation are absent.

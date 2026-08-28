@@ -104,11 +104,16 @@ class MomentumValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(workflow.WorkflowError, "basis_value=null"):
             momentum.validate_candidates(invalid)
 
-    def test_cross_platform_basis_must_match_platform_count(self) -> None:
+    def test_cross_platform_basis_is_derived_from_distinct_platforms(self) -> None:
         candidates = momentum_candidates()
         candidates[0]["cross_platform_confirmation"] = observation(5)
-        with self.assertRaisesRegex(workflow.WorkflowError, "platform count"):
-            momentum.validate_candidates(candidates)
+        validated = momentum.validate_candidates(candidates)
+        cross_platform = validated[0]["cross_platform_confirmation"]
+
+        self.assertEqual(cross_platform["basis_value"], 3)
+        self.assertEqual(cross_platform["score"], 3)
+        self.assertIn("Local reconciliation", cross_platform["evidence"])
+        self.assertIn("reported 5", cross_platform["evidence"])
 
     def test_momentum_rank_cannot_be_changed_by_authority_fit(self) -> None:
         validated = momentum.validate_candidates(momentum_candidates())
@@ -193,6 +198,9 @@ class MomentumRuntimeTests(unittest.TestCase):
         self.assertNotIn("proof_inventory", kwargs["task_prompt"])
         self.assertIn("do not assign 0-5 scores", kwargs["task_prompt"].casefold())
         self.assertIn("basis_value", kwargs["task_prompt"])
+        self.assertIn("public Substack newsletters/posts", kwargs["task_prompt"])
+        self.assertIn("publicly indexed X/Twitter", kwargs["task_prompt"])
+        self.assertIn("Multiple Substack posts count as one platform", kwargs["task_prompt"])
 
     @patch("authority_os.momentum.invoke_structured")
     def test_authority_fit_is_scored_separately_without_web(self, invoke: object) -> None:
@@ -235,6 +243,14 @@ class MomentumRuntimeTests(unittest.TestCase):
         prompt = invoke.call_args.kwargs["task_prompt"]  # type: ignore[attr-defined]
         self.assertIn("momentum-qualified topic candidates", prompt)
         self.assertIn("Agent coordination", prompt)
+        self.assertIn("[Capability Launch]", prompt)
+        self.assertIn("same exact title", prompt)
+        self.assertIn("runnable artifact", prompt)
+        self.assertIn("original creator demo page", prompt)
+        self.assertIn("never download", prompt)
+        self.assertIn("public Substack newsletters", prompt)
+        self.assertIn("publicly indexed X/Twitter", prompt)
+        self.assertIn("not independent verification", prompt)
 
 
 if __name__ == "__main__":

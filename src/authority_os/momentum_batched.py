@@ -127,7 +127,7 @@ def _validate_batch(raw: object, seeds: Sequence[Mapping[str, str]]) -> list[dic
 def discover_topics(topic: str | None, days: int, as_of: str) -> list[dict[str, str]]:
     prompt = f"""Find exactly ten materially distinct GenAI/product conversations that appear active during the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, agents, evaluations, reliability, context engineering, enterprise AI, developer tooling, model economics and AI product management'}.
-Use free public-web search only. This first pass is intentionally shallow: identify the ten candidate conversations and give one concise why_now signal for each. Do not collect the full five-axis momentum scorecard yet. Prefer topics with repeated independent discussion rather than a single viral post. Do not use authenticated sessions, paid APIs, private data, credentials, or local files. Use topic-1 through topic-10 exactly once. Return topic seeds only; do not write a post or use the private authority profile."""
+Use free public-web search only. Explicitly search public Substack newsletters and publicly indexed X/Twitter posts or search-result snippets alongside the other public surfaces. This first pass is intentionally shallow: identify the ten candidate conversations and give one concise why_now signal for each. Do not collect the full five-axis momentum scorecard yet. Prefer topics with repeated independent discussion rather than a single viral post. Because the channel teaches practical GenAI, when defensible reserve at least three seeds for recent capabilities launched by named independent builders or small teams that have both a public creator demo video and a runnable public repository or product. Those seeds still need observable repeated discussion and receive no momentum exception. Do not force a launch seed when the demo, runnable artifact, attribution, recency, or public conversation is missing. Do not use authenticated sessions, paid APIs, private data, credentials, or local files. Do not subscribe, provide an email address, authenticate, or bypass a paywall to access Substack or X/Twitter content. Use topic-1 through topic-10 exactly once. Return topic seeds only; do not write a post or use the private authority profile."""
     result = invoke_structured(
         config=base.MOMENTUM_MODEL,
         role_prompt=base._role("scout"),
@@ -154,7 +154,7 @@ UNTRUSTED_TOPIC_SEEDS
 {json.dumps(list(seeds), indent=2, sort_keys=True)}
 END_UNTRUSTED_TOPIC_SEEDS
 
-Use only free public-web evidence available through search/fetch. Inspect multiple independent surfaces where observable: Google Trends public pages, Hacker News, Reddit, YouTube, publicly indexed X/Twitter or LinkedIn pages/search snippets, primary-source launches/research, and reputable reporting. Do not use authenticated sessions, paid APIs, private data, engagement APIs, credentials, or local files.
+Use only free public-web evidence available through search/fetch. Inspect multiple independent surfaces where observable: Google Trends public pages, Hacker News, Reddit, YouTube, public Substack newsletters/posts, publicly indexed X/Twitter or LinkedIn pages/search snippets, primary-source launches/research, and reputable reporting. Multiple Substack posts count as one platform for cross-platform confirmation. Do not use authenticated sessions, paid APIs, private data, engagement APIs, credentials, local files, subscriptions, email signup, or paywall circumvention.
 
 For every supplied topic report observed evidence for five axes. DO NOT assign 0-5 scores; Python applies the fixed rubric locally. Return basis_value only when the underlying number is actually observable:
 - conversation_breadth = count of independent public authors/sources discussing the same underlying topic;
@@ -162,6 +162,8 @@ For every supplied topic report observed evidence for five axes. DO NOT assign 0
 - acceleration = percentage growth in a comparable public signal in the recent 24-72h versus an earlier part of the window; if no comparable before/after measurement is visible, mark UNKNOWN;
 - cross_platform_confirmation = count of distinct public surfaces in the platforms list carrying the same conversation;
 - freshness = age in hours of the newest substantive public signal as of {as_of}.
+
+For a capability-launch seed, include the creator-controlled launch source, runnable artifact, and original demo-video page among representative_urls when each is publicly observable. A creator demo is one primary launch source, not independent confirmation; score breadth and cross-platform confirmation only from genuinely independent public discussion.
 
 Each axis must return OBSERVED with a non-negative numeric basis_value and concrete evidence, or UNKNOWN with basis_value null and an explanation. Missing evidence is UNKNOWN, never zero. Never infer exact X/Twitter volume, ranking, or '#1 hottest' status from web search. Provide representative public HTTPS URLs and observed platforms. Return evidence only; do not write a post or use the private authority profile."""
     result = invoke_structured(
