@@ -10,7 +10,12 @@ fi
 
 if [ "${1:-}" = "discover" ]; then
   shift
-  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.daily_discovery_cli "$@"
+  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -c '
+from authority_os import v1_gates
+v1_gates.install()
+from authority_os import daily_discovery_cli
+raise SystemExit(daily_discovery_cli.main())
+' "$@"
 fi
 
 if [ "${1:-}" = "record-spine-performance" ]; then
@@ -26,11 +31,20 @@ fi
 MODULE="authority_os.integrated_cli"
 for ARG in "$@"; do
   if [ "$ARG" = "--dry-run" ]; then
-    # Preserve the complete deterministic fixture diagnostics used by public
-    # smoke tests. High-bar and anti-slop suppression apply only to live drafting.
+    # Preserve the complete deterministic V0 fixture diagnostics used by public
+    # smoke tests. The V1 overlay applies only to live discovery/drafting.
     MODULE="authority_os"
     break
   fi
 done
 
-PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m "$MODULE" "$@"
+if [ "$MODULE" = "authority_os" ]; then
+  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m "$MODULE" "$@"
+fi
+
+PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -c '
+from authority_os import v1_gates
+v1_gates.install()
+from authority_os import integrated_cli
+raise SystemExit(integrated_cli.main())
+' "$@"
