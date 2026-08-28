@@ -15,6 +15,8 @@ from authority_os import v1_gates
 v1_gates.install()
 from authority_os import v1_completion
 v1_completion.install()
+from authority_os import topic_value_id_contract
+topic_value_id_contract.install()
 from authority_os import daily_discovery_cli
 raise SystemExit(daily_discovery_cli.main())
 ' "$@"
@@ -49,6 +51,8 @@ from authority_os import v1_gates
 v1_gates.install()
 from authority_os import v1_completion
 v1_completion.install()
+from authority_os import topic_value_id_contract
+topic_value_id_contract.install()
 from authority_os import quality_optimizer
 quality_optimizer.install()
 from authority_os import integrated_cli
