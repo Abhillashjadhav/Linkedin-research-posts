@@ -101,6 +101,15 @@ class V1CompletionTests(unittest.TestCase):
         self.assertEqual(row["status"], "PASS")
         self.assertEqual(row["evidence"]["max_axis_disagreement"], 1)
 
+    def test_empty_reproducibility_sample_is_blocked_not_reported_stable(self) -> None:
+        v1_completion._record_reproducibility([], [], runtime="test-empty")
+        row = v1_completion._read_jsonl(
+            self.root / v1_completion.DECISION_LEDGER_NAME
+        )[0]
+        self.assertEqual(row["contract"], "critic_reproducibility")
+        self.assertEqual(row["mode"], "shadow")
+        self.assertEqual(row["status"], "BLOCKED")
+
     def test_calibration_snapshot_combines_leading_and_lagging_signals_without_mutating_rubric(self) -> None:
         v1_completion.record_decision(
             {
