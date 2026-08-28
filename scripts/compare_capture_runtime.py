@@ -59,6 +59,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not draft_args or draft_args[0] != "draft":
         raise SystemExit("comparison capture requires Authority OS draft arguments")
 
+    quality_optimizer = None
     if args.label == "v1":
         from authority_os import v1_gates
 
@@ -66,11 +67,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         from authority_os import v1_completion
 
         v1_completion.install()
-        from authority_os import quality_optimizer
+        from authority_os import quality_optimizer as optimizer
 
-        quality_optimizer.install()
+        optimizer.install()
+        quality_optimizer = optimizer
 
     from authority_os import integrated_cli, quality_cli
+
+    if quality_optimizer is not None:
+        quality_optimizer.wire_integrated_dispatch(integrated_cli)
 
     cycles: list[dict[str, object]] = []
     feedback_by_cycle: dict[int, object] = {}
