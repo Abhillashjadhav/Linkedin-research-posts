@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "contracts": {
+    "atomic_value_novelty": {
+      "mode": "enforce",
+      "threshold": 0.72
+    },
+    "research_trust": {
+      "mode": "enforce"
+    },
+    "claim_body_support": {
+      "mode": "shadow"
+    },
+    "critic_anchor_integrity": {
+      "mode": "enforce"
+    },
+    "solution_plausibility": {
+      "mode": "shadow"
+    },
+    "reader_attention": {
+      "mode": "shadow"
+    }
+  }
+}
