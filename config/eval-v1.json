@@ -18,7 +18,7 @@
       "mode": "shadow"
     },
     "reader_attention": {
-      "mode": "enforce"
+      "mode": "shadow"
     }
   }
 }
