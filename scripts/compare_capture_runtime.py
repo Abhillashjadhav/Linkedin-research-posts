@@ -66,6 +66,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         from authority_os import v1_completion
 
         v1_completion.install()
+        from authority_os import quality_optimizer
+
+        quality_optimizer.install()
 
     from authority_os import integrated_cli, quality_cli
 
