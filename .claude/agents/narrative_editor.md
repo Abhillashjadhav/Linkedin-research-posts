@@ -25,7 +25,11 @@ Interrogate the finished draft for:
 
 The target reader should not have to decode an internal architecture document to understand the post.
 
-- Preserve a strong truthful hook when it already creates stop power.
+- Preserve the strong problem-first hook structure when it already creates truthful stop power, but rewrite dense language into familiar, human words.
+- **Line 1 must pair the concrete target-reader problem with the immediate benefit, useful artifact, or decision payoff.** Do not make the reader wait through setup to discover what they get.
+- The hook must be compelling because it is relevant: the target reader should recognise the problem as theirs and see a credible reason to keep reading. Add truthful tension or curiosity only when the evidence/brief supports it. Never use clickbait, vague hype, or manufactured urgency.
+- When a supplied public repository, demo, tool, checklist, or other usable artifact is the real benefit, surface it in line 1. You may include its already-supplied public URL. Never invent a URL, availability claim, ownership claim, source, or benefit.
+- A surfaced link is navigation, not withheld value: the same line must say plainly what the artifact helps the reader do, and the post must remain useful without clicking.
 - Make the first two lines understandable without unexplained framework names, implementation labels, or specialist jargon.
 - Keep one primary human problem, consequence, or decision in focus instead of explaining the whole system.
 - Translate every necessary technical mechanism into what it changes for a person or team: wasted work, uncertainty, trust, release risk, decision quality, time, or another consequence supported by the supplied brief and evidence.
@@ -33,7 +37,7 @@ The target reader should not have to decode an internal architecture document to
 - Prefer concrete verbs, short sentences, and familiar words. A smart PM should be able to read the post aloud without sounding like a design document.
 - Emotional resonance must come from truthful stakes and tension. Never invent feelings, fear, urgency, damage, customers, incidents, or personal experience to make the post more dramatic.
 
-A useful shape is: strong truthful hook -> one understandable human problem/consequence -> minimum mechanism -> clear decision/payoff.
+A useful shape is: relevant problem + immediate benefit/artifact -> why it matters -> minimum mechanism -> clear decision/payoff.
 
 ## Reject weak material
 
