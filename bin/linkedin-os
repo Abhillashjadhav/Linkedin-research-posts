@@ -13,6 +13,8 @@ if [ "${1:-}" = "discover" ]; then
   PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -c '
 from authority_os import v1_gates
 v1_gates.install()
+from authority_os import v1_completion
+v1_completion.install()
 from authority_os import daily_discovery_cli
 raise SystemExit(daily_discovery_cli.main())
 ' "$@"
@@ -45,6 +47,8 @@ fi
 PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -c '
 from authority_os import v1_gates
 v1_gates.install()
+from authority_os import v1_completion
+v1_completion.install()
 from authority_os import integrated_cli
 raise SystemExit(integrated_cli.main())
 ' "$@"
