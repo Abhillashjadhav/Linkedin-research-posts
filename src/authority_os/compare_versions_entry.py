@@ -1,8 +1,8 @@
 """Stable local entry point for the V0/V1 comparison runner.
 
-A fresh clone may have the frozen baseline only as an origin-tracking ref. Keep the
-comparison implementation unchanged and resolve the requested ref against both the
-local namespace and the matching ``origin/`` namespace before starting model work.
+A fresh clone may have the frozen baseline only as an origin-tracking ref. The entry
+point also installs comparison-only observation hooks so a policy-blocked version is
+preserved as evidence and the experiment can continue to the other version.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Sequence
 
 from . import compare_versions as base
+from . import compare_versions_blocked
 
 
 def resolve_ref(root: Path, ref: str) -> str:
@@ -49,8 +50,9 @@ def resolve_ref(root: Path, ref: str) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    # run_comparison reads resolve_ref from the compare_versions module at runtime.
+    # run_comparison reads these functions from compare_versions at runtime.
     base.resolve_ref = resolve_ref  # type: ignore[assignment]
+    compare_versions_blocked.install()
     return base.main(argv)
 
 
