@@ -54,6 +54,14 @@ class V1RuntimeTuningTests(unittest.TestCase):
         self.assertEqual(models.narrative_editor.reasoning, "high")
         self.assertEqual(models.critic.reasoning, "high")
 
+    def test_selector_and_resonance_ultra_configs_are_downgraded_to_high(self) -> None:
+        topic_config = v1_runtime_tuning._fast_selection_model_config("codex", "gpt-5.6-sol", "ultra")
+        resonance_config = v1_runtime_tuning._fast_selection_model_config("codex", "gpt-5.6-sol", "max")
+        already_high = v1_runtime_tuning._fast_selection_model_config("codex", "gpt-5.6-sol", "high")
+        self.assertEqual(topic_config.reasoning, "high")
+        self.assertEqual(resonance_config.reasoning, "high")
+        self.assertEqual(already_high.reasoning, "high")
+
 
 if __name__ == "__main__":
     unittest.main()
