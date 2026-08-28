@@ -1,7 +1,7 @@
 """V1 runtime contract for deterministic Topic Value candidate IDs.
 
 Topic IDs are transport bookkeeping, but the base validator requires the model to return
-``topic-1..topic-N`` exactly.  Keep that fail-closed validator and make the structured
+``topic-1..topic-N`` exactly. Keep that fail-closed validator and make the structured
 schema/prompt express the same contract so a semantically valid selection cannot fail only
 because the model invented a different label.
 """
@@ -20,7 +20,9 @@ _ORIGINAL_DEFAULT_INVOKER = topic_value._default_invoker  # type: ignore[attr-de
 
 def allowed_ids(count: int) -> tuple[str, ...]:
     if type(count) is not int or count < 1:
-        raise workflow.WorkflowError("Topic Value candidate count must be a positive integer.")
+        raise workflow.WorkflowError(
+            "Topic Value candidate count must be a positive integer."
+        )
     return tuple(f"topic-{index}" for index in range(1, count + 1))
 
 
@@ -39,9 +41,16 @@ def schema_with_exact_ids(count: int) -> dict[str, object]:
         raise workflow.WorkflowError("Topic Value candidate item schema is malformed.")
     item_properties = item_schema.get("properties")
     required = item_schema.get("required")
-    if not isinstance(item_properties, dict) or not isinstance(required, list) or "id" not in required:
+    if (
+        not isinstance(item_properties, dict)
+        or not isinstance(required, list)
+        or "id" not in required
+    ):
         raise workflow.WorkflowError("Topic Value candidate ID schema is unavailable.")
-    item_properties["id"] = {"type": "string", "enum": list(allowed_ids(count))}
+    item_properties["id"] = {
+        "type": "string",
+        "enum": list(allowed_ids(count)),
+    }
     return schema
 
 
@@ -52,7 +61,7 @@ def invoke_selector(
     evidence: Sequence[Mapping[str, object]],
     count: int,
     candidate_hints: Sequence[Mapping[str, object]] = (),
-    invoker= _ORIGINAL_DEFAULT_INVOKER,
+    invoker=_ORIGINAL_DEFAULT_INVOKER,
 ) -> list[dict[str, object]]:
     """Add the exact ID contract to the model task while preserving base validation."""
 
@@ -64,7 +73,8 @@ def invoke_selector(
             f"{task_prompt}\n\n"
             "CANDIDATE_ID_CONTRACT\n"
             f"Return exactly these candidate IDs once each and no others: {exact}. "
-            "Candidate IDs are bookkeeping labels; do not rename them based on the topic, situation, or source."
+            "Candidate IDs are bookkeeping labels; do not rename them based on the "
+            "topic, situation, or source."
         )
         return invoker(stage, config, role_prompt, task, schema)
 
