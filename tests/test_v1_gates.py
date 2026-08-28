@@ -37,7 +37,7 @@ def test_v1_config_is_per_contract_and_reversible() -> None:
     assert contracts["research_trust"]["mode"] == "enforce"
     assert contracts["critic_anchor_integrity"]["mode"] == "enforce"
     assert contracts["solution_plausibility"]["mode"] == "shadow"
-    assert contracts["reader_attention"]["mode"] == "enforce"
+    assert contracts["reader_attention"]["mode"] == "shadow"
 
 
 def test_critic_rubric_has_all_twenty_five_behavioral_anchors() -> None:
@@ -123,9 +123,6 @@ def test_anchored_critic_requires_exact_artifact_evidence(tmp_path: Path, monkey
     assert validated[0]["raw_total"] == 20
     assert (tmp_path / v1_gates.CRITIC_AUDIT_NAME).is_file()
 
-    # The legacy scorer calls validation once on model output, then again on its sanitized
-    # score-only envelope. The second pass is accepted only because the exact scores/text
-    # were already anchor-validated in this process.
     sanitized = {"candidate_id": "candidate-1", **{axis: 4 for axis in workflow.CRITIC_AXES}}
     second = v1_gates._validate_critic_scorecards_v1([sanitized], [candidate])
     assert second[0]["raw_total"] == 20
