@@ -550,9 +550,17 @@ def _record_reproducibility(first: object, second: object, *, runtime: str) -> N
     if settings.get("mode") == "off":
         return
     try:
-        if not isinstance(first, Sequence) or isinstance(first, (str, bytes)):
+        if (
+            not isinstance(first, Sequence)
+            or isinstance(first, (str, bytes))
+            or not first
+        ):
             raise workflow.WorkflowError("First Critic reproducibility sample is malformed.")
-        if not isinstance(second, Sequence) or isinstance(second, (str, bytes)):
+        if (
+            not isinstance(second, Sequence)
+            or isinstance(second, (str, bytes))
+            or not second
+        ):
             raise workflow.WorkflowError("Second Critic reproducibility sample is malformed.")
         result = v1_gates.score_disagreement(first, second)
         limit = int(settings["max_axis_delta"])
