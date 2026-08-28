@@ -6,7 +6,6 @@ import json
 from typing import Mapping, Sequence
 
 from . import daily_cli, momentum_batched
-from .model_runtime import invoke_structured
 
 _INSTALLED = False
 _ORIGINAL_ROLE = daily_cli._role
@@ -14,13 +13,14 @@ _ORIGINAL_ROLE = daily_cli._role
 SURFACE_GUIDANCE = """
 
 DISCOVERY_SURFACE_COVERAGE:
-Attempt broad public-web coverage across Google/Google Trends, Reddit, Hacker News,
-YouTube, publicly indexed X/Twitter, publicly indexed LinkedIn, Substack/public
-newsletters, primary company/research sources, and reputable technology/news
-reporting. Public indexed LinkedIn/X is allowed for discovery; authenticated,
-private, login-gated, cookie/session-based access is forbidden. Do not force a
-signal from every surface, but do not silently collapse discovery to only one or
-two source families when broader public evidence is available.
+Attempt broad public-web coverage across Google Search and Google Trends/trending
+topics, Reddit, Hacker News, YouTube, publicly indexed X/Twitter, publicly indexed
+LinkedIn, Substack/public newsletters, primary company/research sources, and
+reputable technology/news reporting. Public indexed LinkedIn/X is allowed for
+discovery; authenticated, private, login-gated, cookie/session-based access is
+forbidden. Do not force a signal from every surface, but do not silently collapse
+discovery to only one or two source families when broader public evidence is
+available.
 """
 
 
@@ -46,7 +46,7 @@ UNTRUSTED_TOPIC_SEEDS
 {json.dumps(list(seeds), indent=2, sort_keys=True)}
 END_UNTRUSTED_TOPIC_SEEDS
 
-Use only free public-web evidence available through search/fetch. Attempt broad coverage across Google/Google Trends, Hacker News, Reddit, YouTube, publicly indexed X/Twitter, publicly indexed LinkedIn, Substack/public newsletters, primary-source launches/research, and reputable reporting. Public indexed LinkedIn/X is allowed for discovery; authenticated/private/login-gated access is forbidden. Do not force evidence from every surface, but do not silently restrict the search to only one or two source families when broader public evidence is available. Do not use authenticated sessions, paid APIs, private data, engagement APIs, credentials, or local files.
+Use only free public-web evidence available through search/fetch. Attempt broad coverage across Google Search and Google Trends/trending topics, Hacker News, Reddit, YouTube, publicly indexed X/Twitter, publicly indexed LinkedIn, Substack/public newsletters, primary-source launches/research, and reputable reporting. Public indexed LinkedIn/X is allowed for discovery; authenticated/private/login-gated access is forbidden. Do not force evidence from every surface, but do not silently restrict the search to only one or two source families when broader public evidence is available. Do not use authenticated sessions, paid APIs, private data, engagement APIs, credentials, or local files.
 
 For every supplied topic report observed evidence for five axes. DO NOT assign 0-5 scores; Python applies the fixed rubric locally. Return basis_value only when the underlying number is actually observable:
 - conversation_breadth = count of independent public authors/sources discussing the same underlying topic;
@@ -56,7 +56,7 @@ For every supplied topic report observed evidence for five axes. DO NOT assign 0
 - freshness = age in hours of the newest substantive public signal as of {as_of}.
 
 Each axis must return OBSERVED with a non-negative numeric basis_value and concrete evidence, or UNKNOWN with basis_value null and an explanation. Missing evidence is UNKNOWN, never zero. Never infer exact X/Twitter volume, ranking, or '#1 hottest' status from web search. Provide representative public HTTPS URLs and observed platforms. Return evidence only; do not write a post or use the private authority profile."""
-    result = invoke_structured(
+    result = momentum_batched.invoke_structured(
         config=momentum_batched.base.MOMENTUM_MODEL,
         role_prompt=momentum_batched.base._role("scout"),
         task_prompt=prompt,
