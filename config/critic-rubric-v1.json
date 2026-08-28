@@ -3,39 +3,39 @@
   "rubric_id": "linkedin-authority-critic-v1",
   "axes": {
     "hook_strength": {
-      "1": "Generic or abstract opening with no concrete situation, useful tension, or reason for the target reader to continue.",
-      "2": "The topic is recognizable, but the opening is broad, expected, or weakly relevant; the reason to continue is unclear or delayed.",
-      "3": "A concrete situation or problem is understandable, but the stake, tension, utility, or novelty is only moderate and does not create strong pull.",
-      "4": "The opening immediately presents a concrete, audience-relevant situation plus truthful tension, consequence, or utility that gives the reader a clear reason to continue.",
-      "5": "The opening is exceptionally clear, specific, and relevant, creates strong truthful pull without hype or manufactured stakes, and sets up a promise the body actually fulfills."
+      "1": "Generic, abstract, jargon-first, or architecture-first opening with no concrete target-reader problem, immediate value, or reason to continue.",
+      "2": "The topic is recognizable, but the opening is broad, expected, technically dense, weakly relevant, or makes the reader wait to understand what they get.",
+      "3": "A concrete situation or problem is understandable, but the immediate benefit, human stake, tension, utility, or novelty is delayed, generic, or obscured by technical framing.",
+      "4": "Line 1 pairs a concrete target-reader problem with an immediate benefit, usable artifact, or decision payoff in plain language; the relevance is obvious and truthful tension or curiosity creates a clear reason to continue without hype.",
+      "5": "Line 1 has exceptional truthful stop power: the target reader instantly recognizes the problem as relevant, immediately sees the concrete benefit/artifact/payoff, and feels a strong evidence-earned need to continue; the body fully delivers that promise without clickbait or manufactured stakes."
     },
     "middle_escalation": {
-      "1": "The body is mostly a list, summary, repetition, or disconnected observations; understanding does not deepen as the post progresses.",
-      "2": "There is some useful detail, but the body is flat or repetitive and adds little mechanism, trade-off, consequence, or decision depth.",
-      "3": "The body forms a coherent explanation and adds at least one meaningful mechanism, implication, or trade-off, but the progression is uneven or limited.",
-      "4": "Each major beat advances the reader from situation to mechanism, trade-off, consequence, or decision with little filler and clear cumulative understanding.",
-      "5": "The body is tightly sequenced so every paragraph adds a new necessary layer of mechanism, consequence, trade-off, or decision; removing a major beat would materially weaken the argument."
+      "1": "The body is mostly a list, specification, architecture walkthrough, summary, repetition, or disconnected observations; understanding does not deepen and technical detail is not translated into why it matters.",
+      "2": "There is some useful detail, but the body is flat, jargon-heavy, or repetitive and adds little understandable mechanism, trade-off, consequence, or decision depth.",
+      "3": "The body forms a coherent explanation and adds at least one meaningful mechanism, implication, or trade-off, but progression is uneven or some technical detail still makes the reader work too hard.",
+      "4": "Each major beat advances the reader from situation to only the necessary mechanism and then to a concrete human or team consequence, trade-off, or decision with little filler and no unexplained jargon.",
+      "5": "The body is tightly sequenced and unusually easy to follow: every paragraph adds one necessary layer of mechanism, consequence, trade-off, or decision; technical concepts are translated into plain-language impact and removing a major beat would materially weaken the argument."
     },
     "earned_closer": {
       "1": "The ending is a generic CTA, generic question, slogan, or unrelated kicker that is not earned by the body.",
       "2": "The ending mostly restates the post or uses familiar engagement bait such as a generic invitation for opinions.",
       "3": "The ending is relevant and understandable, but predictable; it summarizes or suggests an action without sharply crystallizing the post's value.",
-      "4": "The ending delivers a specific takeaway, decision, implication, or question that follows naturally from the evidence and argument.",
-      "5": "The ending concisely crystallizes the post's atomic value or decision and leaves a credible thought, implication, or question that feels inevitable rather than manufactured."
+      "4": "The ending delivers a specific takeaway, decision, implication, or question that follows naturally from the evidence, human stake, and argument.",
+      "5": "The ending concisely crystallizes the post's atomic value or decision in language a reader could carry into work, leaving a credible implication or question that feels inevitable rather than manufactured."
     },
     "specificity_and_source_quality": {
       "1": "The post is largely abstract or generic, and consequential factual claims are difficult to inspect or depend on weak, social-only, title-only, or unsupported evidence.",
       "2": "Some concrete details exist, but the central situation or claim remains weakly inspectable, generic, or only partially supported by the supplied evidence.",
-      "3": "The reader can picture the core situation and inspect the main claim through supplied evidence, but mechanism detail, source quality, or precision is incomplete.",
-      "4": "The post contains a concrete situation and mechanism, and its consequential factual claims are supported by body-read credible evidence without false precision.",
-      "5": "The situation is highly concrete and strongly inspectable through primary or reputable evidence, artifacts, measured results, or clear mechanisms; every consequential factual detail is traceable and numbers appear only when they materially help the reader."
+      "3": "The reader can picture the core situation and inspect the main claim through supplied evidence, but mechanism detail, source quality, precision, or translation to an understandable consequence is incomplete.",
+      "4": "The post contains a concrete situation and enough mechanism to explain it, and consequential factual claims are supported by body-read credible evidence without false precision; technical nouns alone do not count as specificity.",
+      "5": "The situation is highly concrete and strongly inspectable through primary or reputable evidence, artifacts, measured results, or clear mechanisms; every consequential factual detail is traceable, numbers appear only when they materially help, and specificity makes the post easier rather than denser."
     },
     "voice_fidelity": {
-      "1": "The prose reads as generic corporate or AI-generated copy, with canned language, uniform rhythm, or a voice that clearly conflicts with the supplied voice anchors.",
-      "2": "The prose is polished but generic; noticeable canned phrasing, uniform cadence, over-formality, or unnatural vocabulary keeps it from sounding like the author.",
-      "3": "The prose is mostly natural, direct, and compatible with the voice anchors, but still contains some generic phrasing, rhythm, or emotional flatness.",
-      "4": "The prose is recognizably direct, concise, emotionally natural, and compatible with the author's Indian-English professional voice, with varied cadence and no obvious AI-slop pattern.",
-      "5": "The prose feels strongly authentic to the supplied voice anchors: direct, concise, specific, emotionally natural, varied in cadence, and free of forced jargon, canned AI patterns, or imitation artifacts."
+      "1": "The prose reads as generic corporate, technical-spec, or AI-generated copy, with canned language, uniform rhythm, jargon accumulation, or a voice that clearly conflicts with the supplied voice anchors.",
+      "2": "The prose is polished but generic or over-technical; noticeable canned phrasing, uniform cadence, over-formality, jargon, or emotional distance keeps it from sounding like the author.",
+      "3": "The prose is mostly natural, direct, and compatible with the voice anchors, but still contains some generic phrasing, unnecessary terminology, rhythm problems, or emotional flatness.",
+      "4": "The prose is recognizably direct, concise, plain-spoken, emotionally natural, and compatible with the author's Indian-English professional voice, with varied cadence, low jargon, and no obvious AI-slop pattern.",
+      "5": "The prose feels strongly authentic to the supplied voice anchors: direct, concise, specific, human, emotionally natural without performance, easy to read aloud, varied in cadence, and free of forced jargon, canned AI patterns, or imitation artifacts."
     }
   }
 }

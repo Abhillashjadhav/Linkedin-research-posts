@@ -53,6 +53,8 @@ from authority_os import v1_completion
 v1_completion.install()
 from authority_os import topic_value_id_contract
 topic_value_id_contract.install()
+from authority_os import human_readability
+human_readability.install()
 from authority_os import quality_optimizer
 quality_optimizer.install()
 from authority_os import integrated_cli

@@ -70,6 +70,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         from authority_os import topic_value_id_contract
 
         topic_value_id_contract.install()
+        from authority_os import human_readability
+
+        human_readability.install()
         from authority_os import quality_optimizer as optimizer
 
         optimizer.install()
