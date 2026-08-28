@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from . import campaign, quality_optimizer
+from . import campaign, quality_optimizer, resonance, topic_value
 from .model_runtime import ModelConfig
 
 _INSTALLED = False
 _ORIGINAL_PREFERRED = campaign.StageModels.preferred
+_ORIGINAL_TOPIC_VALUE_MODEL_CONFIG = topic_value.ModelConfig
+_ORIGINAL_RESONANCE_MODEL_CONFIG = resonance.ModelConfig
 
 
 def _failed_gates_only(candidate):
@@ -19,13 +21,13 @@ def _failed_gates_only(candidate):
 
 
 def _preferred_fast_single_topic(cls):
-    """Keep model quality high while avoiding max/ultra reasoning on the live social path."""
+    """Keep generation cheaper than judgment while avoiding ultra reasoning."""
     original = _ORIGINAL_PREFERRED()
     sol = original.writer.model
     return campaign.StageModels(
         writer=ModelConfig("codex", sol, "high"),
         narrative_editor=ModelConfig("codex", sol, "high"),
-        critic=ModelConfig("codex", sol, "high"),
+        critic=ModelConfig("codex", sol, "max"),
         artisanal_editor=original.artisanal_editor,
         comment_writer=original.comment_writer,
         comment_reviewer=original.comment_reviewer,
@@ -34,11 +36,19 @@ def _preferred_fast_single_topic(cls):
     )
 
 
+def _selection_model_config(runtime: str, model: str, reasoning: str) -> ModelConfig:
+    """Use max reasoning for selector/resonance judgment, never ultra."""
+    tuned = "max" if reasoning in {"max", "ultra"} else reasoning
+    return ModelConfig(runtime, model, tuned)
+
+
 def install() -> None:
-    """Install V1 social repair cleanup plus the single-topic fast reasoning profile."""
+    """Install V1 social repair cleanup plus the complete single-topic reasoning profile."""
     global _INSTALLED
     if _INSTALLED:
         return
     quality_optimizer._failed_gates = _failed_gates_only  # type: ignore[attr-defined,assignment]
     campaign.StageModels.preferred = classmethod(_preferred_fast_single_topic)  # type: ignore[method-assign]
+    topic_value.ModelConfig = _selection_model_config  # type: ignore[assignment]
+    resonance.ModelConfig = _selection_model_config  # type: ignore[assignment]
     _INSTALLED = True
