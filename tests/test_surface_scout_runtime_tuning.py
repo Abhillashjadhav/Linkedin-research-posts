@@ -13,7 +13,7 @@ class SurfaceScoutRuntimeTuningTests(unittest.TestCase):
         tuning.install()
         self.assertEqual(surface.SURFACE_TIMEOUT, 180)
         self.assertEqual(tuning.SURFACE_TIMEOUT, 180)
-        self.assertEqual(surface.MODEL.reasoning_effort, "medium")
+        self.assertEqual(surface.MODEL.reasoning, "medium")
         self.assertIs(surface._run_surface, tuning._run_surface)
 
     def test_shallow_schema_does_not_request_acceleration(self) -> None:
