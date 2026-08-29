@@ -129,15 +129,21 @@ def resolve_ref(root: Path, ref: str) -> str:
     return sha
 
 
-def build_research_command(*, topic: str, private_research: str) -> tuple[str, ...]:
-    return (
+def build_research_command(
+    *,
+    topic: str,
+    private_research: str,
+    explicit_frozen_research: bool = False,
+) -> tuple[str, ...]:
+    command = (
         "./bin/linkedin-os",
         "research",
         "--input",
         private_research,
-        "--topic",
-        topic,
     )
+    if explicit_frozen_research:
+        return command
+    return (*command, "--topic", topic)
 
 
 def build_draft_command(

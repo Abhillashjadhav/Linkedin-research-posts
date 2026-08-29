@@ -262,6 +262,7 @@ def run_version(
         base.build_research_command(
             topic=topic,
             private_research="data/private/comparison-input/research.json",
+            explicit_frozen_research=True,
         ),
         cwd=worktree,
         log_path=version_result / "research.log",
@@ -294,6 +295,10 @@ def run_version(
             label,
             "--diagnostics",
             str(diagnostics_path),
+            "--frozen-research",
+            "data/private/comparison-input/research.json",
+            "--frozen-topic",
+            topic,
             "--",
             *draft_args[1:],
         ),
