@@ -57,6 +57,24 @@ class CompareVersionsTests(unittest.TestCase):
             ),
         )
 
+    def test_explicit_frozen_research_bypasses_import_topic_inference(self) -> None:
+        command = compare_versions.build_research_command(
+            topic="one topic spanning separately titled records",
+            private_research="data/private/comparison-input/research.json",
+            explicit_frozen_research=True,
+        )
+        self.assertEqual(
+            command,
+            (
+                "./bin/linkedin-os",
+                "research",
+                "--input",
+                "data/private/comparison-input/research.json",
+            ),
+        )
+        self.assertNotIn("discover", command)
+        self.assertNotIn("--allow-web-research", command)
+
     def test_package_path_must_be_single_relative_safe_path(self) -> None:
         stdout = "Content package: outputs/2026-08-28-example\n"
         self.assertEqual(
