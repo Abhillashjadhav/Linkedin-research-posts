@@ -228,10 +228,10 @@ def _prepare_result_root(root: Path) -> None:
 
 
 def _provider_preflight() -> None:
-    missing = [name for name in ("claude", "codex") if shutil.which(name) is None]
+    missing = [name for name in ("codex",) if shutil.which(name) is None]
     if missing:
         raise ComparisonError(
-            "Live comparison requires the model CLIs used by the repository. Missing: "
+            "Live comparison requires the Codex CLI used by both comparison versions. Missing: "
             + ", ".join(missing)
             + ". Authenticate them locally before running the comparison."
         )

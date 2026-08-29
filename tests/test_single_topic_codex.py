@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from authority_os import single_topic_codex, workflow
+from scripts import compare_capture_runtime
+from authority_os import campaign, model_runtime, resonance, single_topic_codex, topic_value, workflow
 
 
 class SingleTopicCodexRuntimeTests(unittest.TestCase):
@@ -155,6 +156,84 @@ class SingleTopicCodexRuntimeTests(unittest.TestCase):
             capture.index("single_topic_codex.install()"),
             capture.index("human_readability.install()"),
         )
+
+    def test_v0_comparison_installs_only_the_codex_provider_adapter(self) -> None:
+        original_writer = workflow.invoke_writer
+        original_critic = workflow.invoke_critic
+        original_revision = workflow.invoke_writer_revision
+        original_preferred = campaign.StageModels.__dict__["preferred"]
+        original_features = model_runtime.NON_WEB_TOOL_FEATURES
+        try:
+            module = compare_capture_runtime._install_v0_codex_provider()  # type: ignore[attr-defined]
+            compare_capture_runtime._lock_comparison_codex_runtime(  # type: ignore[attr-defined]
+                include_v1_selection=False
+            )
+            self.assertIs(workflow.invoke_writer, module._invoke_writer_codex)  # type: ignore[attr-defined]
+            self.assertIs(workflow.invoke_critic, module._invoke_critic_codex)  # type: ignore[attr-defined]
+            self.assertIs(
+                workflow.invoke_writer_revision,
+                module._invoke_writer_revision_codex,  # type: ignore[attr-defined]
+            )
+            self.assertEqual(
+                module.campaign.StageModels.preferred().writer.model,  # type: ignore[attr-defined]
+                "gpt-5.6-sol",
+            )
+            self.assertEqual(
+                module.campaign.StageModels.preferred().critic.model,  # type: ignore[attr-defined]
+                "gpt-5.6-sol",
+            )
+            self.assertEqual(
+                module.campaign.StageModels.preferred().writer.reasoning,  # type: ignore[attr-defined]
+                "high",
+            )
+            self.assertEqual(
+                module.campaign.StageModels.preferred().critic.reasoning,  # type: ignore[attr-defined]
+                "high",
+            )
+            self.assertIn("fast_mode", module.model_runtime.NON_WEB_TOOL_FEATURES)  # type: ignore[attr-defined]
+        finally:
+            workflow.invoke_writer = original_writer
+            workflow.invoke_critic = original_critic
+            workflow.invoke_writer_revision = original_revision
+            campaign.StageModels.preferred = original_preferred  # type: ignore[method-assign]
+            model_runtime.NON_WEB_TOOL_FEATURES = original_features
+
+    def test_v1_comparison_overrides_only_model_runtime_settings(self) -> None:
+        original_preferred = campaign.StageModels.__dict__["preferred"]
+        original_features = model_runtime.NON_WEB_TOOL_FEATURES
+        original_topic_value_config = topic_value.ModelConfig
+        original_resonance_config = resonance.ModelConfig
+        try:
+            compare_capture_runtime._lock_comparison_codex_runtime(  # type: ignore[attr-defined]
+                include_v1_selection=True
+            )
+            stage_models = campaign.StageModels.preferred()
+            for config in (
+                stage_models.writer,
+                stage_models.narrative_editor,
+                stage_models.critic,
+                stage_models.artisanal_editor,
+                stage_models.comment_writer,
+                stage_models.comment_reviewer,
+                stage_models.artifact_editor,
+                stage_models.visual_qa,
+            ):
+                self.assertEqual(config.model, "gpt-5.6-sol")
+                self.assertEqual(config.reasoning, "high")
+            self.assertEqual(
+                topic_value.ModelConfig("codex", "ignored", "ultra").reasoning,
+                "high",
+            )
+            self.assertEqual(
+                resonance.ModelConfig("codex", "ignored", "max").model,
+                "gpt-5.6-sol",
+            )
+            self.assertIn("fast_mode", model_runtime.NON_WEB_TOOL_FEATURES)
+        finally:
+            campaign.StageModels.preferred = original_preferred  # type: ignore[method-assign]
+            model_runtime.NON_WEB_TOOL_FEATURES = original_features
+            topic_value.ModelConfig = original_topic_value_config  # type: ignore[assignment]
+            resonance.ModelConfig = original_resonance_config  # type: ignore[assignment]
 
     def test_egress_and_timeout_boundaries_remain_fail_closed(self) -> None:
         with self.assertRaisesRegex(workflow.WorkflowError, "explicit consent"):

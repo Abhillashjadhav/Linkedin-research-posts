@@ -17,6 +17,15 @@ It then creates two temporary detached Git worktrees and gives both versions the
 - goal and optional output format;
 - proof manifest when the goal is `opportunity`.
 
+Both comparison versions use the authenticated OpenAI Codex CLI with
+`gpt-5.6-sol`, reasoning `high`, and Fast mode disabled. V0 keeps the frozen
+baseline's prompts, writing logic, stage order, scores, and gates; the comparison
+observer replaces only its historical Claude CLI Writer, Critic, and
+Writer-revision calls with the repository's zero-tool Codex structured-runtime
+adapter. V1 retains its existing Codex runtime and V1 writing overlays. The model,
+reasoning, and Fast-mode locks are comparison-only and do not change ordinary V0 or
+V1 execution outside this runner.
+
 Each version gets its own private SQLite database and output tree. Temporary worktrees are removed after the run.
 
 The resulting comparison is stored only under ignored local state:
@@ -42,14 +51,13 @@ Nothing under this directory is tracked by Git.
 
 ## Prerequisites
 
-Run from a current local clone of `Linkedin-research-posts` with both model CLIs used by the live repository authenticated:
+Run from a current local clone of `Linkedin-research-posts` with the Codex CLI authenticated:
 
 ```bash
-which claude
 which codex
 ```
 
-The runner intentionally fails before model egress if either executable is unavailable.
+The runner intentionally fails before model egress if Codex is unavailable.
 
 ## Strategy input
 

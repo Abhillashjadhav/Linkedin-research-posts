@@ -2,11 +2,27 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from authority_os import compare_versions
 
 
 class CompareVersionsTests(unittest.TestCase):
+    def test_provider_preflight_requires_only_codex(self) -> None:
+        with patch(
+            "authority_os.compare_versions.shutil.which",
+            side_effect=lambda name: "/usr/bin/codex" if name == "codex" else None,
+        ) as which:
+            compare_versions._provider_preflight()  # type: ignore[attr-defined]
+        self.assertEqual([call.args[0] for call in which.call_args_list], ["codex"])
+
+    def test_provider_preflight_fails_when_codex_is_missing(self) -> None:
+        with (
+            patch("authority_os.compare_versions.shutil.which", return_value=None),
+            self.assertRaisesRegex(compare_versions.ComparisonError, "Missing: codex"),
+        ):
+            compare_versions._provider_preflight()  # type: ignore[attr-defined]
+
     def test_draft_command_preserves_shared_inputs_and_never_publishes(self) -> None:
         command = compare_versions.build_draft_command(
             topic="agent reliability",
