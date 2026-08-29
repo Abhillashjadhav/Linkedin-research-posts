@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from . import daily_spine_cli as base
 from . import discovery_runtime_tuning
+from . import individual_launch_runtime_tuning
 from . import momentum_surface_parallel
 from . import surface_scout_runtime_tuning
 
@@ -14,6 +15,7 @@ from . import surface_scout_runtime_tuning
 # owned by daily_spine_cli.
 discovery_runtime_tuning.install()
 surface_scout_runtime_tuning.install()
+individual_launch_runtime_tuning.install()
 base.momentum = momentum_surface_parallel
 
 _ORIGINAL_COMMAND = base.command
