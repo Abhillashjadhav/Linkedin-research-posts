@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Mapping, Sequence
 
 
@@ -40,6 +43,66 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _install_v0_codex_provider() -> ModuleType:
+    """Load only the current Codex provider adapter against the frozen V0 package."""
+
+    provider_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "authority_os"
+        / "single_topic_codex.py"
+    )
+    module_name = "authority_os._comparison_v0_codex_provider"
+    spec = importlib.util.spec_from_file_location(module_name, provider_path)
+    if spec is None or spec.loader is None:
+        raise SystemExit("V0 Codex provider adapter could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+    install = getattr(module, "install", None)
+    if not callable(install):
+        raise SystemExit("V0 Codex provider adapter has no install hook")
+    install()
+    return module
+
+
+def _lock_comparison_codex_runtime(*, include_v1_selection: bool) -> None:
+    """Pin every comparison model stage to Sol/high with Fast mode disabled."""
+
+    from authority_os import campaign, model_runtime
+
+    def preferred(cls):
+        config = model_runtime.ModelConfig("codex", "gpt-5.6-sol", "high")
+        return campaign.StageModels(
+            writer=config,
+            narrative_editor=config,
+            critic=config,
+            artisanal_editor=config,
+            comment_writer=config,
+            comment_reviewer=config,
+            artifact_editor=config,
+            visual_qa=config,
+        )
+
+    campaign.StageModels.preferred = classmethod(preferred)  # type: ignore[method-assign]
+    model_runtime.NON_WEB_TOOL_FEATURES = frozenset(
+        {*model_runtime.NON_WEB_TOOL_FEATURES, "fast_mode"}
+    )
+
+    if include_v1_selection:
+        from authority_os import resonance, topic_value
+
+        def high_config(_runtime: str, _model: str, _reasoning: str):
+            return model_runtime.ModelConfig("codex", "gpt-5.6-sol", "high")
+
+        topic_value.ModelConfig = high_config  # type: ignore[assignment]
+        resonance.ModelConfig = high_config  # type: ignore[assignment]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     draft_args = list(args.draft_args)
@@ -49,7 +112,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("comparison capture requires Authority OS draft arguments")
 
     quality_optimizer = None
-    if args.label == "v1":
+    if args.label == "v0":
+        _install_v0_codex_provider()
+    elif args.label == "v1":
         from authority_os import v1_gates
         v1_gates.install()
         from authority_os import v1_completion
@@ -73,6 +138,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         from authority_os import quality_optimizer as optimizer
         optimizer.install()
         quality_optimizer = optimizer
+
+    _lock_comparison_codex_runtime(include_v1_selection=args.label == "v1")
 
     from authority_os import integrated_cli, quality_cli
     if quality_optimizer is not None:
