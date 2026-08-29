@@ -13,6 +13,8 @@ class SurfaceScoutRuntimeTuningTests(unittest.TestCase):
         tuning.install()
         self.assertEqual(surface.SURFACE_TIMEOUT, 180)
         self.assertEqual(tuning.SURFACE_TIMEOUT, 180)
+        self.assertEqual(surface.CONSOLIDATION_TIMEOUT, 150)
+        self.assertEqual(tuning.CONSOLIDATION_TIMEOUT, 150)
         self.assertEqual(surface.MODEL.reasoning, "medium")
         self.assertIs(surface._run_surface, tuning._run_surface)
 
