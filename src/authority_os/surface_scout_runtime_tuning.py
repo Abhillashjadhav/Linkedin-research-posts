@@ -9,6 +9,7 @@ from . import workflow
 from .model_runtime import ModelConfig
 
 SURFACE_TIMEOUT = 180
+CONSOLIDATION_TIMEOUT = 150
 MODEL = ModelConfig("codex", "gpt-5.6-sol", "medium")
 _INSTALLED = False
 
@@ -167,6 +168,7 @@ def install() -> None:
     if _INSTALLED:
         return
     surface.SURFACE_TIMEOUT = SURFACE_TIMEOUT
+    surface.CONSOLIDATION_TIMEOUT = CONSOLIDATION_TIMEOUT
     surface.MODEL = MODEL
     surface._run_surface = _run_surface  # type: ignore[assignment]
     _INSTALLED = True
