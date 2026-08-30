@@ -205,6 +205,7 @@ PROOF_MANIFEST_FIELDS = {
     "attested_personal_sentences",
 }
 MAX_PROOF_MANIFEST_BYTES = 64 * 1024
+MAX_VOICE_PROFILE_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -1228,6 +1229,81 @@ def load_voice_guidance(
             raise WorkflowError(f"Voice anchor {label!r} is blank.")
         guidance[cleaned_label] = content
     return guidance
+
+
+def load_private_voice_profile(path: Path | str) -> tuple[str, dict[str, str]]:
+    """Read one owner-only profile beneath data/private without exposing its path."""
+
+    supplied_path = Path(path).expanduser()
+    if ".." in supplied_path.parts:
+        raise WorkflowError("Voice profile paths cannot contain parent traversal.")
+    candidate = supplied_path if supplied_path.is_absolute() else Path.cwd() / supplied_path
+    _validated, file_fd, before = _secure_open_regular_file(
+        candidate,
+        root=DEFAULT_PRIVATE_DATA.absolute(),
+        label="Voice profile",
+    )
+    try:
+        if before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != 0o600:
+            raise WorkflowError("Voice profile must be an owner-only 0600 file.")
+        if before.st_size > MAX_VOICE_PROFILE_BYTES:
+            raise WorkflowError("Voice profile is too large.")
+        chunks: list[bytes] = []
+        remaining = MAX_VOICE_PROFILE_BYTES + 1
+        while remaining:
+            chunk = os.read(file_fd, min(16 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw_profile = b"".join(chunks)
+        after = os.fstat(file_fd)
+    except WorkflowError:
+        raise
+    except OSError:
+        raise WorkflowError("Voice profile could not be read safely.") from None
+    finally:
+        os.close(file_fd)
+
+    before_token = (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    )
+    after_token = (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
+    )
+    if (
+        before_token != after_token
+        or len(raw_profile) != after.st_size
+        or len(raw_profile) > MAX_VOICE_PROFILE_BYTES
+    ):
+        raise WorkflowError("Voice profile changed while it was being read.")
+    try:
+        profile = raw_profile.decode("utf-8").strip()
+    except UnicodeDecodeError:
+        raise WorkflowError("Voice profile must contain valid UTF-8 YAML.") from None
+    if _has_unsafe_control_characters(profile, allow_newline=True):
+        raise WorkflowError("Voice profile contains unsafe control characters.")
+    version = re.search(r"(?m)^voice_profile_version:\s*1\s*$", profile)
+    status = re.search(
+        r"(?m)^profile_status:\s*(provisional|calibrated)\s*$",
+        profile,
+    )
+    if version is None or status is None:
+        raise WorkflowError(
+            "Voice profile must declare voice_profile_version 1 and a valid profile_status."
+        )
+    return profile, {
+        "profile_sha256": hashlib.sha256(raw_profile).hexdigest(),
+        "profile_status": status.group(1),
+    }
 
 
 def load_strategy_inputs_file(path: Path | str) -> dict[str, str]:
