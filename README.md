@@ -9,7 +9,8 @@ For trace-first campaign runs, the executable order is:
 ```text
 Scout → Thesis → Writer (3) → Narrative Editor → Critic → deterministic gates
 → integrated Anti-AI-Slop → bounded regeneration → external no-ai-slop edit
-→ post-edit Re-Critic/gates → First Comment Writer/Reviewer → Artifact Editor
+→ optional PM Human Writer voice pass → post-edit Re-Critic/gates
+→ First Comment Writer/Reviewer → Artifact Editor
 → rendered artifact → Visual QA → human-review package
 ```
 
@@ -65,17 +66,28 @@ After four unsuccessful live cycles, the command fails closed and returns no pos
 ## Run a persisted five-day campaign
 
 Campaign mode uses the same `draft` command, but takes one public, source-grounded
-five-day spec and the separate `Abhillashjadhav/no-ai-slop` editor files:
+five-day spec and the separate `Abhillashjadhav/no-ai-slop` editor files. It can
+also apply the generic PM Human Writer with a private, owner-specific voice profile:
 
 ```bash
 git clone --depth 1 https://github.com/Abhillashjadhav/no-ai-slop.git /tmp/no-ai-slop
+git clone --depth 1 https://github.com/Abhillashjadhav/AI-PM-essential-skills.git /tmp/AI-PM-essential-skills
+
+chmod 600 data/private/voice-profile.yaml
 
 ./bin/linkedin-os draft \
   --run-spec campaigns/2026-08-10-to-14/spec.json \
   --trace-output campaigns/2026-08-10-to-14/run \
   --no-ai-slop-skill /tmp/no-ai-slop/SKILL.md \
-  --no-ai-slop-eval /tmp/no-ai-slop/eval.md
+  --no-ai-slop-eval /tmp/no-ai-slop/eval.md \
+  --human-writer-skill /tmp/AI-PM-essential-skills/pm-human-writer/skills/human-product-writer/SKILL.md \
+  --voice-profile data/private/voice-profile.yaml
 ```
+
+`--human-writer-skill` and `--voice-profile` are optional but must be supplied
+together. The profile must be a non-symlinked, owner-only (`0600`) file beneath
+`data/private/`. Its contents and path are never persisted in campaign traces;
+only its hash and calibration status are recorded.
 
 The coordinator runs each in-scope day independently. Every executed day ends
 in either `READY_FOR_HUMAN_REVIEW` or an explicit `BLOCKED` trace; a preserved
@@ -114,8 +126,9 @@ flowchart LR
     D --> E[Narrative Editor]
     E --> F[Critic and deterministic gates]
     F --> G[Integrated and artisanal anti-slop]
-    G -->|Below locked bar| D
-    G -->|24–25 + hook 5/5 + gates pass| H[First comment and artifact]
+    G --> V[Optional private voice pass]
+    V -->|Below locked bar| D
+    V -->|24–25 + hook 5/5 + gates pass| H[First comment and artifact]
     H --> I[Visual QA]
     I --> J[Human review package]
     J --> K[Manual fact verification]
