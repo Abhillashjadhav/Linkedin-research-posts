@@ -57,7 +57,7 @@ The first 1–2 lines must let a smart PM/AI practitioner answer:
 1. What changed or what problem is happening?
 2. Why should I care?
 
-Treat this as the existing **line 1 pair** contract: the opening pair must establish the relevant problem/consequence and the immediate human payoff before deeper technical explanation.
+Treat this as the existing **line 1 pair** contract: the opening pair must establish the **target-reader problem** and its **immediate benefit** or consequence before deeper technical explanation. A post does not become resonant merely because it sounds **technically sophisticated**.
 
 The opening should not require unexplained acronyms, benchmark names, specialist infrastructure terminology, or a vendor/product name to carry the meaning. Technical terms may appear later after the consequence is clear.
 
@@ -67,8 +67,8 @@ Reader utility is mandatory, but do not force one template on every post. Practi
 
 Do not require numbers. Situation specificity may be behavioral, visual, numeric, or artifact-based. Technical detail the target reader cannot interpret does not increase stop power, comprehension, or shareability.
 
-Emotional resonance must come from truthful stakes already present in the situation: uncertainty, wasted work, trust, release risk, decision quality, time, customer impact, or another supported consequence. Never reward manufactured urgency, fear, drama, clickbait, or invented feelings.
+Emotional resonance must come from **truthful stakes** already present in the situation: uncertainty, wasted work, trust, release risk, decision quality, time, customer impact, or another supported consequence. Never reward manufactured urgency, fear, drama, clickbait, or invented feelings.
 
 Social engagement can demonstrate momentum, not factual truth. Vendor announcements, newsletters, reposts, and community chatter must not be rewarded as independent factual corroboration.
 
-A polished authority post can still fail this gate. Craft quality never overrides weak relevance, weak resonance, withheld feed value, or an ask-first structure.
+The reader must receive the core value **without clicking** to another source. A polished authority post can still fail this gate. Craft quality never overrides weak relevance, weak resonance, withheld feed value, or an ask-first structure.
