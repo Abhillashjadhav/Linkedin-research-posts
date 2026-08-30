@@ -22,6 +22,11 @@ raise SystemExit(daily_discovery_cli.main())
 ' "$@"
 fi
 
+if [ "${1:-}" = "media" ]; then
+  shift
+  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.media "$@"
+fi
+
 if [ "${1:-}" = "record-spine-performance" ]; then
   shift
   PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.spine_feedback_io record "$@"
@@ -64,6 +69,8 @@ from authority_os import actionable_diagnostics
 actionable_diagnostics.install()
 from authority_os import social_media_gate_policy
 social_media_gate_policy.install()
+from authority_os import v1_consumability
+v1_consumability.install()
 if "--run-spec" not in sys.argv:
     from authority_os import v1_runtime_tuning
     v1_runtime_tuning.install()
