@@ -57,6 +57,8 @@ The first 1–2 lines must let a smart PM/AI practitioner answer:
 1. What changed or what problem is happening?
 2. Why should I care?
 
+Treat this as the existing **line 1 pair** contract: the opening pair must establish the relevant problem/consequence and the immediate human payoff before deeper technical explanation.
+
 The opening should not require unexplained acronyms, benchmark names, specialist infrastructure terminology, or a vendor/product name to carry the meaning. Technical terms may appear later after the consequence is clear.
 
 Reward **one central argument**. Penalise posts that stack several news items or vendors and force the reader to synthesize the argument themselves.
