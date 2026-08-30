@@ -4,6 +4,7 @@ import argparse
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from authority_os import media, workflow
 
@@ -36,7 +37,11 @@ class MediaTests(unittest.TestCase):
         with self.assertRaisesRegex(workflow.WorkflowError, "confirm-approved"):
             media.command(args)
 
-    def test_carousel_package_writes_private_renderable_assets(self) -> None:
+    def test_output_must_stay_under_private_data(self) -> None:
+        with self.assertRaisesRegex(workflow.WorkflowError, "data/private"):
+            media._private_output(workflow.REPO_ROOT / "media-out")
+
+    def test_carousel_package_writes_renderable_assets(self) -> None:
         plan = media.validate_plan(
             {
                 "media_type": "CAROUSEL_PDF",
@@ -57,12 +62,15 @@ class MediaTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "media"
-            media.write_package(
-                plan,
-                post="Approved post text.",
-                topic="Agent budgets",
-                output_dir=target,
-            )
+            # Unit-test rendering mechanics in an isolated temporary directory;
+            # the CLI path itself is separately constrained to data/private.
+            with patch.object(media, "_private_output", side_effect=lambda path: Path(path).resolve()):
+                media.write_package(
+                    plan,
+                    post="Approved post text.",
+                    topic="Agent budgets",
+                    output_dir=target,
+                )
             self.assertTrue((target / "media-plan.json").is_file())
             self.assertTrue((target / "carousel.md").is_file())
             self.assertTrue((target / "carousel.html").is_file())
