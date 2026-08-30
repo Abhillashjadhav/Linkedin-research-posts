@@ -375,9 +375,15 @@ def command_draft(args: object) -> int:
         output = getattr(args, "trace_output", None)
         skill = getattr(args, "no_ai_slop_skill", None)
         evaluation = getattr(args, "no_ai_slop_eval", None)
+        human_writer_skill = getattr(args, "human_writer_skill", None)
+        voice_profile = getattr(args, "voice_profile", None)
         if output is None or skill is None or evaluation is None:
             raise workflow.WorkflowError(
                 "Campaign drafting requires --trace-output, --no-ai-slop-skill, and --no-ai-slop-eval."
+            )
+        if (human_writer_skill is None) != (voice_profile is None):
+            raise workflow.WorkflowError(
+                "Campaign voice editing requires --human-writer-skill and --voice-profile together."
             )
         campaign.MIN_HOOK = MIN_HOOK_SCORE
         last_hook_failure: int | None = None
@@ -416,6 +422,8 @@ def command_draft(args: object) -> int:
             output_root=output,
             no_ai_slop_skill=skill,
             no_ai_slop_eval=evaluation,
+            human_writer_skill=human_writer_skill,
+            voice_profile=voice_profile,
             only_day=getattr(args, "campaign_day", None),
             invoker=campaign_invoker,
         )
