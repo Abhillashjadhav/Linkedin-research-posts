@@ -332,6 +332,26 @@ class QualitySearchTests(unittest.TestCase):
         self.assertIn("previous hook was 4/5", prompt.casefold())
         self.assertIn("hook below 5/5 is a hard failure", prompt.casefold())
 
+    def test_campaign_voice_configuration_requires_skill_and_profile_together(self) -> None:
+        base = {
+            "run_spec": "spec.json",
+            "trace_output": "outputs/run",
+            "no_ai_slop_skill": "SKILL.md",
+            "no_ai_slop_eval": "eval.md",
+            "campaign_day": "Monday",
+        }
+        for partial in (
+            {"human_writer_skill": "human/SKILL.md", "voice_profile": None},
+            {"human_writer_skill": None, "voice_profile": "data/private/voice.yaml"},
+        ):
+            with self.subTest(partial=partial):
+                args = SimpleNamespace(**base, **partial)
+                with self.assertRaisesRegex(
+                    workflow.WorkflowError,
+                    "requires --human-writer-skill and --voice-profile together",
+                ):
+                    quality_cli.command_draft(args)
+
 
 class RetryPromptTests(unittest.TestCase):
     def test_retry_prompt_adds_diagnostics_and_restores_original_builder(self) -> None:
