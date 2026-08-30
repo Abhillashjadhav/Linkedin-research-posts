@@ -9,10 +9,10 @@ package. Image/video rendering remains a separate media-capable renderer concern
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import os
-import re
 import stat
 import sys
 from datetime import datetime, timezone
@@ -160,7 +160,18 @@ APPROVED_POST
     return validate_plan(raw)
 
 
+def _private_output(path: Path) -> Path:
+    resolved = path.expanduser().resolve()
+    private_root = workflow.DEFAULT_PRIVATE_DATA.expanduser().resolve()
+    try:
+        resolved.relative_to(private_root)
+    except ValueError:
+        raise workflow.WorkflowError("Media output must stay under data/private.") from None
+    return resolved
+
+
 def _write_private(path: Path, text: str) -> None:
+    path = _private_output(path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(path.parent, 0o700)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
@@ -169,7 +180,13 @@ def _write_private(path: Path, text: str) -> None:
     try:
         fd = os.open(path, flags, 0o600)
         try:
-            os.write(fd, text.encode("utf-8"))
+            payload = text.encode("utf-8")
+            offset = 0
+            while offset < len(payload):
+                written = os.write(fd, payload[offset:])
+                if written <= 0:
+                    raise OSError("short media write")
+                offset += written
             os.fsync(fd)
             os.fchmod(fd, 0o600)
         finally:
@@ -198,6 +215,7 @@ p { font-size: 48px; line-height: 1.22; margin: 0; white-space: pre-wrap; }
 
 
 def write_package(plan: Mapping[str, object], *, post: str, topic: str, output_dir: Path) -> Path:
+    output_dir = _private_output(output_dir)
     media_type = str(plan["media_type"])
     manifest = {
         "schema_version": 1,
@@ -206,7 +224,7 @@ def write_package(plan: Mapping[str, object], *, post: str, topic: str, output_d
         "publishing_status": "DISABLED",
         "media_type": media_type,
         "topic": topic,
-        "post_sha256": __import__("hashlib").sha256(post.encode()).hexdigest(),
+        "post_sha256": hashlib.sha256(post.encode()).hexdigest(),
         "render_status": "BRIEF_READY" if media_type in {"IMAGE", "VIDEO"} else "LOCAL_ASSET_READY" if media_type == "CAROUSEL_PDF" else "NOT_REQUIRED",
         "plan": dict(plan),
     }
@@ -276,11 +294,7 @@ def command(args: argparse.Namespace) -> int:
     if output_dir is None:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         output_dir = DEFAULT_ROOT / stamp
-    output_dir = output_dir.expanduser().resolve()
-    try:
-        output_dir.relative_to(workflow.REPO_ROOT)
-    except ValueError:
-        raise workflow.WorkflowError("Media output must remain inside the repository private runtime.") from None
+    output_dir = _private_output(output_dir)
     path = write_package(plan, post=post, topic=topic, output_dir=output_dir)
     print(f"Media type: {plan['media_type']}")
     print(f"Media package: {path.relative_to(workflow.REPO_ROOT).as_posix()}")
