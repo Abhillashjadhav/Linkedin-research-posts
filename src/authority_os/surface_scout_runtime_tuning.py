@@ -95,11 +95,22 @@ Lane rule: {lane['instruction']}
 Research window: the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, agents, evaluations, reliability, context engineering, enterprise AI, developer tooling, model economics and AI product management'}.
 
-Return up to {surface.SIGNALS_PER_SURFACE} materially distinct current GenAI/product conversations visible on THIS SURFACE ONLY, ordered strongest first. This is a retrieval pass, not a deep momentum-analysis pass. Do not browse another source family to compensate for missing evidence.
+Return up to {surface.SIGNALS_PER_SURFACE} materially distinct current GenAI/product conversations visible on THIS SURFACE ONLY, ordered strongest first. This is a retrieval pass, not a thesis or deep momentum-analysis pass. Do not browse another source family to compensate for missing evidence.
+
+PRIORITISE BROAD, CONSUMABLE SITUATIONS:
+- Prefer situations a smart PM/AI product practitioner can understand before learning specialist infrastructure, benchmark, security, or ML-research context.
+- Prefer a visible human/product consequence: cost, time, quality, customer experience, productivity, risk, team workflow, a recurring decision, a useful new capability, or an inspectable builder launch.
+- Prefer topics that could support one central argument and at least one honest utility form: a concrete action, reusable artifact, or decision the reader can make differently.
+- Do not equate technical sophistication with topic quality. A narrower technical development is useful only if its consequence can be stated plainly.
+- Do not let large-company announcements crowd out individual/small-team launches that are inspectable and useful.
+- Avoid generic obvious slogans. A topic should add something the target reader probably has not already priced in.
+
+TWO-SENTENCE PM TEST BEFORE RETURNING A SIGNAL:
+Imagine explaining the situation to a smart product manager who understands AI products but does not specialise in ML research, infrastructure, benchmarks, cybersecurity, or distributed systems. In two sentences, you should be able to communicate what changed and why that reader should care without relying on unexplained acronyms, benchmark names, vendor product names, or specialist terminology. If you cannot, demote the signal unless it is an unusually important deep-track development.
 
 For each signal return only:
-- topic: concise conversation label;
-- why_now: concrete current reason;
+- topic: concise plain-English conversation label; do not lead with jargon when a consequence can lead instead;
+- why_now: concrete current reason plus the product/human consequence in plain language;
 - platform: exactly one allowed platform for this lane;
 - url: representative public HTTPS URL;
 - source: public author/community/publisher name;
@@ -107,7 +118,7 @@ For each signal return only:
 - freshness_hours: age of the newest substantive signal as of {as_of};
 - engagement_units: visible public interactions excluding raw page/video views, or null if unavailable.
 
-Do NOT calculate acceleration. Do NOT perform cross-platform comparison. Do NOT rank against other surfaces. Do not invent timestamps, URLs, engagement, or popularity rankings. If this lane is unavailable or has no defensible current signal, return that honestly. Return evidence only; do not use the private authority profile and do not draft."""
+Social engagement may establish momentum only. It does not prove factual claims. Do NOT calculate acceleration. Do NOT perform cross-platform comparison. Do NOT rank against other surfaces. Do not invent timestamps, URLs, engagement, consequences, or popularity rankings. If this lane is unavailable or has no defensible current signal, return that honestly. Return evidence only; do not use the private authority profile and do not draft."""
     try:
         result = surface.invoke_structured(
             config=MODEL,
