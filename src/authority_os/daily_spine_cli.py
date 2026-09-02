@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from . import daily_cli as base
-from . import momentum, storage, topic_value, workflow
+from . import momentum, storage, topic_value, v1_completion, workflow
 from .spine_feedback import CONTENT_SPINES
 
 
@@ -21,6 +21,42 @@ MAX_SPINE_FIT_REASON_CHARS = 320
 MIN_AUTHORITY_FIT_FALLBACK = 20
 MIN_COMBINED_INVENTORY_SCORE = 40
 CANDIDATE_INVENTORY = base.OUTPUT_ROOT / "candidate-inventory.json"
+EVAL_CONTRACTS = (
+    ("research_trust", "Topic Value", "research trust"),
+    ("claim_body_support", "Topic Value", "claim/body support"),
+    ("atomic_value_novelty", "Topic Value", "atomic-value novelty"),
+    ("critic_anchor_integrity", "Critic", "anchor integrity"),
+    ("critic_reproducibility", "Critic", "score reproducibility"),
+    ("solution_plausibility", "Resonance", "solution plausibility"),
+    ("reader_attention", "Resonance", "reader attention"),
+)
+
+
+def render_eval_dashboard(
+    rows: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    latest: dict[str, Mapping[str, object]] = {}
+    for row in rows:
+        contract = str(row.get("contract", ""))
+        if contract:
+            latest[contract] = row
+    checks: list[dict[str, str]] = []
+    print("Eval dashboard:")
+    for contract, stage, label in EVAL_CONTRACTS:
+        row = latest.get(contract)
+        status = str(row.get("status", "NOT_EVALUATED")) if row else "NOT_EVALUATED"
+        reason = str(row.get("reason", "stage was not reached")) if row else "stage was not reached"
+        checks.append(
+            {
+                "stage": stage,
+                "contract": contract,
+                "label": label,
+                "status": status,
+                "reason": reason,
+            }
+        )
+        print(f"  {stage} | {label}: {status} ({reason})")
+    return {"schema_version": 1, "checks": checks}
 
 
 def _parse_timestamp(value: str) -> datetime:
@@ -261,11 +297,66 @@ def search_theses(
     profile: Mapping[str, object],
     signals: Sequence[Mapping[str, object]],
 ) -> list[dict[str, object]]:
-    return base.search_theses(
-        profile,
-        signals,
-        generator=generate_cards,
-        critic=base.score_cards,
+    feedback: Mapping[str, object] | None = None
+    rejected: set[str] = set()
+    for cycle in range(1, base.MAX_CYCLES + 1):
+        cards = generate_cards(profile, signals, feedback)
+        if any(base._normal(card["thesis"]) in rejected for card in cards):
+            raise workflow.WorkflowError("Thesis generator reused a rejected thesis.")
+        scores = {
+            str(score["thesis_id"]): score
+            for score in base.score_cards(cards, profile, signals)
+        }
+        combined = [
+            {
+                **card,
+                "scores": {
+                    axis: int(scores[str(card["id"])][axis])
+                    for axis in base.AXES
+                },
+                "total": int(scores[str(card["id"])]["total"]),
+            }
+            for card in cards
+        ]
+        combined.sort(
+            key=lambda card: (
+                -int(card["total"]),
+                -int(card["scores"]["distinctiveness"]),  # type: ignore[index]
+                str(card["id"]),
+            )
+        )
+        qualifying = [
+            card
+            for card in combined
+            if int(card["total"]) >= base.MIN_TOTAL
+            and int(card["scores"]["simplicity"]) >= base.MIN_SIMPLICITY  # type: ignore[index]
+        ]
+        if qualifying:
+            print(
+                f"Thesis search: retained {len(qualifying)} qualifying candidate(s) "
+                f"from cycle {cycle}; weaker parallel candidates were not allowed "
+                "to discard the leader."
+            )
+            return qualifying
+        rejected.update(base._normal(card["thesis"]) for card in cards)
+        feedback = {
+            "cycle": cycle,
+            "required_total": base.MIN_TOTAL,
+            "required_simplicity": base.MIN_SIMPLICITY,
+            "rejected": [
+                {
+                    "id": card["id"],
+                    "thesis": card["thesis"],
+                    "conversation_surface": card["conversation_surface"],
+                    "scores": card["scores"],
+                    "total": card["total"],
+                }
+                for card in combined
+            ],
+        }
+    raise workflow.WorkflowError(
+        "No thesis cleared the authority bar after the bounded search. "
+        "Improve the audience, proof inventory or signals."
     )
 
 
@@ -306,6 +397,10 @@ def command(args: argparse.Namespace) -> int:
         raise workflow.WorkflowError(
             "Discovery requires --allow-model-egress before the private profile reaches thesis models."
         )
+    ledger_path = (
+        v1_completion.STATE_ROOT / v1_completion.DECISION_LEDGER_NAME
+    )
+    ledger_start = len(v1_completion._read_jsonl(ledger_path))
     profile = base.validate_profile(base._private_json(args.profile, "Authority profile"))
     as_of = args.as_of or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
@@ -436,7 +531,7 @@ def command(args: argparse.Namespace) -> int:
         f"Live research stored: inserted={inserted}; duplicates={duplicates}; "
         f"package={package.relative_to(workflow.REPO_ROOT)}."
     )
-    print("Three theses cleared the locked authority bar:")
+    print(f"{len(theses)} thesis candidate(s) cleared the locked authority bar:")
     draft_commands: list[tuple[dict[str, object], list[str], str]] = []
     for card in theses:
         strategy = base.write_private_json(
@@ -496,6 +591,16 @@ def command(args: argparse.Namespace) -> int:
             selected[1],
             cwd=workflow.REPO_ROOT,
             check=False,
+        )
+        current_rows = v1_completion._read_jsonl(ledger_path)[ledger_start:]
+        dashboard = render_eval_dashboard(current_rows)
+        dashboard_path = base.write_private_json(
+            folder / "eval-dashboard.json",
+            dashboard,
+        )
+        print(
+            f"Eval dashboard stored: "
+            f"{dashboard_path.relative_to(workflow.REPO_ROOT)}."
         )
         return completed.returncode
     print("No thesis was selected and no post was generated or published.")

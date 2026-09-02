@@ -119,6 +119,8 @@ the post workflow in the same invocation:
 
 This is an opt-in convenience for a review-ready outcome. It does not publish.
 The command reports that voice guidance was loaded before it starts drafting.
+It also prints and stores an eval dashboard. Contracts from stages that were
+not reached are shown as `NOT_EVALUATED` instead of disappearing.
 
 The existing draft workflow then owns:
 

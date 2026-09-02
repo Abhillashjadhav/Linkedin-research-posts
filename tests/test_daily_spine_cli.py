@@ -105,6 +105,69 @@ def cards() -> list[dict[str, object]]:
 
 
 class SpineCardTests(unittest.TestCase):
+    def test_eval_dashboard_marks_unreached_stages_explicitly(self) -> None:
+        dashboard = daily_spine_cli.render_eval_dashboard(
+            [
+                {
+                    "contract": "research_trust",
+                    "status": "PASS",
+                    "reason": "body-read-source-present",
+                }
+            ]
+        )
+        by_contract = {
+            item["contract"]: item for item in dashboard["checks"]
+        }
+        self.assertEqual(by_contract["research_trust"]["status"], "PASS")
+        self.assertEqual(
+            by_contract["reader_attention"]["status"],
+            "NOT_EVALUATED",
+        )
+
+    def test_thesis_search_keeps_a_qualifying_leader_from_a_mixed_batch(self) -> None:
+        mixed_scores = [
+            {
+                "thesis_id": "thesis-1",
+                "audience_fit": 5,
+                "distinctiveness": 5,
+                "decision_strength": 5,
+                "proof_fit": 4,
+                "simplicity": 4,
+                "total": 23,
+            },
+            {
+                "thesis_id": "thesis-2",
+                "audience_fit": 5,
+                "distinctiveness": 4,
+                "decision_strength": 4,
+                "proof_fit": 4,
+                "simplicity": 4,
+                "total": 21,
+            },
+            {
+                "thesis_id": "thesis-3",
+                "audience_fit": 4,
+                "distinctiveness": 4,
+                "decision_strength": 4,
+                "proof_fit": 4,
+                "simplicity": 4,
+                "total": 20,
+            },
+        ]
+        with patch.object(
+            daily_spine_cli,
+            "generate_cards",
+            return_value=cards(),
+        ) as generate, patch.object(
+            daily_spine_cli.base,
+            "score_cards",
+            return_value=mixed_scores,
+        ):
+            result = daily_spine_cli.search_theses(profile(), signals())
+        self.assertEqual(generate.call_count, 1)
+        self.assertEqual([item["id"] for item in result], ["thesis-1"])
+        self.assertEqual(result[0]["total"], 23)
+
     def test_topic_scope_prefers_momentum_then_authority_fallback(self) -> None:
         candidates = [
             {

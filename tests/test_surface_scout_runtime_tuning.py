@@ -70,6 +70,38 @@ class SurfaceScoutRuntimeTuningTests(unittest.TestCase):
         self.assertEqual(result["status"], "OBSERVED")
         self.assertIsNone(result["signals"][0]["acceleration_percent"])
 
+    def test_active_runtime_retries_timeout_once(self) -> None:
+        lane = {
+            "key": "reddit",
+            "label": "Reddit",
+            "allowed_platforms": ("Reddit",),
+            "instruction": "Search only public Reddit.",
+        }
+        response = {
+            "status": "NO_SIGNAL",
+            "signals": [],
+            "caveat": "No defensible signal was visible.",
+        }
+        with patch.object(
+            surface,
+            "invoke_structured",
+            side_effect=[workflow.WorkflowError("timed out"), response],
+        ) as invoke, patch.object(
+            surface.daily_cli, "_role", return_value="Scout"
+        ), patch.object(
+            surface, "_write_surface_file"
+        ), patch.object(
+            surface, "_trace_event"
+        ):
+            result = tuning._run_surface(
+                lane,
+                topic=None,
+                days=7,
+                as_of="2026-09-02T00:00:00Z",
+            )
+        self.assertEqual(invoke.call_count, 2)
+        self.assertEqual(result["status"], "NO_SIGNAL")
+
 
 if __name__ == "__main__":
     unittest.main()
