@@ -329,6 +329,18 @@ class CliTests(unittest.TestCase):
         self.assertIn("--allow-web-research", result.stdout)
         self.assertIn("--profile", result.stdout)
 
+    def test_top_level_help_names_v1_end_to_end_entrypoint(self) -> None:
+        result = subprocess.run(
+            [str(CLI), "--help"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("V1 end-to-end workflow", result.stdout)
+        self.assertIn("--generate-post", result.stdout)
+
     def test_discovery_requires_both_consents_before_reading_profile(self) -> None:
         with patch.object(
             daily_cli,

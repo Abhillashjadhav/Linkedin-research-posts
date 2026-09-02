@@ -91,9 +91,34 @@ The command then:
 
 No weak thesis is silently promoted. Exhaustion returns no thesis set, while the already-persisted momentum package remains available for inspection.
 
+Unavailable surface lanes receive one bounded retry. When no topic clears the
+conversation-momentum floor, discovery may continue through a clearly labelled
+authority-fit fallback only when the topic still has at least four observed
+momentum axes and scores at least 20/25 on authority fit. This does not change
+the 14/25 momentum score or represent the fallback topic as trending.
+
+Every topic scoring at least 40/50 across observed momentum plus authority fit
+is retained in a rolling seven-day private candidate inventory. Selecting the
+highest candidate does not discard the other qualified topics.
+
 ## Human decision
 
 Choose the thesis whose judgment you genuinely endorse. Run only its printed draft command.
+
+To explicitly select the highest-scoring qualifying thesis and continue into
+the post workflow in the same invocation:
+
+```bash
+./bin/linkedin-os discover \
+  --profile data/private/authority-profile.json \
+  --days 7 \
+  --allow-web-research \
+  --allow-model-egress \
+  --generate-post
+```
+
+This is an opt-in convenience for a review-ready outcome. It does not publish.
+The command reports that voice guidance was loaded before it starts drafting.
 
 The existing draft workflow then owns:
 

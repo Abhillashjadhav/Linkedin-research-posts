@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -16,6 +18,136 @@ from .spine_feedback import CONTENT_SPINES
 
 CARD_KEYS = frozenset((*base.CARD_KEYS, "recommended_spine", "spine_fit_reason"))
 MAX_SPINE_FIT_REASON_CHARS = 320
+MIN_AUTHORITY_FIT_FALLBACK = 20
+MIN_COMBINED_INVENTORY_SCORE = 40
+CANDIDATE_INVENTORY = base.OUTPUT_ROOT / "candidate-inventory.json"
+
+
+def _parse_timestamp(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def update_candidate_inventory(
+    candidates: Sequence[Mapping[str, object]],
+    *,
+    as_of: str,
+    days: int,
+    path: Path = CANDIDATE_INVENTORY,
+) -> tuple[Path, list[dict[str, object]]]:
+    """Retain qualified unused topic candidates in a rolling private inventory."""
+
+    target = base._under_private(path)
+    now = _parse_timestamp(as_of)
+    cutoff = now - timedelta(days=days)
+    existing: list[dict[str, object]] = []
+    if target.exists():
+        raw = base._private_json(target, "Candidate inventory")
+        if not isinstance(raw, Mapping) or not isinstance(raw.get("candidates"), list):
+            raise workflow.WorkflowError("Candidate inventory has an invalid schema.")
+        for item in raw["candidates"]:
+            if not isinstance(item, Mapping) or not isinstance(item.get("last_seen_at"), str):
+                raise workflow.WorkflowError("Candidate inventory entry is malformed.")
+            if _parse_timestamp(str(item["last_seen_at"])) >= cutoff:
+                existing.append(dict(item))
+
+    by_topic = {
+        " ".join(str(item["topic"]).casefold().split()): item
+        for item in existing
+        if isinstance(item.get("topic"), str)
+    }
+    for candidate in candidates:
+        momentum_total = candidate.get("total")
+        authority = candidate.get("authority_fit")
+        authority_total = (
+            authority.get("total") if isinstance(authority, Mapping) else None
+        )
+        if type(momentum_total) is not int or type(authority_total) is not int:
+            continue
+        combined = int(momentum_total) + int(authority_total)
+        if combined < MIN_COMBINED_INVENTORY_SCORE:
+            continue
+        topic = str(candidate["topic"]).strip()
+        key = " ".join(topic.casefold().split())
+        prior = by_topic.get(key)
+        first_seen = (
+            str(prior["first_seen_at"])
+            if prior is not None and isinstance(prior.get("first_seen_at"), str)
+            else as_of
+        )
+        by_topic[key] = {
+            "topic": topic,
+            "why_now": str(candidate["why_now"]),
+            "first_seen_at": first_seen,
+            "last_seen_at": as_of,
+            "expires_at": (now + timedelta(days=days)).isoformat().replace("+00:00", "Z"),
+            "momentum_total": int(momentum_total),
+            "authority_fit_total": int(authority_total),
+            "combined_total": combined,
+            "representative_urls": list(candidate.get("representative_urls", [])),
+            "status": "AVAILABLE",
+        }
+    retained = sorted(
+        by_topic.values(),
+        key=lambda item: (-int(item["combined_total"]), str(item["topic"]).casefold()),
+    )
+    payload = {
+        "schema_version": 1,
+        "window_days": days,
+        "qualification": (
+            f"momentum_total + authority_fit_total >= {MIN_COMBINED_INVENTORY_SCORE}/50"
+        ),
+        "updated_at": as_of,
+        "candidates": retained,
+    }
+    base.legacy_cli._ensure_owner_only_directory(target.parent)
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    data = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    descriptor = os.open(
+        temporary,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+    )
+    try:
+        offset = 0
+        while offset < len(data):
+            written = os.write(descriptor, data[offset:])
+            if written < 1:
+                raise workflow.WorkflowError("Candidate inventory was not written completely.")
+            offset += written
+        os.fsync(descriptor)
+        os.fchmod(descriptor, 0o600)
+    finally:
+        os.close(descriptor)
+    os.replace(temporary, target)
+    return target, retained
+
+
+def select_topic_scope(
+    top_five: Sequence[Mapping[str, object]],
+    inventory: Sequence[Mapping[str, object]] = (),
+) -> tuple[list[dict[str, object]], str]:
+    momentum_eligible = [
+        dict(item) for item in top_five if item.get("momentum_eligible") is True
+    ]
+    if momentum_eligible:
+        return momentum_eligible, "momentum-qualified"
+    retained = [
+        dict(item)
+        for item in inventory
+        if item.get("status") == "AVAILABLE"
+        and type(item.get("combined_total")) is int
+        and int(item["combined_total"]) >= MIN_COMBINED_INVENTORY_SCORE
+    ]
+    if retained:
+        return retained, "rolling seven-day inventory"
+    authority_eligible = [
+        dict(item)
+        for item in top_five
+        if isinstance(item.get("authority_fit"), Mapping)
+        and int(item["authority_fit"].get("total", 0)) >= MIN_AUTHORITY_FIT_FALLBACK
+        and int(item.get("observed_axes", 0)) >= momentum.MIN_OBSERVED_AXES
+    ]
+    return authority_eligible, "authority-fit fallback"
 
 
 def _schema(kind: str) -> dict[str, object]:
@@ -194,6 +326,11 @@ def command(args: argparse.Namespace) -> int:
     top_five = ranked[: momentum.MOMENTUM_TOP_K]
     authority_scores = momentum.score_authority_fit(top_five, profile)
     top_five = momentum.attach_authority_fit(top_five, authority_scores)
+    inventory_path, inventory = update_candidate_inventory(
+        top_five,
+        as_of=as_of,
+        days=args.days,
+    )
 
     momentum_package = base.write_private_json(
         folder / "momentum.json",
@@ -217,13 +354,21 @@ def command(args: argparse.Namespace) -> int:
         f"Momentum evidence stored: "
         f"{momentum_package.relative_to(workflow.REPO_ROOT)}."
     )
+    print(
+        f"Rolling candidate inventory: {len(inventory)} qualified unused topic(s) at "
+        f"{inventory_path.relative_to(workflow.REPO_ROOT)}."
+    )
 
-    eligible = [item for item in top_five if item.get("momentum_eligible") is True]
-    if len(eligible) < 3:
+    eligible, discovery_route = select_topic_scope(top_five, inventory)
+    if not eligible:
         raise workflow.WorkflowError(
-            "Fewer than three topics cleared the authority conversation-momentum floor; "
-            "no topic-value selection or thesis generation was attempted."
+            "No topic cleared either the authority conversation-momentum floor or the "
+            "evidence-bounded authority-fit fallback; no thesis was generated."
         )
+    print(
+        f"Discovery route: {discovery_route}; {len(eligible)} topic(s) admitted "
+        "to evidence verification."
+    )
 
     items = _invoke_signal_scout(
         args.topic,
@@ -292,6 +437,7 @@ def command(args: argparse.Namespace) -> int:
         f"package={package.relative_to(workflow.REPO_ROOT)}."
     )
     print("Three theses cleared the locked authority bar:")
+    draft_commands: list[tuple[dict[str, object], list[str], str]] = []
     for card in theses:
         strategy = base.write_private_json(
             folder / f"strategy-{card['id']}.json",
@@ -303,6 +449,23 @@ def command(args: argparse.Namespace) -> int:
             f"--goal authority --format text --strategy-input {json.dumps(strategy_rel)} "
             f"--db {json.dumps(db_rel)} --allow-model-egress --package"
         )
+        draft_argv = [
+            str(workflow.REPO_ROOT / "bin" / "linkedin-os"),
+            "draft",
+            "--topic",
+            str(card["topic"]),
+            "--goal",
+            "authority",
+            "--format",
+            "text",
+            "--strategy-input",
+            strategy_rel,
+            "--db",
+            db_rel,
+            "--allow-model-egress",
+            "--package",
+        ]
+        draft_commands.append((card, draft_argv, draft))
         print(
             f"{card['id']}: {card['plain_language_summary']} "
             f"[{card['total']}/25; simplicity={card['scores']['simplicity']}/5]"
@@ -313,12 +476,43 @@ def command(args: argparse.Namespace) -> int:
             f"Spine: {card['recommended_spine']} — {card['spine_fit_reason']}"
         )
         print(f"Draft command: {draft}")
+    if getattr(args, "generate_post", False):
+        selected = draft_commands[0]
+        guidance = workflow.load_voice_guidance()
+        anchors = [
+            key for key, value in guidance.items()
+            if key != "provenance" and isinstance(value, str) and value.strip()
+        ]
+        print(
+            f"Auto-selection: {selected[0]['id']} ({selected[0]['total']}/25), "
+            "the highest qualifying thesis."
+        )
+        print(
+            f"Voice stage: LOADED ({len(anchors)} non-blank anchor(s)); "
+            "Writer and Critic receive the same guidance."
+        )
+        print("Drafting: starting the high-bar post workflow.", flush=True)
+        completed = subprocess.run(
+            selected[1],
+            cwd=workflow.REPO_ROOT,
+            check=False,
+        )
+        return completed.returncode
     print("No thesis was selected and no post was generated or published.")
     return 0
 
 
 def parser() -> argparse.ArgumentParser:
-    return base.parser()
+    result = base.parser()
+    result.add_argument(
+        "--generate-post",
+        action="store_true",
+        help=(
+            "Select the highest-scoring qualifying thesis and continue through the "
+            "high-bar drafting workflow."
+        ),
+    )
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:

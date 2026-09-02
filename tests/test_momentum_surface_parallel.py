@@ -8,9 +8,43 @@ import unittest
 from unittest.mock import patch
 
 from authority_os import momentum_surface_parallel as surface
+from authority_os import workflow
 
 
 class SurfaceParallelTests(unittest.TestCase):
+    def test_unavailable_surface_is_retried_once(self) -> None:
+        lane = surface.SURFACES[0]
+        observed = {
+            "status": "OBSERVED",
+            "signals": [
+                {
+                    "topic": "Agent budgets",
+                    "why_now": "A current release exposed a spending control.",
+                    "platform": "Google Search",
+                    "url": "https://example.com/agent-budgets",
+                    "source": "Example",
+                    "published_at": "2026-09-02T00:00:00Z",
+                    "freshness_hours": 1,
+                    "engagement_units": 10,
+                    "acceleration_percent": None,
+                }
+            ],
+            "caveat": "Public evidence only.",
+        }
+        with patch.object(surface.daily_cli, "_role", return_value="Scout"), patch.object(
+            surface,
+            "invoke_structured",
+            side_effect=[workflow.WorkflowError("timed out"), observed],
+        ) as invoke:
+            result = surface._run_surface(
+                lane,
+                topic=None,
+                days=7,
+                as_of="2026-09-02T00:00:00Z",
+            )
+        self.assertEqual(invoke.call_count, 2)
+        self.assertEqual(result["status"], "OBSERVED")
+
     def test_exactly_seven_bounded_surface_lanes_are_defined(self) -> None:
         self.assertEqual(surface.MAX_WORKERS, 7)
         self.assertEqual(len(surface.SURFACES), 7)
