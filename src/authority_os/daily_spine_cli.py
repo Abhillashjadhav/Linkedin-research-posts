@@ -30,6 +30,73 @@ EVAL_CONTRACTS = (
     ("solution_plausibility", "Resonance", "solution plausibility"),
     ("reader_attention", "Resonance", "reader attention"),
 )
+DISCOVERY_STAGES = (
+    ("conversation_discovery", "Conversation discovery"),
+    ("topic_admission", "Topic admission"),
+    ("evidence_verification", "Evidence verification"),
+    ("topic_value", "Topic Value"),
+    ("thesis_search", "Thesis search"),
+    ("drafting", "High-bar drafting"),
+    ("final_evals", "Final evals"),
+)
+
+
+def new_run_dashboard() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "outcome": "RUNNING",
+        "stopped_at": None,
+        "checks": [
+            {
+                "stage": stage,
+                "label": label,
+                "status": "NOT_EVALUATED",
+                "reason": "stage was not reached",
+                "details": {},
+            }
+            for stage, label in DISCOVERY_STAGES
+        ],
+    }
+
+
+def mark_run_stage(
+    dashboard: dict[str, object],
+    stage: str,
+    status: str,
+    reason: str,
+    **details: object,
+) -> None:
+    checks = dashboard.get("checks")
+    if not isinstance(checks, list):
+        raise workflow.WorkflowError("Run dashboard has an invalid check inventory.")
+    for check in checks:
+        if isinstance(check, dict) and check.get("stage") == stage:
+            check["status"] = status
+            check["reason"] = reason
+            check["details"] = details
+            if status == "FAIL":
+                dashboard["outcome"] = "FAIL"
+                dashboard["stopped_at"] = stage
+            return
+    raise workflow.WorkflowError(f"Run dashboard does not recognise stage {stage!r}.")
+
+
+def persist_run_dashboard(
+    folder: Path,
+    dashboard: dict[str, object],
+    *,
+    outcome: str | None = None,
+) -> Path:
+    if outcome is not None:
+        dashboard["outcome"] = outcome
+    path = base.write_private_json(folder / "run-dashboard.json", dashboard)
+    print("Run dashboard:")
+    for check in dashboard["checks"]:  # type: ignore[index]
+        print(
+            f"  {check['label']}: {check['status']} ({check['reason']})"  # type: ignore[index]
+        )
+    print(f"Run dashboard stored: {path.relative_to(workflow.REPO_ROOT)}.")
+    return path
 
 
 def render_eval_dashboard(
@@ -296,9 +363,13 @@ END_UNTRUSTED_TOPIC_VALUE_SIGNALS{retry}"""
 def search_theses(
     profile: Mapping[str, object],
     signals: Sequence[Mapping[str, object]],
+    *,
+    trace_path: Path | None = None,
 ) -> list[dict[str, object]]:
     feedback: Mapping[str, object] | None = None
     rejected: set[str] = set()
+    cycle_traces: list[dict[str, object]] = []
+    best_so_far: dict[str, object] | None = None
     for cycle in range(1, base.MAX_CYCLES + 1):
         cards = generate_cards(profile, signals, feedback)
         if any(base._normal(card["thesis"]) in rejected for card in cards):
@@ -331,7 +402,71 @@ def search_theses(
             if int(card["total"]) >= base.MIN_TOTAL
             and int(card["scores"]["simplicity"]) >= base.MIN_SIMPLICITY  # type: ignore[index]
         ]
+        evaluated: list[dict[str, object]] = []
+        for card in combined:
+            reasons: list[str] = []
+            if int(card["total"]) < base.MIN_TOTAL:
+                reasons.append(
+                    f"total {card['total']}/25 is below {base.MIN_TOTAL}/25"
+                )
+            simplicity = int(card["scores"]["simplicity"])  # type: ignore[index]
+            if simplicity < base.MIN_SIMPLICITY:
+                reasons.append(
+                    f"simplicity {simplicity}/5 is below {base.MIN_SIMPLICITY}/5"
+                )
+            evaluated.append(
+                {
+                    **card,
+                    "qualifies": not reasons,
+                    "rejection_reasons": reasons,
+                }
+            )
+        cycle_traces.append({"cycle": cycle, "candidates": evaluated})
+        if best_so_far is None or (
+            int(evaluated[0]["total"]),
+            int(evaluated[0]["scores"]["distinctiveness"]),  # type: ignore[index]
+            int(evaluated[0]["scores"]["simplicity"]),  # type: ignore[index]
+        ) > (
+            int(best_so_far["total"]),
+            int(best_so_far["scores"]["distinctiveness"]),  # type: ignore[index]
+            int(best_so_far["scores"]["simplicity"]),  # type: ignore[index]
+        ):
+            best_so_far = dict(evaluated[0])
+        print(f"Thesis evaluation cycle {cycle}:")
+        for card in evaluated:
+            result = "PASS" if card["qualifies"] else "FAIL"
+            reason = (
+                "cleared every thesis threshold"
+                if card["qualifies"]
+                else "; ".join(card["rejection_reasons"])  # type: ignore[arg-type]
+            )
+            print(
+                f"  {card['id']}: {card['total']}/25; "
+                f"simplicity={card['scores']['simplicity']}/5; {result} ({reason})"  # type: ignore[index]
+            )
+            print(
+                "    axes="
+                + ", ".join(
+                    f"{axis}:{card['scores'][axis]}"  # type: ignore[index]
+                    for axis in base.AXES
+                )
+            )
         if qualifying:
+            if trace_path is not None:
+                base.write_private_json(
+                    trace_path,
+                    {
+                        "schema_version": 1,
+                        "outcome": "PASS",
+                        "thresholds": {
+                            "minimum_total": base.MIN_TOTAL,
+                            "minimum_simplicity": base.MIN_SIMPLICITY,
+                        },
+                        "cycles": cycle_traces,
+                        "best_overall": best_so_far,
+                        "qualifying_ids": [str(card["id"]) for card in qualifying],
+                    },
+                )
             print(
                 f"Thesis search: retained {len(qualifying)} qualifying candidate(s) "
                 f"from cycle {cycle}; weaker parallel candidates were not allowed "
@@ -354,6 +489,32 @@ def search_theses(
                 for card in combined
             ],
         }
+    if trace_path is not None:
+        base.write_private_json(
+            trace_path,
+            {
+                "schema_version": 1,
+                "outcome": "FAIL",
+                "thresholds": {
+                    "minimum_total": base.MIN_TOTAL,
+                    "minimum_simplicity": base.MIN_SIMPLICITY,
+                },
+                "cycles": cycle_traces,
+                "best_overall": best_so_far,
+                "qualifying_ids": [],
+            },
+        )
+        print(
+            f"Thesis evaluation stored: "
+            f"{trace_path.relative_to(workflow.REPO_ROOT)}."
+        )
+    if best_so_far is not None:
+        print(
+            f"Best thesis across all cycles: {best_so_far['id']} at "
+            f"{best_so_far['total']}/25; "
+            f"simplicity={best_so_far['scores']['simplicity']}/5; "  # type: ignore[index]
+            f"reasons={'; '.join(best_so_far['rejection_reasons'])}."  # type: ignore[arg-type]
+        )
     raise workflow.WorkflowError(
         "No thesis cleared the authority bar after the bounded search. "
         "Improve the audience, proof inventory or signals."
@@ -412,15 +573,34 @@ def command(args: argparse.Namespace) -> int:
         or base.OUTPUT_ROOT / as_of[:10] / as_of[11:19].replace(":", "")
     )
     base.legacy_cli._ensure_owner_only_directory(folder)
+    run_dashboard = new_run_dashboard()
 
-    momentum_candidates = momentum.invoke_scout(args.topic, args.days, as_of)
-    ranked = momentum.rank_candidates(
-        momentum_candidates,
-        minimum=momentum.MIN_AUTHORITY_MOMENTUM,
+    try:
+        momentum_candidates = momentum.invoke_scout(args.topic, args.days, as_of)
+        ranked = momentum.rank_candidates(
+            momentum_candidates,
+            minimum=momentum.MIN_AUTHORITY_MOMENTUM,
+        )
+        top_five = ranked[: momentum.MOMENTUM_TOP_K]
+        authority_scores = momentum.score_authority_fit(top_five, profile)
+        top_five = momentum.attach_authority_fit(top_five, authority_scores)
+    except workflow.WorkflowError as exc:
+        mark_run_stage(
+            run_dashboard,
+            "conversation_discovery",
+            "FAIL",
+            str(exc),
+        )
+        persist_run_dashboard(folder, run_dashboard)
+        raise
+    mark_run_stage(
+        run_dashboard,
+        "conversation_discovery",
+        "PASS",
+        "conversation candidates were collected and ranked",
+        signal_count=len(momentum_candidates),
+        ranked_count=len(ranked),
     )
-    top_five = ranked[: momentum.MOMENTUM_TOP_K]
-    authority_scores = momentum.score_authority_fit(top_five, profile)
-    top_five = momentum.attach_authority_fit(top_five, authority_scores)
     inventory_path, inventory = update_candidate_inventory(
         top_five,
         as_of=as_of,
@@ -456,25 +636,74 @@ def command(args: argparse.Namespace) -> int:
 
     eligible, discovery_route = select_topic_scope(top_five, inventory)
     if not eligible:
-        raise workflow.WorkflowError(
+        reason = (
             "No topic cleared either the authority conversation-momentum floor or the "
-            "evidence-bounded authority-fit fallback; no thesis was generated."
+            "evidence-bounded authority-fit fallback."
         )
+        mark_run_stage(run_dashboard, "topic_admission", "FAIL", reason)
+        persist_run_dashboard(folder, run_dashboard)
+        raise workflow.WorkflowError(
+            f"{reason} No thesis was generated."
+        )
+    mark_run_stage(
+        run_dashboard,
+        "topic_admission",
+        "PASS",
+        f"{len(eligible)} topic(s) admitted through {discovery_route}",
+        route=discovery_route,
+        admitted_topics=[str(item["topic"]) for item in eligible],
+    )
     print(
         f"Discovery route: {discovery_route}; {len(eligible)} topic(s) admitted "
         "to evidence verification."
     )
 
-    items = _invoke_signal_scout(
-        args.topic,
-        args.days,
-        as_of,
-        [str(item["topic"]) for item in eligible],
+    try:
+        items = _invoke_signal_scout(
+            args.topic,
+            args.days,
+            as_of,
+            [str(item["topic"]) for item in eligible],
+        )
+        raw_signals = base.project_signals(items)
+    except workflow.WorkflowError as exc:
+        mark_run_stage(
+            run_dashboard,
+            "evidence_verification",
+            "FAIL",
+            str(exc),
+        )
+        persist_run_dashboard(folder, run_dashboard)
+        raise
+    mark_run_stage(
+        run_dashboard,
+        "evidence_verification",
+        "PASS",
+        f"{len(raw_signals)} body-verified signal(s) prepared",
+        signal_ids=[str(item["id"]) for item in raw_signals],
     )
-    raw_signals = base.project_signals(items)
 
-    topic_value_candidates = topic_value.invoke_discovery_selector(profile, raw_signals)
-    signals = topic_value.project_discovery_signals(raw_signals, topic_value_candidates)
+    try:
+        topic_value_candidates = topic_value.invoke_discovery_selector(profile, raw_signals)
+        signals = topic_value.project_discovery_signals(raw_signals, topic_value_candidates)
+    except workflow.WorkflowError as exc:
+        mark_run_stage(run_dashboard, "topic_value", "FAIL", str(exc))
+        persist_run_dashboard(folder, run_dashboard)
+        raise
+    mark_run_stage(
+        run_dashboard,
+        "topic_value",
+        "PASS",
+        f"{len(topic_value_candidates)} situation(s) cleared Topic Value",
+        candidates=[
+            {
+                "id": str(item["id"]),
+                "total": int(item["total"]),
+                "priority": str(item["priority"]),
+            }
+            for item in topic_value_candidates
+        ],
+    )
     topic_value_package = base.write_private_json(
         folder / "topic-value.json",
         {
@@ -502,7 +731,36 @@ def command(args: argparse.Namespace) -> int:
         print(f"Situation: {candidate['situation']}")
         print(f"Reader value: {candidate['reader_value']}")
 
-    theses = search_theses(profile, signals)
+    thesis_trace_path = folder / "thesis-evaluations.json"
+    try:
+        theses = search_theses(
+            profile,
+            signals,
+            trace_path=thesis_trace_path,
+        )
+    except workflow.WorkflowError as exc:
+        trace_details: dict[str, object] = {}
+        if thesis_trace_path.exists():
+            trace_details["evaluation_artifact"] = thesis_trace_path.relative_to(
+                workflow.REPO_ROOT
+            ).as_posix()
+        mark_run_stage(
+            run_dashboard,
+            "thesis_search",
+            "FAIL",
+            str(exc),
+            **trace_details,
+        )
+        persist_run_dashboard(folder, run_dashboard)
+        raise
+    mark_run_stage(
+        run_dashboard,
+        "thesis_search",
+        "PASS",
+        f"{len(theses)} thesis candidate(s) cleared the authority bar",
+        qualifying_ids=[str(item["id"]) for item in theses],
+        evaluation_artifact=thesis_trace_path.relative_to(workflow.REPO_ROOT).as_posix(),
+    )
 
     db = base._under_private(args.db)
     base.legacy_cli.initialise_paths(db)
@@ -598,11 +856,72 @@ def command(args: argparse.Namespace) -> int:
             folder / "eval-dashboard.json",
             dashboard,
         )
+        evaluated_rows = [
+            check
+            for check in dashboard["checks"]
+            if check["status"] != "NOT_EVALUATED"
+        ]
+        failed_rows = [
+            check
+            for check in evaluated_rows
+            if check["status"] in {"FAIL", "BLOCKED"}
+        ]
+        if completed.returncode == 0 or evaluated_rows:
+            mark_run_stage(
+                run_dashboard,
+                "drafting",
+                "PASS",
+                "draft candidates were generated and reached evaluation",
+                return_code=completed.returncode,
+            )
+        else:
+            mark_run_stage(
+                run_dashboard,
+                "drafting",
+                "FAIL",
+                f"high-bar drafting workflow exited with code {completed.returncode} before an eval was recorded",
+                return_code=completed.returncode,
+            )
+        if failed_rows:
+            mark_run_stage(
+                run_dashboard,
+                "final_evals",
+                "FAIL",
+                f"{len(failed_rows)} evaluated contract(s) failed or blocked",
+                failed_contracts=[str(check["contract"]) for check in failed_rows],
+            )
+        elif completed.returncode != 0 and evaluated_rows:
+            mark_run_stage(
+                run_dashboard,
+                "final_evals",
+                "FAIL",
+                "workflow failed although every recorded eval passed; an unobserved gate remains",
+                evaluated_contracts=[
+                    str(check["contract"]) for check in evaluated_rows
+                ],
+            )
+        elif completed.returncode == 0:
+            mark_run_stage(
+                run_dashboard,
+                "final_evals",
+                "PASS",
+                f"{len(evaluated_rows)} evaluated contract(s) cleared",
+            )
         print(
             f"Eval dashboard stored: "
             f"{dashboard_path.relative_to(workflow.REPO_ROOT)}."
         )
+        persist_run_dashboard(
+            folder,
+            run_dashboard,
+            outcome="PASS" if completed.returncode == 0 else "FAIL",
+        )
         return completed.returncode
+    persist_run_dashboard(
+        folder,
+        run_dashboard,
+        outcome="AWAITING_HUMAN_SELECTION",
+    )
     print("No thesis was selected and no post was generated or published.")
     return 0
 

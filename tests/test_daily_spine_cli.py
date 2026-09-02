@@ -105,6 +105,27 @@ def cards() -> list[dict[str, object]]:
 
 
 class SpineCardTests(unittest.TestCase):
+    def test_run_dashboard_names_first_failed_stage_and_unreached_downstream(self) -> None:
+        dashboard = daily_spine_cli.new_run_dashboard()
+        daily_spine_cli.mark_run_stage(
+            dashboard,
+            "conversation_discovery",
+            "PASS",
+            "ranked",
+            ranked_count=10,
+        )
+        daily_spine_cli.mark_run_stage(
+            dashboard,
+            "thesis_search",
+            "FAIL",
+            "No thesis cleared the authority bar.",
+        )
+        by_stage = {item["stage"]: item for item in dashboard["checks"]}
+        self.assertEqual(dashboard["stopped_at"], "thesis_search")
+        self.assertEqual(by_stage["conversation_discovery"]["status"], "PASS")
+        self.assertEqual(by_stage["thesis_search"]["status"], "FAIL")
+        self.assertEqual(by_stage["drafting"]["status"], "NOT_EVALUATED")
+
     def test_eval_dashboard_marks_unreached_stages_explicitly(self) -> None:
         dashboard = daily_spine_cli.render_eval_dashboard(
             [
@@ -167,6 +188,53 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual(generate.call_count, 1)
         self.assertEqual([item["id"] for item in result], ["thesis-1"])
         self.assertEqual(result[0]["total"], 23)
+
+    def test_failed_thesis_search_persists_every_score_and_best_overall(self) -> None:
+        weak_scores = [
+            {
+                "thesis_id": f"thesis-{index}",
+                "audience_fit": 5,
+                "distinctiveness": 4,
+                "decision_strength": 4,
+                "proof_fit": 4,
+                "simplicity": 4,
+                "total": 22 - index,
+            }
+            for index in range(1, 4)
+        ]
+        trace_path = workflow.REPO_ROOT / "data/private/test-thesis-evaluations.json"
+        with patch.object(
+            daily_spine_cli,
+            "generate_cards",
+            return_value=cards(),
+        ), patch.object(
+            daily_spine_cli.base,
+            "score_cards",
+            return_value=weak_scores,
+        ), patch.object(
+            daily_spine_cli.base,
+            "MAX_CYCLES",
+            1,
+        ), patch.object(
+            daily_spine_cli.base,
+            "write_private_json",
+            return_value=trace_path,
+        ) as write:
+            with self.assertRaisesRegex(workflow.WorkflowError, "No thesis cleared"):
+                daily_spine_cli.search_theses(
+                    profile(),
+                    signals(),
+                    trace_path=trace_path,
+                )
+
+        payload = write.call_args.args[1]
+        self.assertEqual(payload["outcome"], "FAIL")
+        self.assertEqual(len(payload["cycles"][0]["candidates"]), 3)
+        self.assertEqual(payload["best_overall"]["id"], "thesis-1")
+        self.assertEqual(
+            payload["best_overall"]["rejection_reasons"],
+            ["total 21/25 is below 23/25"],
+        )
 
     def test_topic_scope_prefers_momentum_then_authority_fallback(self) -> None:
         candidates = [

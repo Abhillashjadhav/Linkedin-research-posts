@@ -122,6 +122,11 @@ The command reports that voice guidance was loaded before it starts drafting.
 It also prints and stores an eval dashboard. Contracts from stages that were
 not reached are shown as `NOT_EVALUATED` instead of disappearing.
 
+Every run also stores `run-dashboard.json`, which names the first failed stage
+and leaves downstream stages explicitly `NOT_EVALUATED`. Thesis search stores
+`thesis-evaluations.json` with every candidate from every cycle, its axis scores,
+threshold misses, and the best candidate observed across the complete search.
+
 Topic Value selection uses a bounded 300-second attempt and one 420-second
 timeout-only retry. Other selector failures remain fail-closed and are not retried.
 
