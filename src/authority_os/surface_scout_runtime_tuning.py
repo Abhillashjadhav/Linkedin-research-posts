@@ -119,35 +119,51 @@ For each signal return only:
 - engagement_units: visible public interactions excluding raw page/video views, or null if unavailable.
 
 Social engagement may establish momentum only. It does not prove factual claims. Do NOT calculate acceleration. Do NOT perform cross-platform comparison. Do NOT rank against other surfaces. Do not invent timestamps, URLs, engagement, consequences, or popularity rankings. If this lane is unavailable or has no defensible current signal, return that honestly. Return evidence only; do not use the private authority profile and do not draft."""
-    try:
-        result = surface.invoke_structured(
-            config=MODEL,
-            role_prompt=surface.daily_cli._role("scout"),
-            task_prompt=prompt,
-            schema=_shallow_schema(lane["allowed_platforms"]),  # type: ignore[arg-type,index]
-            timeout=SURFACE_TIMEOUT,
-            web_search=True,
-            stage_label=f"Surface Scout {label}",
-        )
-        raw_signals = result.get("signals")
-        if isinstance(raw_signals, list):
-            result = {
-                **result,
-                "signals": [
-                    {**item, "acceleration_percent": None}
-                    if isinstance(item, Mapping)
-                    else item
-                    for item in raw_signals
-                ],
+    status = "UNAVAILABLE"
+    caveat = "Surface Scout did not execute."
+    signals: list[dict[str, object]] = []
+    for attempt in range(1, surface.MAX_SURFACE_ATTEMPTS + 1):
+        try:
+            result = surface.invoke_structured(
+                config=MODEL,
+                role_prompt=surface.daily_cli._role("scout"),
+                task_prompt=prompt,
+                schema=_shallow_schema(lane["allowed_platforms"]),  # type: ignore[arg-type,index]
+                timeout=SURFACE_TIMEOUT,
+                web_search=True,
+                stage_label=f"Surface Scout {label}",
+            )
+            raw_signals = result.get("signals")
+            if isinstance(raw_signals, list):
+                result = {
+                    **result,
+                    "signals": [
+                        {**item, "acceleration_percent": None}
+                        if isinstance(item, Mapping)
+                        else item
+                        for item in raw_signals
+                    ],
+                }
+            validated = surface._validate_surface_result(result, surface=lane)
+            status = str(validated["status"])
+            caveat = str(validated["caveat"])
+            signals = list(validated["signals"])  # type: ignore[arg-type]
+        except workflow.WorkflowError as exc:
+            status = _failure_status(exc)
+            caveat = str(exc)
+            signals = []
+        if status not in {"TIMEOUT", "UNAVAILABLE"} or attempt == surface.MAX_SURFACE_ATTEMPTS:
+            break
+        print(f"Surface Scout [{label}]: {status}; retrying once.", flush=True)
+        surface._trace_event(
+            {
+                "event": "surface_retry",
+                "surface": key,
+                "label": label,
+                "attempt": attempt + 1,
+                "reason": status,
             }
-        validated = surface._validate_surface_result(result, surface=lane)
-        status = str(validated["status"])
-        caveat = str(validated["caveat"])
-        signals = validated["signals"]
-    except workflow.WorkflowError as exc:
-        status = _failure_status(exc)
-        caveat = str(exc)
-        signals = []
+        )
 
     payload = {
         "schema_version": 2,
