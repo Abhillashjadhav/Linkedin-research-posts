@@ -42,6 +42,16 @@ if [ "${1:-}" = "spine-review" ]; then
   PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.spine_feedback_io review "$@"
 fi
 
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON" -m authority_os.integrated_cli "$@"
+  STATUS=$?
+  if [ "$STATUS" -eq 0 ]; then
+    printf '\nV1 end-to-end workflow:\n'
+    printf '  discover            Run parallel discovery; add --generate-post to continue through drafting.\n'
+  fi
+  exit "$STATUS"
+fi
+
 MODULE="authority_os.integrated_cli"
 for ARG in "$@"; do
   if [ "$ARG" = "--dry-run" ]; then

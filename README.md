@@ -49,6 +49,25 @@ make check
 
 The dry run is offline and uses visibly synthetic fixtures. It does not invoke a Writer or Critic model, recommend a candidate for publication, or publish anything.
 
+## Run V1 discovery through a review-ready post
+
+```bash
+./bin/linkedin-os discover \
+  --profile data/private/authority-profile.json \
+  --days 7 \
+  --allow-web-research \
+  --allow-model-egress \
+  --generate-post
+```
+
+V1 retries unavailable Scout surfaces once, preserves every topic with a
+combined momentum and authority-fit score of at least 40/50 in a rolling
+seven-day private inventory, and selects the highest qualifying thesis before
+continuing through the existing high-bar drafting workflow. A clearly labelled
+authority-fit fallback may nominate a well-evidenced topic when current
+conversation momentum is insufficient; it never relabels that topic as
+trending. Publication remains disabled.
+
 ## Locked high-bar search
 
 A live invocation no longer exposes the first completed draft batch. It runs up to four candidate cycles and returns prose only when at least one candidate satisfies all of these conditions:

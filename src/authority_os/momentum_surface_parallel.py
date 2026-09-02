@@ -18,6 +18,7 @@ CONSOLIDATION_TIMEOUT = 60
 MIN_SUCCESSFUL_SURFACES = 4
 MIN_SIGNALS_FOR_CONSOLIDATION = 10
 SIGNALS_PER_SURFACE = 5
+MAX_SURFACE_ATTEMPTS = 2
 
 MOMENTUM_AXES = momentum.MOMENTUM_AXES
 MOMENTUM_LABEL = momentum.MOMENTUM_LABEL
@@ -284,19 +285,39 @@ For each signal:
 - acceleration_percent: comparable recent growth percentage only if directly observable, otherwise null.
 
 Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings. Return evidence only; do not use the private authority profile and do not write a post."""
-    try:
-        result = invoke_structured(
-            config=MODEL,
-            role_prompt=daily_cli._role("scout"),
-            task_prompt=prompt,
-            schema=_surface_schema(surface["allowed_platforms"]),  # type: ignore[arg-type,index]
-            timeout=SURFACE_TIMEOUT,
-            web_search=True,
-            stage_label=f"Surface Scout {label}",
+    validated: dict[str, object] = {
+        "status": "UNAVAILABLE",
+        "signals": [],
+        "caveat": "Surface Scout did not execute.",
+    }
+    for attempt in range(1, MAX_SURFACE_ATTEMPTS + 1):
+        try:
+            result = invoke_structured(
+                config=MODEL,
+                role_prompt=daily_cli._role("scout"),
+                task_prompt=prompt,
+                schema=_surface_schema(surface["allowed_platforms"]),  # type: ignore[arg-type,index]
+                timeout=SURFACE_TIMEOUT,
+                web_search=True,
+                stage_label=f"Surface Scout {label}",
+            )
+            validated = _validate_surface_result(result, surface=surface)
+        except workflow.WorkflowError as exc:
+            validated = {"status": "UNAVAILABLE", "signals": [], "caveat": str(exc)}
+        if validated["status"] != "UNAVAILABLE" or attempt == MAX_SURFACE_ATTEMPTS:
+            break
+        print(
+            f"Surface Scout [{label}]: unavailable; retrying once.",
+            flush=True,
         )
-        validated = _validate_surface_result(result, surface=surface)
-    except workflow.WorkflowError as exc:
-        validated = {"status": "UNAVAILABLE", "signals": [], "caveat": str(exc)}
+        _trace_event(
+            {
+                "event": "surface_retry",
+                "surface": key,
+                "label": label,
+                "attempt": attempt + 1,
+            }
+        )
     payload = {
         "schema_version": 1,
         "surface": key,

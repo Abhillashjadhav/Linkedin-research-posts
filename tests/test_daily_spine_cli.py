@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from authority_os import daily_spine_cli, topic_value, workflow
@@ -102,6 +105,85 @@ def cards() -> list[dict[str, object]]:
 
 
 class SpineCardTests(unittest.TestCase):
+    def test_topic_scope_prefers_momentum_then_authority_fallback(self) -> None:
+        candidates = [
+            {
+                "id": "topic-1",
+                "momentum_eligible": False,
+                "observed_axes": 4,
+                "authority_fit": {"total": 23},
+            },
+            {
+                "id": "topic-2",
+                "momentum_eligible": False,
+                "observed_axes": 4,
+                "authority_fit": {"total": 19},
+            },
+        ]
+        selected, route = daily_spine_cli.select_topic_scope(candidates)
+        self.assertEqual([item["id"] for item in selected], ["topic-1"])
+        self.assertEqual(route, "authority-fit fallback")
+
+        candidates[1]["momentum_eligible"] = True
+        selected, route = daily_spine_cli.select_topic_scope(candidates)
+        self.assertEqual([item["id"] for item in selected], ["topic-2"])
+        self.assertEqual(route, "momentum-qualified")
+
+        candidates[1]["momentum_eligible"] = False
+        inventory = [
+            {
+                "topic": "Retained topic",
+                "status": "AVAILABLE",
+                "combined_total": 42,
+            }
+        ]
+        selected, route = daily_spine_cli.select_topic_scope(candidates, inventory)
+        self.assertEqual([item["topic"] for item in selected], ["Retained topic"])
+        self.assertEqual(route, "rolling seven-day inventory")
+
+    def test_generate_post_is_explicitly_opt_in(self) -> None:
+        parsed = daily_spine_cli.parser().parse_args(
+            [
+                "--profile",
+                "data/private/authority-profile.json",
+                "--generate-post",
+            ]
+        )
+        self.assertTrue(parsed.generate_post)
+
+    def test_candidate_inventory_keeps_every_topic_at_or_above_40(self) -> None:
+        candidates = [
+            {
+                "topic": "Qualified topic",
+                "why_now": "Current evidence.",
+                "total": 18,
+                "authority_fit": {"total": 23},
+                "representative_urls": ["https://example.com/qualified"],
+            },
+            {
+                "topic": "Below floor",
+                "why_now": "Current evidence.",
+                "total": 16,
+                "authority_fit": {"total": 23},
+                "representative_urls": ["https://example.com/below"],
+            },
+        ]
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            daily_spine_cli.base,
+            "_under_private",
+            side_effect=lambda value: Path(value),
+        ):
+            target = Path(temporary) / "inventory.json"
+            _, retained = daily_spine_cli.update_candidate_inventory(
+                candidates,
+                as_of="2026-09-02T12:00:00Z",
+                days=7,
+                path=target,
+            )
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        self.assertEqual([item["topic"] for item in retained], ["Qualified topic"])
+        self.assertEqual(payload["candidates"][0]["combined_total"], 41)
+
     def test_extended_card_contract_accepts_only_stable_spines(self) -> None:
         validated = daily_spine_cli.validate_cards(cards(), signals(), profile())
         self.assertEqual(validated[0]["recommended_spine"], "counterposition")
