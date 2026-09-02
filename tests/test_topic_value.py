@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from authority_os import topic_value, workflow
 
@@ -79,6 +80,58 @@ class TopicValueThresholdTests(unittest.TestCase):
     def test_low_reader_relevance_is_blocked_even_with_other_high_scores(self) -> None:
         item = candidate(reader_relevance=3, gravity_score=5, authority_fit=5)
         self.assertEqual(item["status"], "BLOCKED")
+
+
+class TopicValueRuntimeTests(unittest.TestCase):
+    def test_live_selector_retries_only_a_timeout_with_explicit_stage_label(self) -> None:
+        expected = {"candidates": []}
+        with mock.patch.object(
+            topic_value,
+            "invoke_structured",
+            side_effect=[
+                workflow.WorkflowError("Topic Value Selector timed out."),
+                expected,
+            ],
+        ) as invoke:
+            result = topic_value._default_invoker(  # type: ignore[attr-defined]
+                "topic_value_selector",
+                topic_value.ModelConfig("codex", "model", "high"),
+                "role",
+                "task",
+                {"type": "object"},
+            )
+
+        self.assertEqual(result, expected)
+        self.assertEqual(invoke.call_count, 2)
+        self.assertEqual(
+            [call.kwargs["timeout"] for call in invoke.call_args_list],
+            list(topic_value.TOPIC_VALUE_TIMEOUTS),
+        )
+        self.assertTrue(
+            all(
+                call.kwargs["stage_label"] == "Topic Value Selector"
+                for call in invoke.call_args_list
+            )
+        )
+
+    def test_live_selector_does_not_retry_a_non_timeout_failure(self) -> None:
+        with mock.patch.object(
+            topic_value,
+            "invoke_structured",
+            side_effect=workflow.WorkflowError(
+                "Topic Value Selector returned invalid JSON."
+            ),
+        ) as invoke:
+            with self.assertRaisesRegex(workflow.WorkflowError, "invalid JSON"):
+                topic_value._default_invoker(  # type: ignore[attr-defined]
+                    "topic_value_selector",
+                    topic_value.ModelConfig("codex", "model", "high"),
+                    "role",
+                    "task",
+                    {"type": "object"},
+                )
+
+        invoke.assert_called_once()
 
 
 class TopicValueProjectionTests(unittest.TestCase):

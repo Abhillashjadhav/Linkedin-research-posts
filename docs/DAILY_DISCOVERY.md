@@ -83,9 +83,9 @@ After momentum ranking, the source Scout body-verifies three to seven defensible
 
 The command then:
 
-1. generates exactly three differentiated theses;
+1. generates three differentiated theses per search cycle;
 2. scores audience fit, distinctiveness, decision strength, proof fit, and simplicity;
-3. regenerates the complete set up to three times until every thesis scores at least 23/25 and simplicity is at least 4/5;
+3. retains each thesis that independently scores at least 23/25 with simplicity at least 4/5, without allowing weaker siblings to discard it;
 4. stores the evidence, momentum ranking, thesis package, and five-field strategy files under ignored `data/private/`;
 5. prints one existing `linkedin-os draft` command per thesis.
 
@@ -121,6 +121,9 @@ This is an opt-in convenience for a review-ready outcome. It does not publish.
 The command reports that voice guidance was loaded before it starts drafting.
 It also prints and stores an eval dashboard. Contracts from stages that were
 not reached are shown as `NOT_EVALUATED` instead of disappearing.
+
+Topic Value selection uses a bounded 300-second attempt and one 420-second
+timeout-only retry. Other selector failures remain fail-closed and are not retried.
 
 The existing draft workflow then owns:
 
