@@ -29,6 +29,7 @@ VALUE_TYPES = (
 )
 GRAVITY_LEVELS = ("LOW", "MEDIUM", "HIGH")
 TOPIC_VALUE_MIN_TOTAL = 18
+TOPIC_VALUE_TIMEOUTS = (300, 420)
 
 StageInvoker = Callable[[str, ModelConfig, str, str, Mapping[str, object]], dict[str, object]]
 
@@ -107,18 +108,38 @@ def _schema(count: int) -> dict[str, object]:
 
 
 def _default_invoker(
-    _stage: str,
+    stage: str,
     config: ModelConfig,
     role_prompt: str,
     task_prompt: str,
     schema: Mapping[str, object],
 ) -> dict[str, object]:
-    return invoke_structured(
-        config=config,
-        role_prompt=role_prompt,
-        task_prompt=task_prompt,
-        schema=schema,
+    label = (
+        "Topic Value Selector"
+        if stage == "topic_value_selector"
+        else stage.replace("_", " ").title()
     )
+    for attempt, timeout in enumerate(TOPIC_VALUE_TIMEOUTS, start=1):
+        try:
+            return invoke_structured(
+                config=config,
+                role_prompt=role_prompt,
+                task_prompt=task_prompt,
+                schema=schema,
+                timeout=timeout,
+                stage_label=label,
+            )
+        except workflow.WorkflowError as exc:
+            if (
+                str(exc) != f"{label} timed out."
+                or attempt == len(TOPIC_VALUE_TIMEOUTS)
+            ):
+                raise
+            print(
+                f"{label}: timed out after {timeout}s; retrying once with "
+                f"{TOPIC_VALUE_TIMEOUTS[attempt]}s."
+            )
+    raise workflow.WorkflowError(f"{label} exhausted its timeout attempts.")
 
 
 def _load_role() -> str:
