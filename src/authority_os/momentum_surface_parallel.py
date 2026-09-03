@@ -257,6 +257,15 @@ def _validate_surface_result(
                 "acceleration_percent": item["acceleration_percent"],
             }
         )
+    prepared.sort(
+        key=lambda item: (
+            item["engagement_units"] is not None,
+            float(item["engagement_units"] or 0),
+            float(item["acceleration_percent"] or 0),
+            -float(item["freshness_hours"]),
+        ),
+        reverse=True,
+    )
     return {"status": status, "signals": prepared, "caveat": caveat.strip()}
 
 
@@ -271,7 +280,7 @@ Lane rule: {surface['instruction']}
 Research window: the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, agents, evaluations, reliability, context engineering, enterprise AI, developer tooling, model economics and AI product management'}.
 
-Return up to {SIGNALS_PER_SURFACE} of the hottest materially distinct current GenAI/product conversations visible on THIS SURFACE ONLY, ordered strongest first. Prefer repeated current discussion, visible engagement, acceleration, and freshness. Do not browse any other source family to compensate for missing evidence. If this lane is unavailable or has no defensible current signal, return that honestly.
+Return up to {SIGNALS_PER_SURFACE} of the hottest materially distinct current GenAI/product conversations published inside this window on THIS SURFACE ONLY. Order them by directly visible engagement first, then observable acceleration, repeated discussion, and freshness. Do not browse any other source family to compensate for missing evidence. If engagement is unavailable, say so rather than inventing it. If this lane is unavailable or has no defensible current signal, return that honestly.
 
 For each signal:
 - topic: concise conversation label;
@@ -496,13 +505,25 @@ def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, obj
             "signal_count": len(signals),
         }
     )
-    if len(successful) < MIN_SUCCESSFUL_SURFACES:
-        raise workflow.WorkflowError(
-            f"Only {len(successful)}/{len(SURFACES)} surface scouts produced evidence; at least {MIN_SUCCESSFUL_SURFACES} are required."
-        )
     if len(signals) < MIN_SIGNALS_FOR_CONSOLIDATION:
         raise workflow.WorkflowError(
             f"Only {len(signals)} surface signals were collected; at least {MIN_SIGNALS_FOR_CONSOLIDATION} are required for ten-topic consolidation."
+        )
+    if len(successful) < MIN_SUCCESSFUL_SURFACES:
+        warning = (
+            f"Coverage warning: only {len(successful)}/{len(SURFACES)} surface scouts "
+            f"produced evidence, but {len(signals)} usable signals cleared the "
+            "consolidation floor; continuing with explicit partial-coverage caveats."
+        )
+        print(f"Momentum: {warning}", flush=True)
+        _trace_event(
+            {
+                "event": "surface_coverage_warning",
+                "successful_surfaces": len(successful),
+                "total_surfaces": len(SURFACES),
+                "signal_count": len(signals),
+                "minimum_signals": MIN_SIGNALS_FOR_CONSOLIDATION,
+            }
         )
 
     print("Momentum: consolidating surface signals into 10 conversations...", flush=True)
