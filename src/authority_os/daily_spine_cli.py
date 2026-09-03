@@ -800,9 +800,12 @@ def command(args: argparse.Namespace) -> int:
             base.strategy_for(card, profile),
         )
         strategy_rel = strategy.relative_to(workflow.REPO_ROOT).as_posix()
+        week_slot = getattr(args, "week_slot", None)
+        slot_arg = f" --week-slot {week_slot}" if week_slot is not None else ""
         draft = (
             f"./bin/linkedin-os draft --topic {json.dumps(str(card['topic']))} "
-            f"--goal authority --format text --strategy-input {json.dumps(strategy_rel)} "
+            f"--goal authority --format text{slot_arg} "
+            f"--strategy-input {json.dumps(strategy_rel)} "
             f"--db {json.dumps(db_rel)} --allow-model-egress --package"
         )
         draft_argv = [
@@ -814,13 +817,17 @@ def command(args: argparse.Namespace) -> int:
             "authority",
             "--format",
             "text",
+        ]
+        if week_slot is not None:
+            draft_argv.extend(["--week-slot", str(week_slot)])
+        draft_argv.extend([
             "--strategy-input",
             strategy_rel,
             "--db",
             db_rel,
             "--allow-model-egress",
             "--package",
-        ]
+        ])
         draft_commands.append((card, draft_argv, draft))
         print(
             f"{card['id']}: {card['plain_language_summary']} "
@@ -932,6 +939,12 @@ def command(args: argparse.Namespace) -> int:
 
 def parser() -> argparse.ArgumentParser:
     result = base.parser()
+    result.add_argument(
+        "--week-slot",
+        type=int,
+        choices=(2, 3),
+        help="Bind the generated authority post to weekly slot 2 or 3; Thursday is slot 3.",
+    )
     result.add_argument(
         "--generate-post",
         action="store_true",
