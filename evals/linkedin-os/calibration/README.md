@@ -23,17 +23,13 @@ judge that passes everything scores 50% here and knows nothing.
 
 ```bash
 python3 run_critic.py
-
-# Run 1 is the pre-declared primary result. Run 2 is an independent model
-# sample used only for test-retest stability.
-python3 -c "
-import json, three_way
-outcome = {x['item_id']: x['label'] for x in json.load(open('calibration-set.json'))}
-owner, owner_scores = three_way.load_labels('owner-labels.jsonl')
-judge, judge_scores = three_way.load_labels('judge-labels.run1.jsonl')
-print(json.dumps(three_way.run(outcome, owner, judge,
-      owner_scores=owner_scores, judge_scores=judge_scores), indent=2))"
+python3 analyze.py
 ```
+
+The analyzer declares run 1 as the primary result and uses run 2 only for
+test-retest stability. It writes `three-way-results.json` and
+`judge-calibration-findings.md`, refuses the combined 60-row file as an input,
+and exits 2 before comparison if either run contains a BLOCKED judgement.
 
 The runner also writes `judge-labels.run2.jsonl` and a combined 60-row
 `judge-labels.jsonl`. Do not load the combined file into `three_way.load_labels`:

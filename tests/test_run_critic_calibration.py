@@ -69,6 +69,7 @@ class RunCriticCalibrationTests(unittest.TestCase):
         self.assertEqual(row["status"], "PASS")
         self.assertEqual(row["label"], "GOOD")
         self.assertEqual(row["total"], 22)
+        self.assertEqual(row["effective_total"], 22)
         self.assertEqual(row["band"], "one-light-revision")
         self.assertEqual(row["gates"]["proof"], "NOT_EVALUATED")
         self.assertTrue(row["primary"])

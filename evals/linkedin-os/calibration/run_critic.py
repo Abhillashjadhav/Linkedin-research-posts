@@ -275,6 +275,7 @@ def score_item(
             "label": label,
             "band": band,
             "total": int(scorecard["effective_total"]),
+            "effective_total": int(scorecard["effective_total"]),
             "raw_total": int(scorecard["raw_total"]),
             "hook_cap_applied": bool(scorecard["hook_cap_applied"]),
             "scores": {axis: int(scorecard[axis]) for axis in workflow.CRITIC_AXES},
