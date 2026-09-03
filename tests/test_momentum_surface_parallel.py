@@ -187,6 +187,57 @@ class SurfaceParallelTests(unittest.TestCase):
 
         self.assertEqual(result, [])
 
+    def test_three_surfaces_continue_when_signal_floor_is_met(self) -> None:
+        def fake_surface(item: object, **_kwargs: object) -> dict[str, object]:
+            assert isinstance(item, dict)
+            key = str(item["key"])
+            observed = key in {"google", "reddit", "substack"}
+            count = 4 if observed else 0
+            return {
+                "schema_version": 1,
+                "surface": key,
+                "label": str(item["label"]),
+                "status": "OBSERVED" if observed else "UNAVAILABLE",
+                "caveat": "Public evidence only." if observed else "Timed out.",
+                "signals": [
+                    {
+                        "id": f"{key}-{index}",
+                        "surface": key,
+                        "surface_label": str(item["label"]),
+                        "topic": f"{key} topic {index}",
+                        "why_now": "Now.",
+                        "platform": str(item["allowed_platforms"][0]),
+                        "url": f"https://example.com/{key}/{index}",
+                        "source": f"Source {key} {index}",
+                        "published_at": "2026-09-03T00:00:00Z",
+                        "freshness_hours": 1.0,
+                        "engagement_units": float(100 - index),
+                        "acceleration_percent": None,
+                    }
+                    for index in range(1, count + 1)
+                ],
+            }
+
+        clusters = [
+            {
+                "id": f"topic-{index}",
+                "topic": f"Topic {index}",
+                "why_now": "Now",
+                "signal_ids": ["unused"],
+            }
+            for index in range(1, 11)
+        ]
+        expected = [{"id": f"topic-{index}"} for index in range(1, 11)]
+        with patch.object(surface, "_run_surface", side_effect=fake_surface), patch.object(
+            surface, "_consolidate", return_value=clusters
+        ) as consolidate, patch.object(
+            surface, "_project_candidates", return_value=expected
+        ):
+            result = surface.invoke_scout(None, 1, "2026-09-03T12:00:00Z")
+
+        self.assertEqual(len(consolidate.call_args.args[0]), 12)
+        self.assertEqual(result, expected)
+
 
 if __name__ == "__main__":
     unittest.main()
