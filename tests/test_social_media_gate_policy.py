@@ -7,6 +7,33 @@ from authority_os import quality_cli, social_media_gate_policy, workflow
 
 
 class SocialMediaGatePolicyTests(unittest.TestCase):
+    def test_package_gate_result_uses_the_same_advisory_policy(self) -> None:
+        softened = social_media_gate_policy.soften_gate_result(
+            {
+                "candidate_id": "candidate-1",
+                "gates": {
+                    "authority_conversion": "PASS",
+                    "honesty": "FAIL",
+                    "citation": "FAIL",
+                    "relevance": "PASS",
+                },
+                "passes_required_gates": False,
+            }
+        )
+        self.assertEqual(softened["gates"]["honesty"], "HUMAN_REVIEW")  # type: ignore[index]
+        self.assertEqual(softened["gates"]["citation"], "HUMAN_REVIEW")  # type: ignore[index]
+        self.assertIs(softened["passes_required_gates"], True)
+
+    def test_package_gate_result_preserves_a_real_hard_failure(self) -> None:
+        softened = social_media_gate_policy.soften_gate_result(
+            {
+                "gates": {"authority_conversion": "FAIL", "honesty": "FAIL"},
+                "passes_required_gates": False,
+            }
+        )
+        self.assertEqual(softened["gates"]["honesty"], "HUMAN_REVIEW")  # type: ignore[index]
+        self.assertIs(softened["passes_required_gates"], False)
+
     def test_honesty_and_citation_failures_become_human_review(self) -> None:
         candidate = quality_cli.CandidateResult(
             candidate_id="candidate-1",
