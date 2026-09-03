@@ -48,6 +48,7 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   if [ "$STATUS" -eq 0 ]; then
     printf '\nV1 end-to-end workflow:\n'
     printf '  discover            Run parallel discovery; add --generate-post to continue through drafting.\n'
+    printf '  export-monitoring   Export one redacted seven-check dashboard case for a completed run.\n'
   fi
   exit "$STATUS"
 fi
