@@ -23,6 +23,9 @@ class ProductionBoundaryTests(unittest.TestCase):
             "draft",
             "record-performance",
             "weekly-review",
+            # Writes one redacted local file for the dashboard. It never
+            # transmits, and it refuses to run without explicit consent.
+            "export-monitoring",
         }
         self.assertEqual(set(cli.COMMANDS), expected)
         forbidden = {"publish", "schedule", "approve", "message", "comment", "post"}

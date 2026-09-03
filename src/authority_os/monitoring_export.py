@@ -19,6 +19,10 @@ from typing import Mapping
 
 from . import v1_completion, workflow
 
+# One case type for the whole run. The dashboard localizes a failure by walking
+# the declared dependency path, and a path cannot cross a case-type boundary, so
+# splitting the pipeline into per-stage case types made attribution impossible.
+CASE_TYPE = "linkedin-run"
 CONTRACTS = {
     "research_trust": "research-trust",
     "claim_body_support": "claim-body-support",
@@ -28,7 +32,6 @@ CONTRACTS = {
     "solution_plausibility": "solution-plausibility",
     "reader_attention": "reader-attention",
 }
-CASE_TYPE = "linkedin-run"
 CONTEXT_FIELDS = {
     "run_id",
     "comparison_run_id",
