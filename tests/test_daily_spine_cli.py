@@ -282,6 +282,16 @@ class SpineCardTests(unittest.TestCase):
         )
         self.assertTrue(parsed.generate_post)
 
+    def test_thursday_is_exposed_as_authority_week_slot_three(self) -> None:
+        parsed = daily_spine_cli.parser().parse_args(
+            ["--profile", "data/private/authority-profile.json", "--week-slot", "3"]
+        )
+        self.assertEqual(parsed.week_slot, 3)
+        with self.assertRaises(SystemExit):
+            daily_spine_cli.parser().parse_args(
+                ["--profile", "data/private/authority-profile.json", "--week-slot", "4"]
+            )
+
     def test_candidate_inventory_keeps_every_topic_at_or_above_40(self) -> None:
         candidates = [
             {
