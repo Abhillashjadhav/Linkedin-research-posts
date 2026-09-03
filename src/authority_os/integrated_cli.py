@@ -22,6 +22,46 @@ _active_resonance_diagnostics: dict[str, dict[str, object]] = {}
 _active_acceptance_diagnostics: dict[str, list[str]] = {}
 
 
+def _pre_acceptance_failures(
+    candidate: object,
+    attempt: object,
+    kwargs: Mapping[str, object],
+) -> list[str]:
+    reasons: list[str] = []
+    score = int(getattr(candidate, "effective_total", 0))
+    if score < 22:
+        reasons.append(f"critic-total:{score}/25<22/25")
+    axes = getattr(candidate, "axes", {})
+    if isinstance(axes, Mapping):
+        for axis in workflow.CRITIC_AXES:
+            value = int(axes.get(axis, 0))
+            if value < 4:
+                reasons.append(f"critic-axis:{axis}={value}/5<4/5")
+        hook = int(axes.get("hook_strength", 0))
+        if hook < 5:
+            reasons.append(f"hook-strength:{hook}/5<5/5")
+    if not bool(getattr(candidate, "passes_required_gates", False)):
+        gates = getattr(candidate, "gates", {})
+        failed = (
+            [str(name) for name, status in gates.items() if status == "FAIL"]
+            if isinstance(gates, Mapping)
+            else []
+        )
+        reasons.append("required-gates:" + (",".join(failed) or "failed"))
+    if bool(kwargs.get("package_requested")) and not bool(kwargs.get("fixture_mode")):
+        review_status = str(getattr(attempt, "review_status", None))
+        raw_recommendation = getattr(attempt, "recommendation", None)
+        recommendation = "" if raw_recommendation is None else str(raw_recommendation)
+        candidate_id = str(getattr(candidate, "candidate_id", ""))
+        if review_status != "READY_FOR_HUMAN_REVIEW":
+            reasons.append(f"package-review-status:{review_status}")
+        if recommendation != candidate_id:
+            reasons.append(
+                f"package-recommendation:{recommendation or 'none'}!=candidate:{candidate_id}"
+            )
+    return reasons or ["pre-acceptance:unknown-contract-mismatch"]
+
+
 def _qualifying_candidates(*args: Any, **kwargs: Any):
     global _active_resonance_diagnostics, _active_acceptance_diagnostics
     attempt = args[0] if args else kwargs.get("attempt")
@@ -32,9 +72,9 @@ def _qualifying_candidates(*args: Any, **kwargs: Any):
     base_ids = {candidate.candidate_id for candidate in candidates}
     for candidate in all_candidates:
         if candidate.candidate_id not in base_ids:
-            _active_acceptance_diagnostics[candidate.candidate_id] = [
-                "pre-acceptance score, axis-floor, required-gate, or package-alignment check failed"
-            ]
+            _active_acceptance_diagnostics[candidate.candidate_id] = (
+                _pre_acceptance_failures(candidate, attempt, kwargs)
+            )
     accepted = []
     for candidate in candidates:
         reasons = [
