@@ -15,8 +15,34 @@
       "1": "Uniform sentence rhythm, stacked adjectives, no contractions, tidy parallel structure. Reads as competent copy nobody wrote. His example: the 40-year-veteran-engineer post.",
       "2": "Recognisably his subject matter but the cadence is even. Sentences cluster near one length; the connective tissue is smooth where he would be abrupt.",
       "3": "Mostly his, with passages where the rhythm flattens into explanation. A reader who knows him would not flinch, but would not point at it either.",
-      "4": "WORKING STANDARD. Sentence lengths swing hard - a three-word line against a thirty-word one. Colons that reveal rather than list. Contractions. An aside in parentheses. His examples: 'Your first AI eval should be a spreadsheet, not a platform', 'I think AI PMs should stop learning sooner.'",
-      "5": "Unmistakably him and could not have been generated. Digression that earns its place, a number that sat with him, a judgement stated without hedging. His example: the frontier-lab friend earning just shy of a million dollars."
+      "4": "WORKING STANDARD. Sentence lengths swing hard. Contractions. Plain vocabulary throughout, including line 2. His examples: 'Your first AI eval should be an Excel or a spreadsheet, not a platform.' / \"I think AI PM's should stop learning sooner.\"",
+      "5": "Unmistakably him and could not have been generated. Plain words only. His example: 'a friend who works at a frontier AI lab, making just short of a million dollars a year'. Industry terms like 'frontier AI lab' are his; literary words like 'shy of' are not.",
+      "banned_register": {
+        "rule": "He writes in plain words. A word that would not appear in his speech is AI smell, whatever else the line does.",
+        "examples_of_words_he_does_not_use": [
+          "shy of",
+          "delve",
+          "myriad",
+          "testament",
+          "underscore",
+          "crucible",
+          "paradigm",
+          "nuanced",
+          "albeit",
+          "hitherto",
+          "veritable"
+        ],
+        "allowed_because_industry": [
+          "frontier AI lab",
+          "context window",
+          "agentic",
+          "eval",
+          "RAG",
+          "inference",
+          "token"
+        ]
+      },
+      "line_two_rule": "The hook is two lines and line 2 is where AI smell appears. Line 1 is usually his because he writes it deliberately; the second line is where explanatory register creeps in. Score the hook on both lines, never on line 1 alone."
     },
     "hook_strength": {
       "type": "outcome_gate",
@@ -26,7 +52,8 @@
       "2": "A real situation, but the subject is his own project and the reader has nothing at stake. His examples: 'Spent last weekend wiring a second agent', 'Been going deep on RAG architectures lately.'",
       "3": "Concrete and external, but the stake arrives late or the opening spends its first clause on setup. His example: 'Why does it think I'm based in Belgium?'",
       "4": "WORKING STANDARD. Line 1 names a problem the target reader recognises, or a claim about the group they belong to, and the payoff is visible immediately. His examples: 'An AI agent forgetting what you said is a context problem', 'I think AI PMs should stop learning sooner.'",
-      "5": "A named external party, a hard number, and a consequence, inside the first two lines. His example: 'A Meta AI safety director - reportedly paid $100M+ to keep AI aligned - could not stop her own agent from deleting her inbox. She typed STOP. It ignored her.'"
+      "5": "A named external party, a hard number, and a consequence, inside the first two lines. His example: 'A Meta AI safety director - reportedly paid $100M+ to keep AI aligned - could not stop her own agent from deleting her inbox. She typed STOP. It ignored her.'",
+      "line_two_rule": "The hook is two lines and line 2 is where AI smell appears. Line 1 is usually his because he writes it deliberately; the second line is where explanatory register creeps in. Score the hook on both lines, never on line 1 alone."
     },
     "specificity_and_source_quality": {
       "type": "outcome_gate",

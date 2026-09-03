@@ -35,6 +35,16 @@ from dataclasses import dataclass
 
 HOOK_LINES = 2
 
+# Words he does not use. Line 1 is usually his because he writes it deliberately;
+# line 2 is where explanatory register creeps in, which is why the hook is scored
+# across both lines and never on the opener alone.
+OFF_REGISTER = re.compile(
+    r"\b(shy of|delve|myriad|testament|underscore[sd]?|crucible|paradigm|"
+    r"nuanced|albeit|hitherto|veritable|tapestry|realm|multifaceted|"
+    r"meticulous|intricate|paramount)\b",
+    re.IGNORECASE,
+)
+
 # A checkable third party. Not an exhaustive list - a maintained one, because a
 # regex that tries to detect "any proper noun" also matches the author's own
 # product names, which is exactly the failure case.
@@ -91,6 +101,14 @@ def evaluate(text: str) -> StakeVerdict:
     hook = hook_of(text)
     if not hook:
         return StakeVerdict("FAIL", "empty-hook", "unclear")
+
+    off = OFF_REGISTER.search(hook)
+    if off:
+        return StakeVerdict(
+            "FAIL", "off-register-word", "unclear",
+            f"'{off.group(0)}' is not a word he uses. Industry terms are fine; "
+            f"literary ones are not.",
+        )
 
     named = NAMED_EXTERNAL.search(hook)
     group = READER_GROUP.search(hook)

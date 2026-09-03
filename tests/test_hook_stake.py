@@ -65,3 +65,22 @@ class HookStakeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RegisterTests(unittest.TestCase):
+    def test_a_literary_word_fails_even_with_a_named_party(self):
+        v = hs.evaluate("A friend at a frontier AI lab making just shy of a million dollars a year.")
+        self.assertEqual(v.status, "FAIL")
+        self.assertEqual(v.reason_code, "off-register-word")
+
+    def test_the_plain_version_of_the_same_line_passes(self):
+        v = hs.evaluate("A friend at a frontier AI lab making just short of a million dollars a year.")
+        self.assertEqual(v.status, "PASS")
+
+    def test_industry_terms_are_not_off_register(self):
+        v = hs.evaluate("Most teams size the context window before they size the eval set.")
+        self.assertEqual(v.status, "PASS")
+
+    def test_line_two_is_scored_not_just_the_opener(self):
+        text = "Your first AI eval should be an Excel or a spreadsheet.\nThis underscores a paradigm shift."
+        self.assertEqual(hs.evaluate(text).reason_code, "off-register-word")
