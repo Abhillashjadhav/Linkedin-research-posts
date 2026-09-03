@@ -131,7 +131,7 @@ class VoiceGuidanceTests(unittest.TestCase):
         self.assertEqual(guidance["provenance"], "measured-performance-anchors")
         self.assertIn("voice guide", guidance["voice_guide"].casefold())
         self.assertIn(
-            "Voice anchors — real posts, ranked by measured conversion",
+            "Voice anchors — real published text",
             guidance["performance_patterns"],
         )
         self.assertTrue(all(value.strip() for value in guidance.values()))
