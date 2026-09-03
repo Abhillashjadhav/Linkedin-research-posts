@@ -225,6 +225,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional whole-second timezone-aware boundary for a reproducible review.",
     )
     _add_common(weekly)
+
+    export = subparsers.add_parser(
+        "export-monitoring",
+        help="Write one redacted monitoring envelope for the dashboard. Never transmits.",
+    )
+    export.add_argument("--context", type=Path, required=True)
+    export.add_argument(
+        "--allow-monitoring-export",
+        action="store_true",
+        help="Required. Exporting is an explicit act, never a side effect of a run.",
+    )
+    _add_common(export)
     return parser
 
 
@@ -1051,6 +1063,20 @@ def command_research(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_export_monitoring(args: argparse.Namespace) -> int:
+    """Emit the redacted envelope the eval dashboard consumes.
+
+    Kept as an explicit command rather than a hook on ``draft``: an export is a
+    disclosure, and disclosures are chosen, not inherited from another command.
+    """
+    from . import monitoring_export
+
+    argv = ["--context", str(args.context)]
+    if getattr(args, "allow_monitoring_export", False):
+        argv.append("--allow-monitoring-export")
+    return monitoring_export.main(argv)
+
+
 COMMANDS = {
     "init": command_init,
     "doctor": command_doctor,
@@ -1059,6 +1085,7 @@ COMMANDS = {
     "research": command_research,
     "record-performance": command_record_performance,
     "weekly-review": command_weekly_review,
+    "export-monitoring": command_export_monitoring,
 }
 
 

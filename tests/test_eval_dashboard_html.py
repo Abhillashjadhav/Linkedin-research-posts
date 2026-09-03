@@ -72,7 +72,8 @@ class EvalDashboardHtmlTests(unittest.TestCase):
                         "candidate_id": "candidate-3",
                         "status": "PASS",
                         "total": 24,
-                        "threshold": 22,
+                        "band": "advance-to-gates",
+                        "hook_cap_applied": False,
                         "axes": {
                             "hook_strength": 5,
                             "middle_escalation": 5,
@@ -93,11 +94,13 @@ class EvalDashboardHtmlTests(unittest.TestCase):
             "linkedin-prior",
             "gpt-test",
             "abc123",
-            "Would the post itself clear the bar?",
+            "Diagnostics and enforced post checks",
             "hook-strength-5-of-5",
-            "Every candidate, every cycle, every 1–5 axis",
+            "Diagnostic scores for every candidate",
             "candidate-3",
             "24/25",
+            "advance-to-gates",
+            "DIAGNOSTIC",
             "package-recommendation-mismatch",
         ):
             self.assertIn(expected, rendered)

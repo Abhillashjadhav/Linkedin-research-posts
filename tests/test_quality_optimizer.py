@@ -109,9 +109,9 @@ class AcceptanceTests(unittest.TestCase):
         )
         self.assertTrue(quality_optimizer.candidate_is_acceptable(item))
 
-    def test_22_with_one_three_is_not_acceptable(self) -> None:
+    def test_23_with_low_axis_reaches_human_review_when_hard_gates_pass(self) -> None:
         item = candidate(
-            22,
+            23,
             {
                 "hook_strength": 5,
                 "middle_escalation": 5,
@@ -120,7 +120,7 @@ class AcceptanceTests(unittest.TestCase):
                 "voice_fidelity": 3,
             },
         )
-        self.assertFalse(quality_optimizer.candidate_is_acceptable(item))
+        self.assertTrue(quality_optimizer.candidate_is_acceptable(item))
 
     def test_24_with_failed_gate_is_not_acceptable(self) -> None:
         item = candidate(
@@ -136,7 +136,21 @@ class AcceptanceTests(unittest.TestCase):
         )
         self.assertFalse(quality_optimizer.candidate_is_acceptable(item))
 
-    def test_package_floor_uses_same_axis_and_gate_contract(self) -> None:
+    def test_honesty_failure_is_dropped_regardless_of_critic_score(self) -> None:
+        item = candidate(
+            25,
+            {axis: 5 for axis in workflow.CRITIC_AXES},
+            gates_pass=False,
+        )
+        accepted = quality_optimizer._qualifying_candidates(  # type: ignore[attr-defined]
+            attempt(item),
+            rejected_openings=set(),
+            package_requested=False,
+            fixture_mode=False,
+        )
+        self.assertEqual(accepted, ())
+
+    def test_package_admission_uses_only_the_hard_gate_contract(self) -> None:
         scorecard = {
             "candidate_id": "candidate-1",
             "hook_strength": 5,
@@ -155,15 +169,20 @@ class AcceptanceTests(unittest.TestCase):
             )
         )
         scorecard["voice_fidelity"] = 3
-        self.assertFalse(
+        self.assertTrue(
             quality_optimizer._scorecard_is_acceptable(  # type: ignore[attr-defined]
                 scorecard, {"passes_required_gates": True}
+            )
+        )
+        self.assertFalse(
+            quality_optimizer._scorecard_is_acceptable(  # type: ignore[attr-defined]
+                scorecard, {"passes_required_gates": False}
             )
         )
 
 
 class RepairStateTests(unittest.TestCase):
-    def test_run_attempt_records_every_candidate_critic_scorecard(self) -> None:
+    def test_run_attempt_records_cycle_and_hard_gate_context(self) -> None:
         first = candidate(
             24,
             {
@@ -203,13 +222,12 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(record.call_count, 2)
         first_decision = record.call_args_list[0].args[0]
         second_decision = record.call_args_list[1].args[0]
-        self.assertEqual(first_decision["contract"], "critic_total")
+        self.assertEqual(first_decision["mode"], "shadow")
+        self.assertEqual(first_decision["status"], "PASS")
         self.assertEqual(first_decision["cycle"], 2)
-        self.assertEqual(first_decision["score"], 24)
-        self.assertEqual(first_decision["axes"]["voice_fidelity"], 4)
-        self.assertEqual(second_decision["status"], "FAIL")
+        self.assertEqual(first_decision["band"], "advance-to-gates")
+        self.assertIs(first_decision["hook_cap_applied"], False)
         self.assertEqual(second_decision["gates"], {"honesty": "FAIL"})
-        self.assertIn("unsupported-factual-marker", second_decision["failure_codes"])
 
     def test_best_so_far_survives_a_later_score_regression(self) -> None:
         state = quality_optimizer.RepairState()
@@ -283,7 +301,7 @@ class RepairPromptTests(unittest.TestCase):
         self.assertIn("QUALITY_REPAIR_CYCLE_CONTRACT", prompt)
         self.assertIn("not a fresh brainstorm", prompt)
         self.assertIn("Retain this grounded mechanism", prompt)
-        self.assertIn("Aim for 24-25/25", prompt)
+        self.assertIn("Critic scores are diagnostic and do not veto", prompt)
         self.assertIn("Never invent evidence", prompt)
 
     def test_integrated_dispatch_updates_the_real_command_table(self) -> None:
@@ -302,25 +320,13 @@ class RepairPromptTests(unittest.TestCase):
             quality_cli.COMMANDS["draft"] = original_dispatch
 
 
-class FourCycleConvergenceTests(unittest.TestCase):
-    def test_16_to_18_to_21_to_22_returns_final_written_candidate(self) -> None:
+class DiagnosticCriticFlowTests(unittest.TestCase):
+    def test_23_of_25_reaches_human_review_without_regeneration(self) -> None:
         responses = [
             attempt_output(
-                axes=(5, 3, 3, 3, 2),
-                text="Cycle one is weak but grounded.",
-            ),
-            attempt_output(
-                axes=(5, 4, 3, 3, 3),
-                text="Cycle two repairs the structure.",
-            ),
-            attempt_output(
-                axes=(5, 4, 4, 4, 4),
-                text="Cycle three is close to the review floor.",
-            ),
-            attempt_output(
-                axes=(5, 5, 4, 4, 4),
-                text="Cycle four is the final acceptable written candidate.",
-            ),
+                axes=(5, 5, 5, 4, 4),
+                text="A safe 23-point candidate reaches human review.",
+            )
         ]
 
         def fake_legacy(_args: object) -> int:
@@ -354,13 +360,10 @@ class FourCycleConvergenceTests(unittest.TestCase):
 
         rendered = output.getvalue()
         self.assertEqual(result, 0)
-        self.assertIn("Quality cycle 1/4 rejected", rendered)
-        self.assertIn("Quality cycle 2/4 rejected", rendered)
-        self.assertIn("Quality cycle 3/4 rejected", rendered)
-        self.assertIn("Quality search passed on cycle 4/4", rendered)
-        self.assertIn("score=22/25", rendered)
-        self.assertIn("Cycle four is the final acceptable written candidate.", rendered)
-        self.assertNotIn("Cycle one is weak but grounded.", rendered)
+        self.assertNotIn("Quality cycle 1/4 rejected", rendered)
+        self.assertIn("Quality search passed on cycle 1/4", rendered)
+        self.assertIn("score=23/25", rendered)
+        self.assertIn("A safe 23-point candidate reaches human review.", rendered)
         self.assertEqual(responses, [])
 
     def test_exhaustion_returns_best_overall_candidate_for_human_review(self) -> None:

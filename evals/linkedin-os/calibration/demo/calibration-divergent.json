@@ -1,0 +1,80 @@
+{
+  "calibration_id": "linkedin-critic-cal-v1",
+  "evidence_errors": [],
+  "golden_set": {
+    "held_out": true,
+    "id": "linkedin-critic-judge-human-goldens",
+    "n": 48,
+    "sha256": "ab0ea196ffc96fd4560cd712730ffcfd87d8f6180666571feb3dd88a97292d4a",
+    "source": "human",
+    "version": "1.0.0"
+  },
+  "judge_id": "linkedin-critic-v1",
+  "metrics": {
+    "cohens_kappa": 0.31550802139037437,
+    "false_negative_rate": 0.25925925925925924,
+    "false_positive_rate": 0.42857142857142855,
+    "label_agreement": 0.6666666666666666,
+    "label_agreement_interval_95": {
+      "lower": 0.5254010970594798,
+      "upper": 0.7832321930518142
+    },
+    "label_dimensions": {
+      "G_CRITIC_ADVANCE": {
+        "agreement": 0.6666666666666666,
+        "agreement_interval_95": {
+          "lower": 0.5254010970594798,
+          "upper": 0.7832321930518142
+        },
+        "cohens_kappa": 0.31550802139037437,
+        "false_negative_rate": 0.25925925925925924,
+        "false_positive_rate": 0.42857142857142855,
+        "n": 48
+      }
+    },
+    "overall_agreement": 0.6666666666666666,
+    "score_dimensions": {
+      "C_CLOSER": {
+        "exact_agreement": 0.6666666666666666,
+        "mean_absolute_error": 0.3333333333333333,
+        "n": 48,
+        "within_one_rate": 1.0
+      },
+      "C_HOOK": {
+        "exact_agreement": 0.3333333333333333,
+        "mean_absolute_error": 0.6666666666666666,
+        "n": 48,
+        "within_one_rate": 1.0
+      },
+      "C_MIDDLE": {
+        "exact_agreement": 0.5208333333333334,
+        "mean_absolute_error": 0.4791666666666667,
+        "n": 48,
+        "within_one_rate": 1.0
+      },
+      "C_SPECIFICITY": {
+        "exact_agreement": 0.5416666666666666,
+        "mean_absolute_error": 0.4583333333333333,
+        "n": 48,
+        "within_one_rate": 1.0
+      },
+      "C_VOICE": {
+        "exact_agreement": 0.5416666666666666,
+        "mean_absolute_error": 0.4583333333333333,
+        "n": 48,
+        "within_one_rate": 1.0
+      }
+    },
+    "score_mean_absolute_error": 0.4791666666666667
+  },
+  "rubric_hash": "9f97655f1d776df0d4b49387566b86737bd417111b3713945270c77323dc80ac",
+  "schema_version": "1.0",
+  "status": "FAIL",
+  "thresholds": {
+    "maximum_false_positive_rate": 0.1,
+    "maximum_score_mae": 0.75,
+    "minimum_agreement": 0.8,
+    "minimum_golden_items": 30,
+    "minimum_kappa": 0.6
+  }
+}

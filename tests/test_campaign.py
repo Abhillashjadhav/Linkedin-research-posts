@@ -93,6 +93,26 @@ class FakeInvoker:
         raise AssertionError(f"unexpected stage: {stage}")
 
 
+class DiagnosticCriticInvoker(FakeInvoker):
+    def __call__(self, stage, config, role, task, schema):
+        if stage == "critic":
+            self.calls.append(stage)
+            return {
+                "scorecards": [
+                    {
+                        "candidate_id": item["id"],
+                        "hook_strength": 5,
+                        "middle_escalation": 5,
+                        "earned_closer": 5,
+                        "specificity_and_source_quality": 4,
+                        "voice_fidelity": 4,
+                    }
+                    for item in self.drafts
+                ]
+            }
+        return super().__call__(stage, config, role, task, schema)
+
+
 class CampaignTests(unittest.TestCase):
     def day(self) -> dict[str, object]:
         return {
@@ -154,6 +174,27 @@ class CampaignTests(unittest.TestCase):
                 "visual_qa",
             ],
         )
+
+    def test_23_point_critic_score_is_diagnostic_not_a_campaign_veto(self) -> None:
+        invoker = DiagnosticCriticInvoker()
+        with tempfile.TemporaryDirectory(dir=workflow.REPO_ROOT) as temporary:
+            trace = campaign._run_day(
+                self.day(),
+                directory=Path(temporary),
+                models=campaign.StageModels.preferred(),
+                invoker=invoker,
+                skill="name: no-ai-slop\nMinimum edit.",
+                evaluation="# No AI slop eval\nPass or fail.",
+                editor_provenance={
+                    "repository": "test",
+                    "skill_sha256": "a",
+                    "eval_sha256": "b",
+                },
+                researched_at="2026-08-09T00:00:00Z",
+            )
+        self.assertEqual(trace["final"]["status"], "READY_FOR_HUMAN_REVIEW")
+        scorecard = trace["final"]["critic_scorecard"]
+        self.assertEqual(scorecard["effective_total"], 23)
 
     def test_spec_requires_exact_monday_to_friday_set(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

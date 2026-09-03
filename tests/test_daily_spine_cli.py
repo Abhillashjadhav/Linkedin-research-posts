@@ -172,7 +172,8 @@ class SpineCardTests(unittest.TestCase):
                     "subject_id": "candidate-3",
                     "evidence": {
                         "score": 24,
-                        "threshold": 22,
+                        "band": "advance-to-gates",
+                        "hook_cap_applied": False,
                         "cycle": 2,
                         "axes": {
                             "hook_strength": 5,
@@ -203,7 +204,38 @@ class SpineCardTests(unittest.TestCase):
         scorecard = dashboard["critic_scorecards"][0]
         self.assertEqual(scorecard["cycle"], 2)
         self.assertEqual(scorecard["axes"]["voice_fidelity"], 4)
+        self.assertEqual(scorecard["band"], "advance-to-gates")
+        self.assertIs(scorecard["hook_cap_applied"], False)
         self.assertIn("package-recommendation:none", scorecard["failure_codes"][0])
+
+    def test_eval_dashboard_prefers_cycle_enrichment_over_immediate_duplicate(self) -> None:
+        artifact = "c" * 64
+        axes = {axis: 4 for axis in workflow.CRITIC_AXES}
+        dashboard = daily_spine_cli.render_eval_dashboard(
+            [
+                {
+                    "contract": "critic_total",
+                    "status": "PASS",
+                    "artifact_sha256": artifact,
+                    "subject_id": "candidate-1",
+                    "evidence": {"score": 20, "axes": axes, "cycle": 0},
+                },
+                {
+                    "contract": "critic_total",
+                    "status": "PASS",
+                    "artifact_sha256": artifact,
+                    "subject_id": "candidate-1",
+                    "evidence": {
+                        "score": 20,
+                        "axes": axes,
+                        "cycle": 3,
+                        "band": "below-critic-bar",
+                    },
+                },
+            ]
+        )
+        self.assertEqual(len(dashboard["critic_scorecards"]), 1)
+        self.assertEqual(dashboard["critic_scorecards"][0]["cycle"], 3)
 
     def test_thesis_search_keeps_a_qualifying_leader_from_a_mixed_batch(self) -> None:
         mixed_scores = [

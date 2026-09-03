@@ -1,0 +1,16 @@
+{"as_of": "2026-08-11", "event": "surface_scouting_started", "surface_count": 7}
+{"as_of": "2026-08-11", "event": "surface_started", "label": "google", "surface": "google"}
+{"as_of": "2026-08-11", "event": "surface_started", "label": "reddit", "surface": "reddit"}
+{"as_of": "2026-08-11", "event": "surface_started", "label": "hacker-news", "surface": "hacker-news"}
+{"as_of": "2026-08-11", "event": "surface_started", "label": "public-social", "surface": "public-social"}
+{"as_of": "2026-08-11", "event": "surface_started", "label": "youtube", "surface": "youtube"}
+{"as_of": "2026-08-11", "event": "surface_started", "label": "substack", "surface": "substack"}
+{"as_of": "2026-08-11", "event": "surface_started", "label": "primary-reporting", "surface": "primary-reporting"}
+{"duration_ms": 4200, "event": "surface_finished", "label": "google", "reason_code": "ok", "signal_count": 3, "signal_ids": ["google-1", "google-2", "google-3"], "status": "OBSERVED", "surface": "google"}
+{"duration_ms": 4200, "event": "surface_finished", "label": "reddit", "reason_code": "model-timeout", "signal_count": 0, "signal_ids": [], "status": "UNAVAILABLE", "surface": "reddit"}
+{"duration_ms": 4200, "event": "surface_finished", "label": "hacker-news", "reason_code": "ok", "signal_count": 3, "signal_ids": ["hacker-news-1", "hacker-news-2", "hacker-news-3"], "status": "OBSERVED", "surface": "hacker-news"}
+{"duration_ms": 4200, "event": "surface_finished", "label": "public-social", "reason_code": "ok", "signal_count": 3, "signal_ids": ["public-social-1", "public-social-2", "public-social-3"], "status": "OBSERVED", "surface": "public-social"}
+{"duration_ms": 4200, "event": "surface_finished", "label": "youtube", "reason_code": "schema-violation", "signal_count": 0, "signal_ids": [], "status": "UNAVAILABLE", "surface": "youtube"}
+{"duration_ms": 4200, "event": "surface_finished", "label": "substack", "reason_code": "ok", "signal_count": 3, "signal_ids": ["substack-1", "substack-2", "substack-3"], "status": "OBSERVED", "surface": "substack"}
+{"duration_ms": 4200, "event": "surface_finished", "label": "primary-reporting", "reason_code": "ok", "signal_count": 3, "signal_ids": ["primary-reporting-1", "primary-reporting-2", "primary-reporting-3"], "status": "OBSERVED", "surface": "primary-reporting"}
+{"degraded_surfaces": ["reddit", "youtube"], "event": "surface_scouting_finished", "signal_count": 15, "successful_surfaces": 5, "surfaces": [{"duration_ms": 4200, "reason_code": "ok", "signal_count": 3, "status": "OBSERVED", "surface": "google"}, {"duration_ms": 4200, "reason_code": "model-timeout", "signal_count": 0, "status": "UNAVAILABLE", "surface": "reddit"}, {"duration_ms": 4200, "reason_code": "ok", "signal_count": 3, "status": "OBSERVED", "surface": "hacker-news"}, {"duration_ms": 4200, "reason_code": "ok", "signal_count": 3, "status": "OBSERVED", "surface": "public-social"}, {"duration_ms": 4200, "reason_code": "schema-violation", "signal_count": 0, "status": "UNAVAILABLE", "surface": "youtube"}, {"duration_ms": 4200, "reason_code": "ok", "signal_count": 3, "status": "OBSERVED", "surface": "substack"}, {"duration_ms": 4200, "reason_code": "ok", "signal_count": 3, "status": "OBSERVED", "surface": "primary-reporting"}], "total_surfaces": 7}

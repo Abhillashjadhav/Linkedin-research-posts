@@ -106,8 +106,8 @@ def render_dashboard(
             for axis in axis_order
             if isinstance(item.get("axes"), Mapping)
         )
-        + f'<td><strong>{int(item.get("total", 0))}/25</strong><small> bar {int(item.get("threshold", 22))}</small></td>'
-        + f'<td><span class="status {_status(item.get("status")).casefold()}">{_safe(item.get("status"))}</span></td>'
+        + f'<td><strong>{int(item.get("total", 0))}/25</strong><small>{_safe(item.get("band"), "Band not recorded")}</small></td>'
+        + f'<td><span class="status pass">DIAGNOSTIC</span><small>hook cap: {_safe(item.get("hook_cap_applied", False))}</small></td>'
         + f'<td>{_safe(" | ".join(str(value) for value in item.get("failure_codes", [])), "No Critic or gate failure recorded")}</td>'
         + "</tr>"
         for item in scorecards
@@ -153,8 +153,8 @@ def render_dashboard(
 <section class="summary"><article class="box"><span class="label">Run outcome</span><strong class="verdict {outcome_css}">{_safe(outcome)}</strong><p>Human approval remains separate.</p></article><article class="box"><span class="label">First blocker</span><strong>{_safe(first_label)}</strong><p>{_safe(first_reason)}</p></article><article class="box metric scout-count"><span class="label">Scout evidence</span><strong>{observed_scouts}/{len(scouts) or 7}</strong><p>{signal_count} usable signal(s)</p></article><article class="box metric pass-count"><span class="label">Passed</span><strong>{len(passed)}</strong><p>recorded checks</p></article><article class="box metric gap-count"><span class="label">Not evaluated</span><strong>{len(gaps)}</strong><p>visible gaps</p></article></section>
 <section class="panel"><div class="heading"><p class="eyebrow">SURFACE SCOUTS</p><h2>What ran, what returned, and why</h2></div><div class="scouts">{scout_cards}</div></section>
 <div class="grid"><section class="panel"><div class="heading"><p class="eyebrow">OPERATING FLOW</p><h2>Workflow stages</h2></div>{run_cards}</section><section class="panel"><div class="heading"><p class="eyebrow">PIPELINE CONTRACTS</p><h2>Input and execution evals</h2></div>{pipeline_cards}</section></div>
-<section class="panel"><div class="heading"><p class="eyebrow">CRITIC SCORECARDS</p><h2>Every candidate, every cycle, every 1–5 axis</h2></div><div class="table-scroll"><table><thead><tr><th>Cycle</th><th>Candidate</th><th>Hook</th><th>Middle</th><th>Closer</th><th>Specificity + sources</th><th>Voice</th><th>Total</th><th>Critic bar</th><th>Failure codes</th></tr></thead><tbody>{scorecard_rows}</tbody></table></div></section>
-<section class="panel"><div class="heading"><p class="eyebrow">POST QUALITY</p><h2>Would the post itself clear the bar?</h2></div>{post_cards}</section>
+<section class="panel"><div class="heading"><p class="eyebrow">CRITIC SCORECARDS</p><h2>Diagnostic scores for every candidate</h2></div><div class="table-scroll"><table><thead><tr><th>Cycle</th><th>Candidate</th><th>Hook</th><th>Middle</th><th>Closer</th><th>Specificity + sources</th><th>Voice</th><th>Total + band</th><th>Role</th><th>Hard-gate failures</th></tr></thead><tbody>{scorecard_rows}</tbody></table></div></section>
+<section class="panel"><div class="heading"><p class="eyebrow">POST QUALITY</p><h2>Diagnostics and enforced post checks</h2></div>{post_cards}</section>
 <div class="grid"><section class="panel"><div class="heading"><p class="eyebrow">BASELINE</p><h2>Last five local runs</h2></div><table><thead><tr><th>Run</th><th>Outcome</th><th>Stopped at</th><th>Passed stages</th></tr></thead><tbody>{baseline_rows}</tbody></table></section><section class="panel"><div class="heading"><p class="eyebrow">REPRODUCIBILITY</p><h2>Evaluator, model and rubric versions</h2></div><table><tbody>{version_rows}</tbody></table></section></div>
 <section class="rule"><strong>Reading rule</strong><p>PASS means the check ran and cleared its bar. FAIL or BLOCKED is a stopping condition. NOT_EVALUATED is an observability gap, never a pass.</p></section>
 </main></body></html>"""

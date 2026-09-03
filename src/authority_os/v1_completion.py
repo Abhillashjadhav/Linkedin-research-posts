@@ -256,6 +256,8 @@ def _decision_row(
         "compared_values",
         "score",
         "effective_total",
+        "band",
+        "hook_cap_applied",
         "finding_count",
     ):
         value = decision.get(key)
@@ -558,12 +560,31 @@ def _critic_validator_v1(raw_scorecards, candidates):
                         subject_id=str(item.get("candidate_id", "")),
                     )
         raise
+    text_by_id = {
+        str(item.get("id", "")): str(item.get("text", ""))
+        for item in candidates
+        if isinstance(item, Mapping)
+    }
+    for item in validated:
+        candidate_id = str(item.get("candidate_id", ""))
+        text = text_by_id.get(candidate_id, "")
+        record_decision(
+            {
+                "contract": "critic_total",
+                "mode": "shadow",
+                "status": "PASS",
+                "reason": "critic-scorecard-recorded-diagnostic",
+                "score": item.get("effective_total"),
+                "effective_total": item.get("effective_total"),
+                "band": item.get("band"),
+                "hook_cap_applied": item.get("hook_cap_applied"),
+                "axes": {axis: item.get(axis) for axis in workflow.CRITIC_AXES},
+            },
+            stage="critic",
+            subject_id=candidate_id,
+            artifact_sha256=_sha256_text(text) if text else "",
+        )
     if anchored:
-        text_by_id = {
-            str(item.get("id", "")): str(item.get("text", ""))
-            for item in candidates
-            if isinstance(item, Mapping)
-        }
         for item in validated:
             candidate_id = str(item.get("candidate_id", ""))
             text = text_by_id.get(candidate_id, "")

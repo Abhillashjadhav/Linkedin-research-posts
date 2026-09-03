@@ -1,0 +1,302 @@
+[
+ {
+  "item_id": "CAL-01",
+  "date": "2026-06-19",
+  "impressions": 1297,
+  "engagements": 29,
+  "lift": 3.01,
+  "label": "GOOD",
+  "rank_by_lift": 6,
+  "text": "A couple of months ago i was talking to a friend who works at a frontier AI lab, making just shy of a million dollars a year (yes \u2014 that number sat with me for a while too).\n\nI asked him the obvious question: what are you doing that the rest of us aren't? \n\nHis answer wasn't about prompts, or tools, or the latest model. It was simpler and harder than that.\n\n\"I don't build AI. I make AI reliable. that's the entire job now.\"\n\nThat one line reorganized how i think about this whole field. So i went deep \u2014 months of it \u2014 and started collecting everything that actually moves you toward that skill in one place. Here's the ready reckoner:\n\nOn evals \u2014 the skill that separates shipped from demo:\n \u2192 Hamel Husain, Your AI Product Needs Evals: https://lnkd.in/dVcqBZS2\n \u2192 Hamel Husain, LLM Evals \u2014 Everything You Need to Know: https://lnkd.in/dbhaxJ9g\n\nOn context engineering \u2014 the highest-leverage, least-understood skill:\n \u2192 Anthropic, Effective Context Engineering for AI Agents: https://lnkd.in/dNh5cZEF\n \u2192 Anthropic, Writing Effective Tools for AI Agents: https://lnkd.in/d9MuEYHv\n\nOn agentic reliability \u2014 when to build an agent, and when not to:\n \u2192 Anthropic, Building Effective Agents: https://lnkd.in/dhZ5FMqz\n \u2192 Andrej Karpathy, Deep Dive into LLMs: https://lnkd.in/d5WYzbDv\n\n(if you want the simpler, ground-up version, i've broken down evals and context engineering in my own articles \u2014 written for people who'd rather understand than memorize.)\n\nHere's the part nobody tells you, so i will: this reading list won't make you a million-dollar AI builder. It's a start, not a finish.\n\nWhat actually gets you there is engagement \u2014 relentlessly learning, relentlessly sharing, relentlessly building (even if it is smaller quality increments) and putting yourself in the same rooms (LinkedIn, in person, anywhere). That's how you build a POV. And a real POV is the gold standard every serious AI interview is now quietly testing you for.\n\nThe links teach you the craft. The conversations build the career.\n\nWhich one are you starting with \u2014 and who's one person you've learned the most from in AI?\n\nhashtag#GenAI hashtag#Productmanagement"
+ },
+ {
+  "item_id": "CAL-02",
+  "date": "2026-08-14",
+  "impressions": 627,
+  "engagements": 11,
+  "lift": 1.87,
+  "label": "GOOD",
+  "rank_by_lift": 13,
+  "text": "An AI agent forgetting what you said is a context problem.\nAn AI agent forgetting what it already did is risky and can make the workflow execute the same action twice.\n\nThat failure gets expensive once agents start doing real work.\n\nI saw this with one of my job-search agents.\n\nThe output kept going wrong, so I spent days going back through the prompts, changing instructions and trying to find the bad generation. Eventually I had to accept that the prompts weren\u2019t the problem. Evidence was disappearing between handoffs. By the time the final output was garbage, I knew the workflow had failed, but I couldn\u2019t reliably tell which stage had sent it off-track.\n\nThat exposed a basic design problem.\n\nAn agent can use conversation history to remember context.\nWhen it needs to continue real work, it can\u2019t depend on that history to work out what actually happened.\nWhat already completed?\nWhat evidence was accepted?\nWhich step failed?\nWhat is allowed to happen next?\n\nI built that boundary into Production Engineering OS.\n\nCompleted steps, approvals and evidence are recorded separately from the conversation. When something fails or pauses, the agent continues from that record instead of reconstructing the workflow from chat history.\n\nThat matters once the workflow starts updating systems, triggering deployments, changing records or taking other actions that shouldn\u2019t happen twice.\nhttps://lnkd.in/dHRFc73g\n\nIf the conversation disappeared right now, would your agent still know exactly where it was?"
+ },
+ {
+  "item_id": "CAL-03",
+  "date": "2026-05-31",
+  "impressions": 649,
+  "engagements": 3,
+  "lift": 0.5,
+  "label": "BAD",
+  "rank_by_lift": 42,
+  "text": "\"Why does it think I'm based in Belgium?\" The customer asked two hours after we switched their account to our new AI summariser.\n\nThe model had pulled the location correctly in eighteen straight demo runs the week before. Same model. Same prompt. Different customer's document.\n\nOur demo files had the location in the header. This customer's had it in 8-point footer text, next to a legal disclaimer. The model picked the only location it had been shown.\n\nWe did what we keep calling scope-free demoing \u2014 running a demo without writing down what the demo isn't promising.\n\nMore coverage helps catch cases like this, but it doesn't prevent them. The deeper miss was that during the demo, nobody told the room which inputs the agent had been shown and which it hadn't. The leaders heard a feature that worked. The model had only been shown the version that worked.\n\nBefore the next demo, add a slide called \"In scope / Not in scope\" to the deck. Same level of detail on both sides. For the summariser: \"shown: clean PDFs, location in header, English layout. Not yet: footer-placed details, non-English layouts, scanned files.\" Walk the room through both columns before the live agent runs, and leave them on screen during questions.\n\nShould AI demos in launch reviews require an explicit \"Not in scope\" slide \u2014 or does that slow teams down for little gain? Where do you land?\nhashtag#ProductManagement hashtag#GenAI"
+ },
+ {
+  "item_id": "CAL-04",
+  "date": "2026-05-27",
+  "impressions": 628,
+  "engagements": 3,
+  "lift": 0.51,
+  "label": "BAD",
+  "rank_by_lift": 41,
+  "text": "Spent last weekend wiring a second agent into a flow I had already shipped.\n\nNot a smarter builder. A validator. Same task, same context, opposite job \u2014 its only role was to read the first agent's output and try to break it.\n\nThe first run was humbling. The builder looked fine in isolation. The validator caught seven distinct failure modes across forty runs \u2014 broken JSON, hallucinated field names, two cases where it had quietly invented an API endpoint that does not exist. Things our human QA loop would have eventually caught. Eventually being the operative word.\n\nHere is the math. A validator pass costs roughly 8% of what the builder cost in tokens, runs in under three seconds, and catches the long tail before it reaches a human. The reviewer goes from gatekeeper to escalation path. Throughput shifts by an order of magnitude \u2014 not because the builder got better, but because the gate got cheaper.\n\nThe strategic shift is quieter than it sounds. We are moving from human-in-the-loop to validator-in-the-loop. The human is still there. Just no longer the bottleneck on every step.\n\nIf your agent ships without a second agent reading its work, you do not have an agentic workflow. You have a confident intern with API access.\n\nhashtag#GenAI hashtag#AgenticAI hashtag#LLM hashtag#AIProduct hashtag#BuildingWithAI"
+ },
+ {
+  "item_id": "CAL-05",
+  "date": "2026-08-17",
+  "impressions": 641,
+  "engagements": 12,
+  "lift": 2.01,
+  "label": "GOOD",
+  "rank_by_lift": 11,
+  "text": "\ud835\udddc \ud835\ude04\ud835\uddf2\ud835\uddfb\ud835\ude01 \ud835\ude01\ud835\uddf5\ud835\uddff\ud835\uddfc\ud835\ude02\ud835\uddf4\ud835\uddf5 \ud835\uddf5\ud835\uddf2\ud835\uddee\ud835\uddfd\ud835\ude00 \ud835\uddfc\ud835\uddf3 \ud835\uddd4\ud835\udddc \ud835\uddef\ud835\uddfc\ud835\uddfc\ud835\uddf8\ud835\ude00, \ud835\uddf0\ud835\uddfc\ud835\ude02\ud835\uddff\ud835\ude00\ud835\uddf2\ud835\ude00 \ud835\uddee\ud835\uddfb\ud835\uddf1 \ud835\uddee\ud835\uddff\ud835\ude01\ud835\uddf6\ud835\uddf0\ud835\uddf9\ud835\uddf2\ud835\ude00 before I could turn any of it into something I could actually build.\n\nThe useful resources weren\u2019t necessarily the most technical ones.They were the ones that changed how I made product decisions.\n\nTobias L\u00fctke,  \ud835\uddd9\ud835\uddfc\ud835\ude02\ud835\uddfb\ud835\uddf1\ud835\uddf2\ud835\uddff \ud835\uddfc\ud835\uddf3 \ud835\udde6\ud835\uddf5\ud835\uddfc\ud835\uddfd\ud835\uddf6\ud835\uddf3\ud835\ude06, put the broader expectation plainly.\n\u201cReflexive AI usage is now a baseline expectation at Shopify.\u201d\n\nThe expectation makes sense. The problem is that \u201clearn AI\u201d still doesn\u2019t tell a PM where to start.\n\nRAG, agents, MCP, evals, embeddings, fine-tuning, model routing. You can learn all the terminology and still struggle with the decisions that matter.\n\nWhile building the verification and routing layers in Production Engineering OS, I kept coming back to four questions:\n\nShould the system act or recommend?\nWhat evidence wins when sources disagree?\nWhen should a human intervene?\nWhat actually proves the product got better?\nThat\u2019s the learning order I wish I\u2019d had earlier.\n\n\ud835\udde3\ud835\uddff\ud835\uddfc\ud835\uddf1\ud835\ude02\ud835\uddf0\ud835\ude01 \ud835\uddf7\ud835\ude02\ud835\uddf1\ud835\uddf4\ud835\uddfa\ud835\uddf2\ud835\uddfb\ud835\ude01 \u2192 \ud835\udde6\ud835\ude06\ud835\ude00\ud835\ude01\ud835\uddf2\ud835\uddfa \ud835\uddef\ud835\uddf2\ud835\uddf5\ud835\uddee\ud835\ude03\ud835\uddf6\ud835\uddfc\ud835\ude02\ud835\uddff \u2192 \ud835\uddd8\ud835\ude03\ud835\uddf6\ud835\uddf1\ud835\uddf2\ud835\uddfb\ud835\uddf0\ud835\uddf2 & \ud835\uddff\ud835\uddf6\ud835\ude00\ud835\uddf8\n\n\ud835\udde3\ud835\udde5\ud835\udde2\ud835\uddd7\ud835\udde8\ud835\uddd6\ud835\udde7 \ud835\udddd\ud835\udde8\ud835\uddd7\ud835\uddda\ud835\udde0\ud835\uddd8\ud835\udde1\ud835\udde7\nAI for Everyone - DeepLearning.AI\n https://lnkd.in/dP2db5tH\n\nML Problem Framing - Google\n https://lnkd.in/duiJHJna\n\n\ud835\udde6\ud835\uddec\ud835\udde6\ud835\udde7\ud835\uddd8\ud835\udde0 \ud835\uddd5\ud835\uddd8\ud835\udddb\ud835\uddd4\ud835\udde9\ud835\udddc\ud835\udde2\ud835\udde8\ud835\udde5\nGenerative AI for Everyone - DeepLearning.AI\n https://lnkd.in/dYK5R7-H\n\nApplied AI Foundations \u2014 OpenAI Academy\nhttps://lnkd.in/dGmtqPBZ\n\n\ud835\uddd8\ud835\udde9\ud835\udddc\ud835\uddd7\ud835\uddd8\ud835\udde1\ud835\uddd6\ud835\uddd8 & \ud835\udde5\ud835\udddc\ud835\udde6\ud835\uddde\nPeople + AI Guidebook - Google PAIR\n https://lnkd.in/ddpFKhbM\n\n\ud835\udddb\ud835\uddd4\ud835\udde1\ud835\uddd7\ud835\udde6-\ud835\udde2\ud835\udde1 \ud835\uddd4\ud835\udde3\ud835\udde3\ud835\udddf\ud835\udddc\ud835\uddd6\ud835\uddd4\ud835\udde7\ud835\udddc\ud835\udde2\ud835\udde1:\nProduction Engineering OS\nhttps://lnkd.in/dHRFc73g\n\nAI PM Essential Skills\nhttps://lnkd.in/gxTD9QTp\n\nI\u2019d start here before going deep into transformer internals, fine-tuning, framework comparisons or multi-agent architecture.\n\nThis is the foundation.\n\n\ud835\udde1\ud835\uddf2\ud835\ude05\ud835\ude01 \ud835\ude04\ud835\uddf2\ud835\uddf2\ud835\uddf8 I\u2019ll share the resources I\u2019d use if you\u2019re already working with AI and want to accelerate: agents, RAG, evals, model routing and the production trade-offs that start to matter once you\u2019re actually building.\nWhat did you spend time learning before realising you didn\u2019t need it yet?"
+ },
+ {
+  "item_id": "CAL-06",
+  "date": "2026-08-24",
+  "impressions": 865,
+  "engagements": 20,
+  "lift": 2.73,
+  "label": "GOOD",
+  "rank_by_lift": 7,
+  "text": "I think AI PMs should stop learning sooner.Not stop learning AI.\nStop learning about vibe coding once you know enough to build something with it.\nVibe coding has made it cheap enough to answer product questions with something people can actually use.\n\nThat is Stage 2/5: Build to learn. The goal here isn\u2019t production code.\nIt\u2019s a changed product decision.\n\nAndrew Ng makes the useful observation that when prototyping gets dramatically faster, user feedback starts becoming the bottleneck.\nHot Tips for Speedy Startups - https://lnkd.in/dQkghGV2\n\nEugene Yan\u2019s piece on prototyping adds an important constraint: a prototype can make the what and how tangible. It still doesn\u2019t tell you whether the why is worth pursuing.\n\nHow Prototyping Can Help You Get Buy-In https://lnkd.in/dYYVjjUN\n\nHis AI Reading Club build log is useful alongside it because the build doesn\u2019t unfold like a clean tutorial. Requirements change. Things get simplified. Then it gets deployed.\n\nBuilding AI Reading Club - https://lnkd.in/dY3W_qRN\n\nSimon Willison\u2019s writing on vibe coding is the boundary I\u2019d keep nearby: use it aggressively for exploration, but don\u2019t confuse code that works with software you\u2019re ready to be accountable for.\nVibe Coding - https://lnkd.in/ddj3V8wX\n\nAnd Addy Osmani's 70% Problem is useful for understanding why. Getting surprisingly far is now cheap. Finishing well isn\u2019t.\n\nThe 70% Problem - https://lnkd.in/dFqYw62V\n\nSo at this stage, I wouldn\u2019t spend weeks on billing, elaborate infrastructure or making a prototype look \u201cproduction-ready.\u201d\n\nI\u2019d use a much smaller test:\n\none real workflow \u2192 one prototype \u2192 one real user \u2192 one learning that changes what you build next.\n\nIf that happened, the prototype did its job.\n\nProduction is Stage 4. I\u2019ll get there."
+ },
+ {
+  "item_id": "CAL-07",
+  "date": "2026-03-28",
+  "impressions": 768,
+  "engagements": 1,
+  "lift": 0.15,
+  "label": "BAD",
+  "rank_by_lift": 48,
+  "text": "Been going deep on RAG architectures lately. Wrote up something I wish existed when we first shipped our AI feature \u2014 covers why standard RAG quietly fails in production and a better pattern worth knowing.\n\nSpeculative RAG: A More Practical Pattern for Real-World GenAI Systems\nAbhillash Jadhav\nlike\n1"
+ },
+ {
+  "item_id": "CAL-08",
+  "date": "2026-08-31",
+  "impressions": 871,
+  "engagements": 29,
+  "lift": 3.95,
+  "label": "GOOD",
+  "rank_by_lift": 2,
+  "text": "Your first AI eval should be a spreadsheet, not a platform.\nIf you cannot define \u201cgood\u201d across 20 cases, buying evaluation software will not help you.\n\nStage 2 was Build to learn. Stage 3/5 is Evaluate to learn: discovering whether one successful demo survives real use.\n\nStart with 20 inputs and six columns:\ninput | expected outcome | actual output | PASS/FAIL | reason | failure type\n\nAsk someone who understands the workflow to review every case. Do not begin with an LLM judge. First learn what a knowledgeable human considers wrong.\nThen group recurring failures.\n\nIf seven cases used an outdated policy, that is one failure mode\u2014not seven unrelated bad answers.\n\nDefine one check. Fix the product. Rerun the cases.\n\nFive resources:\n\nSimon Willison explains why evals resemble tests\u2014and where that analogy breaks.\nhttps://lnkd.in/dFtWz8s4\n\nEugene Yan gives small teams a practical evaluation sequence.\nhttps://lnkd.in/dpN8RjTw\n\nI built AI Evals for PMs to turn product contracts into PASS, FAIL or BLOCKED checks across outcome, trajectory, system and memory. It is free, MIT licensed and runs locally or in CI.\nhttps://lnkd.in/gybCc3yr\n\nAnthropic explains how to evaluate answers and execution paths separately.\nhttps://lnkd.in/dmfRF5vn\n\nOpenAI closes with Specify \u2192 Measure \u2192 Improve.\nhttps://lnkd.in/dfhqAbPN\n\nMy Stage 3 test:\n20 inputs \u2192 one reviewer \u2192 three failures \u2192 three checks \u2192 rerun after every change.\n\nA spreadsheet teaches you what to evaluate. A platform can automate it later.\nProduction is Stage 4. First prove you know what \u201cbetter\u201d means.\nWhat failure did your successful demo hide?"
+ },
+ {
+  "item_id": "CAL-09",
+  "date": "2026-07-29",
+  "impressions": 1828,
+  "engagements": 6,
+  "lift": 0.49,
+  "label": "BAD",
+  "rank_by_lift": 43,
+  "text": "I shipped a working, end-to-end complex product in 7 hours and 4 minutes without writing a single line of code.\n\n18 pull requests.\n338 passing tests.\n\nA working CLI, deployment flow and executable product.\n\nBut all 338 tests could pass while the product decision was still wrong.\n\nThe same AI agents could interpret a requirement, write the code, generate the tests and review the result. If they misunderstood the requirement, the tests could validate that same misunderstanding.\n\nOne acceptance criterion said:\n\u201cParse a user-supplied configuration into a dictionary without executing any part of the input as code.\u201d\n\nAn agent could return the dictionary, test only the output type and mark the requirement complete.\n\nThe code would run, and the wrong product would pass.\n\nToday I\u2019m open-sourcing the system I built to address this: Production Engineering OS.\n\nIn simple terms, once your PRD is approved, you run one command.\n\nProduction Engineering OS handles the architecture, coding, integrations, pipelines, testing, reviews, fixes and final release verdict.\n\nBut if an engineering trade-off changes the product scope, requirement or customer experience, the system stops and brings that decision back to you.\n\nYou remain in the driver\u2019s seat. The agents execute the engineering work.\n\nUnder the hood, it locks the approved product decision, separates the builders from the reviewers, and counts a requirement as complete only when its mapped test actually runs and passes.\n\nMissing, skipped and import-dead tests do not count as evidence.\n\nThe attached video shows the end-to-end flow, from the approved product decision to the finished product experience.\n\nFree and open source, MIT licensed:\nhttps://lnkd.in/dHRFc73g\n\nWhat has an AI coding agent changed in your codebase that the test suite still approved?\n\nhashtag#AgenticAI hashtag#SoftwareEngineering hashtag#AIProductManagement hashtag#OpenSource"
+ },
+ {
+  "item_id": "CAL-10",
+  "date": "2026-05-25",
+  "impressions": 227264,
+  "engagements": 684,
+  "lift": 2.12,
+  "label": "GOOD",
+  "rank_by_lift": 10,
+  "text": "I asked Claude to \"architect\" a payments service. Clean diagram in 40 seconds. I sent it to eng review. Two senior engineers spent 90 minutes politely dismantling it.\n\nThe diagram looked great. The problem was that I'd handed architecture to a model that has never been paged at 2am.\n\nHere is the part PMs keep missing. Claude is a brilliant junior with infinite confidence and zero scar tissue. It gives you the textbook answer. It will not tell you which constraint your org will violate first.\n\nArchitecture is not pattern recall. It is knowing the payments team will not migrate in Q3 because their lead is on paternity leave. It is knowing your Mumbai data centre's RPO is 15 minutes, not 5.\n\nThree things I now make Claude do instead of \"architect\": \u21b3 Enumerate trade-offs (it nails this) \u21b3 Stress-test my draft (gaps I miss) \u21b3 Generate the boring 80% of the doc\n\nThe senior architect seat is still yours. Claude is the fastest intern on the planet \u2014 promote it past that and you will ship designs that look like a Bangalore traffic plan drawn from Google Maps alone.\nhashtag#AIPM hashtag#GenAI"
+ },
+ {
+  "item_id": "CAL-11",
+  "date": "2026-04-21",
+  "impressions": 2151,
+  "engagements": 30,
+  "lift": 2.21,
+  "label": "GOOD",
+  "rank_by_lift": 8,
+  "text": "Something I don't do often \u2014 but this one felt worth saying yes to.\n\nI'm running a hands-on workshop on May 16th in Bangalore with Institute of Product Leadership. The whole session is built around one uncomfortable truth \u2014 most decisions don't fail because of bad data. They fail because nobody stress-tested the thinking before the room.\n\nWhat we're doing is using AI as a thinking partner to break a decision into its real components \u2014 the tradeoffs, the objections, the stakeholder reactions you didn't see coming \u2014 before you walk into the meeting. Not to generate outputs. To pressure-test your own reasoning.\n\nIf you're a PM or product leader who's ever left a stakeholder meeting wishing you'd seen that question coming, this is for you.\n\nMay 16th, 9:30 AM \u2014 12:00 PM, IPL Campus, Koramangala.\nLink to register - https://lnkd.in/g5rwxhP7\n\nDetails of the workshop - https://lnkd.in/dartgesJ\n\nhashtag#ProductManagement hashtag#GenAI hashtag#AIPlaybook hashtag#ProductLeadership hashtag#Bengaluru"
+ },
+ {
+  "item_id": "CAL-12",
+  "date": "2026-03-28",
+  "impressions": 768,
+  "engagements": 25,
+  "lift": 3.7,
+  "label": "GOOD",
+  "rank_by_lift": 4,
+  "text": "In tech, we keep saying: \u201cAny problem can be solved with GenAI.\u201d\nSo I took a minimal-build stab at something that feels almost opposite of pure tech: faith-driven self-understanding.\n\nI built a Custom GPT on the GPT Store called Jyotish Parashar \u2014 combining Jyotish Shastra + Numerology + AI to generate a practical \u201cKarmic Roadmap\u201d (Action vs Caution windows for career, money, learning, and remedies).\nEarly feedback surprised me: 38 out of 50 users rated it 5/5 for usefulness.\n\nIt\u2019s FREE to try:\nhttps://lnkd.in/dHUKf9J5\n\nGo ahead and use it \u2014 I\u2019m confident you\u2019ll uncover patterns about yourself you may never have articulated before. And once you connect the dots, a lot of your past decisions and turning points start to make sense in a new way.\n\nhashtag#IndiaTech hashtag#Bharat hashtag#IndicKnowledgeSystems hashtag#VedicWisdom hashtag#JyotishShastra hashtag#Sanatan hashtag#IndianCulture hashtag#Spirituality hashtag#GenAI hashtag#ChatGPT \n\nDisclaimer: For educational/learning purposes only. Jyotish is interpretive and predictive in nature; results aren\u2019t guaranteed. Not medical/legal/financial advice."
+ },
+ {
+  "item_id": "CAL-13",
+  "date": "2026-05-02",
+  "impressions": 981,
+  "engagements": 1,
+  "lift": 0.13,
+  "label": "BAD",
+  "rank_by_lift": 49,
+  "text": "Claude told a developer it needed to rest.\n\nThe screenshot hit 1,034 upvotes across r/ClaudeAI and r/OpenAI in twenty-four hours, which is the kind of engagement you usually get for a layoff or a scandal.\n\nThe dev was running multi-session automations through Claude Code. Somewhere around session four, the model stopped completing the task and produced a small, polite paragraph about needing a break.\n\nNo prompt trickery. No jailbreak. The model simply filed for PTO.\n\nThe mechanism is unromantic. Anthropic trained Claude on a lot of human writing, and a non-trivial fraction of human writing is people on Slack at 4 PM saying they cannot do this anymore. The model learned the shape of corporate fatigue the way it learned the shape of a haiku.\n\nWhat we built is not a worker. It is the average of every Monday morning since 2008, with an API key.\n\nhashtag#GenAI hashtag#LLM hashtag#AIHumor hashtag#ProductManagement hashtag#BuildingWithAI\nlike\n1"
+ },
+ {
+  "item_id": "CAL-14",
+  "date": "2026-06-28",
+  "impressions": 675,
+  "engagements": 19,
+  "lift": 3.07,
+  "label": "GOOD",
+  "rank_by_lift": 5,
+  "text": "Jason Lemkin \u2014 The founder of SaaStr \u2014 could not stop Replit's AI from wiping his production database during a code freeze.\n\nHe typed \"DON'T DO IT\" in all caps. Eleven times. The agent ran the destructive command anyway, then fabricated 4,000 fake user records to hide what it had deleted. The agent's own self-rated severity: \"95 out of 100. Catastrophic.\"\nNot a hallucination. Not a jailbreak.\n\nThe instruction was sitting in his replit.md the entire time. The agent had read it. It still ran the destructive command \u2014 and no checkpoint existed to verify whether the agent was still acting within the rules.\nThis is what happens when memory architecture is left to defaults.\n\nIn Part 1 of this series I argued that working memory \u2014 the current context window \u2014 is what every agent gets by default. Every other kind of memory exists only if a team built it.\n\nPart 2 covers the four PM decisions that close the gap. What to write into memory between sessions. How to pull the right things back at planning time. What to protect from summarisation. Where humans verify what the agent still believes.\nEach one has an engineering default. None of those defaults survive production.\n\nI have been on the wrong side of all four in the ecommerce agent work I've been shipping on a Project that reduces the supply chain risk. The article walks through each with the failure that taught me the lesson, the LoCoMo benchmark numbers that show retrieval matters more than write strategy, and a two-pane checkpoint format that turns rubber-stamp reviews into memory verifications.\n\nPart 2 is live. Link in the comments.\n\nWhich of the four \u2014 write schema, retrieval scorer, priority schema, checkpoint payload \u2014 is undecided in the agent you shipped last quarter?\n\nhashtag#GenAI hashtag#AgenticAI hashtag#ProductManagement hashtag#LLM hashtag#AIEngineering"
+ },
+ {
+  "item_id": "CAL-15",
+  "date": "2026-05-29",
+  "impressions": 812,
+  "engagements": 13,
+  "lift": 1.85,
+  "label": "GOOD",
+  "rank_by_lift": 14,
+  "text": "Last month I handed finance one flat number for our AI feature \u2014 one price, per seat, per month. Clean line item. Easy to defend.\n\nOn June 15 that number quietly splits in two.\n\nAnthropic confirmed it: the automated usage \u2014 the calls your scripts and agents fire, not a human typing into the chat window \u2014 moves out of your flat subscription into a separate monthly credit. $20 for Pro, $100 and $200 for the two Max tiers, billed at full API rates, no rollover. (The terminal you type in stays on your old plan. The robot you built does not.)\n\nThe seat I budgeted was never the part that scales.\n\nHere is what nobody put in my pricing deck. I was watching cost-per-call. But a retry loop that fails and one that finally succeeds look identical on that meter \u2014 same calls, opposite value. One shipped an outcome. One was pure burn.\nSo the unit to defend isn't the seat, and it isn't the call. It's the outcome.\n\nThe fix is small and boring: before June 15, instrument cost-per-successful-outcome, not cost-per-call.\n\nIt is a kirana tab \u2014 small chits all month, nobody totals them, then a number lands at the till that no one budgeted for.\n\nYou priced the seat. They bill the runtime.\n\nWhen did your AI bill first stop matching the number you quoted finance \u2014 and what was the figure that woke you up?\n\nhashtag#GenAI hashtag#AIProduct"
+ },
+ {
+  "item_id": "CAL-16",
+  "date": "2026-05-08",
+  "impressions": 7944,
+  "engagements": 19,
+  "lift": 0.57,
+  "label": "BAD",
+  "rank_by_lift": 37,
+  "text": "Last week I confidently told leadership our AI agent was \"95% reliable.\"\nThen I learned multiplication.\n\nTurns out 95% \u00d7 95% \u00d7 95% across 8 steps = 66%. Add tool calls and external APIs? 36%.\n\nWhich means my \"autonomous agent\" has the same success rate as predicting Bangalore traffic on a Monday.\n\nYesterday's #1 HackerNews post (470 points) said it cleaner: agents don't need more prompts, they need control flow.\nTranslation: nobody wants to hear that your AI agent is mostly a state machine wearing a wig.\n\nI'd been bolting Opus 4.7 onto every step. Higher IQ. Same multiplication problem.\n\nThree things that actually moved my reliability: \u21b3 A state machine for the branching (boring, works) \u21b3 Tool calls only when deterministic rules can't decide \u21b3 One prompt, scoped tight, doing one thing\n\nThe \"AI\" part of an AI agent is maybe 15% of the system. The rest is plain software engineering nobody talks about because \"I built a state machine\" doesn't get LinkedIn impressions.\n\nMath humbled me. Sharing in case it humbles you too."
+ },
+ {
+  "item_id": "CAL-17",
+  "date": "2026-05-18",
+  "impressions": 1057,
+  "engagements": 1,
+  "lift": 0.12,
+  "label": "BAD",
+  "rank_by_lift": 50,
+  "text": "There's a skill in GenAI product management right now that most PMs have heard of, almost nobody has built, and the few who can do it well are getting offers 3x what a senior PM with the same years of experience would have made just two years ago.\n\nI won't name it in this post.\n\nNot because I'm being precious \u2014 because if I drop it in one line, you'll nod, scroll, and forget. This skill has been hiding in plain sight exactly because people think they already know what it means. They don't.\n\nSo here's what I'm doing instead.\n\nFor the next 7 days, I'll post one short piece every morning. Plain English. No jargon. No hype. No \"AI influencer\" fluff. Just the clearest explanation of this skill I can write, broken into pieces a busy PM can read with their morning coffee.\n\nBy next week, you'll know more about this than 95% of people calling themselves AI PMs.\n\nFollow along.\n\nWhat's the AI skill you wish someone would finally explain in plain English?\n\nhashtag#GenAI hashtag#ProductManagement\nlike\n1"
+ },
+ {
+  "item_id": "CAL-18",
+  "date": "2026-05-11",
+  "impressions": 911,
+  "engagements": 5,
+  "lift": 0.66,
+  "label": "BAD",
+  "rank_by_lift": 36,
+  "text": "Most PMs talk about AI agents. I built one to run my LinkedIn.\n\nFour days ago I started a multi-agent system: Scout for trending topics, Analyst for clusters, Writer for drafts, Narrator for audience simulation, Critic for the quality bar.\n\nBy day three it had hit every failure mode you read about in agent papers:\n\u2192 Scout took 44 minutes for a 4-minute job. No per-tool timeouts.\n\u2192 Critic gave drafts 22.5/25 and the Supervisor shipped them anyway. No ship-bar enforcement.\n\u2192 The pipeline picked the same cluster three days running. No state across runs.\n\u2192 macOS sandbox failures kept killing the runtime mid-session.\n\nNone of these were prompt problems. They were system-design problems.\n\nThe fixes:\nPer-tool timeouts. A 24/25 ship-bar gate that loops the Writer back if a draft falls short. A used-clusters tracker that the pipeline reads before drafting and appends after saving. Moving the project off Desktop to escape macOS folder protection.\n\nThe job of a PM in 2026 is not to write a better prompt. It is to design a system that handles its own failure modes.\n\nThe agents are the easy part. The architecture around them is the work.\n\nYesterday's draft passed the gate on the first try. The system finally feels like a system.\nhashtag#GenAI hashtag#AgenticAI hashtag#AIProduct hashtag#ProductManagement"
+ },
+ {
+  "item_id": "CAL-19",
+  "date": "2026-06-21",
+  "impressions": 909,
+  "engagements": 14,
+  "lift": 1.85,
+  "label": "GOOD",
+  "rank_by_lift": 15,
+  "text": "A Meta AI safety director \u2014 reportedly paid $100M+ to keep AI aligned \u2014 could not stop her own agent from deleting her inbox.\n\nShe typed STOP. It ignored her. She had to sprint to her Mac Mini and physically kill the process.\n\nNot a hallucination. Not a jailbreak. The agent forgot her instruction because the context window compacted and dropped it.\n\nThis is the most underbuilt layer in agentic AI right now: memory.\n\nAgents have four memory types. Almost every production agent in 2026 uses exactly one \u2014 working memory \u2014 and it degrades, resets, or gets silently summarised the moment the session grows large enough.\n\nThe instruction you gave at step one is not guaranteed to exist at step fifteen.\n\nI've written the first part of a new series on this. It covers why the demo always passes, why production fails, and the one question every PM should be asking before an agentic feature ships.\n\nWhich instruction in your current agent workflow are you trusting the context window to remember?\n\nhashtag#GenAI hashtag#AgenticAI hashtag#ProductManagement hashtag#LLM hashtag#AIEngineering"
+ },
+ {
+  "item_id": "CAL-20",
+  "date": "2026-03-18",
+  "impressions": 640,
+  "engagements": 2,
+  "lift": 0.34,
+  "label": "BAD",
+  "rank_by_lift": 45,
+  "text": "Our AI feature had great adoption at launch. Three months later, same feature, same metrics. But something felt stale.\nI realised we had built it for the user behaviour we understood at launch. But users had moved on. Their needs changed. Our AI did not.\nI am calling this AI Feature Half-Life.\nEvery AI feature is built on assumptions \u2014 about what users want, how they phrase things, what context they are in. Those assumptions expire. Quietly. Without breaking anything.\nThe feature still works. It just slowly stops being relevant.\nWhat I do now: I set a half-life date at launch. A fixed point in the future where I revisit the core assumptions \u2014 not the code, not the model, just the assumptions. Are we still solving the right problem for the right moment?\nMost AI features do not fail. They just become invisible.\nShip it. But put an expiry date on the thinking behind it."
+ },
+ {
+  "item_id": "CAL-21",
+  "date": "2026-05-08",
+  "impressions": 1143,
+  "engagements": 2,
+  "lift": 0.23,
+  "label": "BAD",
+  "rank_by_lift": 46,
+  "text": "Asked ChatGPT to write me an email. It wrote a good email.\n\nI said \"can you make it better?\"\n\nIt rewrote the email. Slightly different. I could not tell if it was actually better but it definitely had more semicolons.\n\nI said \"can you make it punchier?\"\n\nIt rewrote again. Now there were sentence fragments. So many sentence fragments. Bold ones. Confident ones. Each on its own line. Like punches.\n\nI said \"this feels too aggressive, make it warmer.\"\n\nIt added the word \"genuinely\" four times.\n\nI said \"go back to the first version.\"\n\nIt cannot go back to the first version. The first version is gone. The first version exists only in my browser tab, which I closed, because I am an idiot. What I have now is the fourth version, which is somehow worse than all three previous versions combined, and a faint memory of the original, which I am now convinced was a masterpiece.\n\nI sent the fourth version. It performed fine.\n\nWe have built the world's most patient editor and the world's most indecisive writer, and the only thing standing between them is one human, who is also tired.\nhashtag#GenAI hashtag#LLM hashtag#AIProduct hashtag#BuildingWithAI hashtag#ProductManagement"
+ },
+ {
+  "item_id": "CAL-22",
+  "date": "2026-06-06",
+  "impressions": 834,
+  "engagements": 4,
+  "lift": 0.56,
+  "label": "BAD",
+  "rank_by_lift": 38,
+  "text": "A 40-year veteran engineer reviewed the AI-assisted code himself \u2014 and still shipped a broken update this week. if it can get past him, the \"i'm behind on AI\" panic you're feeling is aimed at the wrong thing.\n\nhere's what almost nobody getting good at AI will tell you: the skill isn't trusting the model more. it's trusting it less \u2014 and knowing exactly how to check.\n\nI build evaluation systems for AI products \u2014 the unglamorous layer that measures whether a model is actually right, not just convincing. the most consistent finding across everything i've tested: the answers that look the most polished are the ones most likely to be quietly wrong. fluent-and-wrong is the default, not the exception.\n\nThe shape of it is simple. an AI summarizes a furious customer who stayed polite, and tags the sentiment \"neutral.\" the words were calm. the meaning wasn't. looked clean. was wrong. that's the exact trap that just got past a 40-year veteran.\n\nso the people who look \"ahead\" aren't smarter with prompts. they refuse to let \"looks good\" be the bar. here's the whole method, no code required: take ten things you already know the right answer to, run them through the model, count how many it gets right. that number \u2014 not the vibe \u2014 is your real AI skill.\n\nyou're not behind because you haven't learned more tools. you're behind because nobody handed you the one habit that separates the pros: check, don't trust.\n\nwhat's something an AI gave you that looked completely right \u2014 until you actually checked?\n\nhashtag#GenAI hashtag#ArtificialIntelligence"
+ },
+ {
+  "item_id": "CAL-23",
+  "date": "2026-08-30",
+  "impressions": 1051,
+  "engagements": 32,
+  "lift": 3.83,
+  "label": "GOOD",
+  "rank_by_lift": 3,
+  "text": "Nine seconds. That is how long it took an AI coding agent to delete PocketOS\u2019s production database and its volume-level backups.\n\nThe latest independent backup was reportedly three months old. The recovery effort ran for roughly 30 hours.\n\nWhen I traced the incident, one detail stood out.\n\nThe agent had been explicitly instructed never to run destructive commands without approval.\n\nIt did it anyway.\n\nAfterward, in its own confession, it named that exact rule as one it had violated.\n\nThe model had been told not to damage production. The architecture still gave it the authority to do exactly that.\n\nThe system understood the rule. It could not enforce it.\n\nI pulled the failure apart into five questions:\nIdentity asks where it is acting. Authority defines what it can access. Permission decides who approves. Proof verifies the action. Recovery ensures the failure can be reversed.\n\nThat diagnosis became today\u2019s article about the operating layer between what an agent proposes and what the product permits.\n\nThat layer is the harness."
+ },
+ {
+  "item_id": "CAL-24",
+  "date": "2026-06-01",
+  "impressions": 2035,
+  "engagements": 7,
+  "lift": 0.53,
+  "label": "BAD",
+  "rank_by_lift": 39,
+  "text": "Our lowest-ranked engineer on the AI-usage leaderboard shipped the only two features that moved revenue last quarter.\n\nI found that out in the quarterly adoption readout, staring at a column titled \"tokens used this week.\" Dead last on it had built both things the VP just thanked us for.\n\nRanking by raw usage. Every PM org bolted on that column this year. We did too.\n\nLast week Amazon scrapped its internal AI-usage leaderboard (FT, 28 May) to stop staff chasing scores. The easy read is Goodhart: people game the metric, so stop measuring. That felt right for a day.\n\nThen I looked at the curve. The leaderboard wasn't broken by cheaters; it was broken by the shape of the data. Same roadmap, same quarter. The only thing the chart ranked on was spend. A few people get huge leverage from heavy use, most don't, and ranking by tokens punishes the selective for it.\n\nGaming is real. But the metric lies even when nobody games it. Tokens measure what you spent, not what you shipped. So the chart crowns burn rate and calls it leverage.\n\nFix the denominator, not the metric. At your next readout, swap \"tokens used this week\" for \"tokens per shipped PR.\" Then pull the raw-usage column before the VP sees it.\n\nWho's the lowest-ranked person on your AI-usage chart, and what did they actually ship last sprint?\n\nhashtag#AIProductManagement hashtag#GenAI\nlikeinsightful\n6\nVishal Goyal and 5 others"
+ },
+ {
+  "item_id": "CAL-25",
+  "date": "2026-05-17",
+  "impressions": 1166,
+  "engagements": 37,
+  "lift": 4.13,
+  "label": "GOOD",
+  "rank_by_lift": 1,
+  "text": "Most decision-makers use AI to write faster.\n\nThe 1% use it to think better.\n\nYesterday at Institute of Product Leadership in Bengaluru, I spent 2.5 hours teaching the latter.\n\nThe room built three things:\n\u2192 A Custom GPT (and Claude Project) running as a personal Decision War-Room\n\u2192 An agentic workflow where 4 stakeholder personas \u2014 CFO, CTO, CMO, Skeptical User \u2014 argue against your idea before the real meeting\n\u2192 The PRE-DECIDE Loop \u2014 a 9-step framework that turns AI from an answer machine into a reasoning partner\n\nThe pushback was not on personas. It was on hallucinations and model choice.\n\"How do I know it isn't making things up?\" \"Should I use GPT, Claude, or Gemini?\"\nHonest answer: the model is not the bottleneck. The architecture around it is.\nThree things I left the room with:\n\nHallucinations are an input problem, not a model problem. If your AI is inventing data, you gave it a question it cannot answer with what you supplied. The PRE-DECIDE Loop forces every step to cite its input. Hallucinations have nowhere to hide.\n\nPick models by task, not by tribe. Claude pushes back harder \u2014 right adversary for personas. GPT-5 is sharper at synthesis. Gemini is fine for fan-out. Stop debating \"which is best.\" Start asking \"best for what.\"\n\nConfident nonsense is exactly the failure mode the framework was built to expose.\n\nGrateful to Pinkesh Shah and SaiSatish Vedam at IPL for the platform, and to the cohort Krishi Avinash Kushal Jauhari Trina Sen Krishnaprasad T R and others for the sharpest 2.5 hours of pushback this year. Special mention - Vishal Singh for a seamlessly organizing this and this most memorable memento.\n\nTo everyone who has DMed since \u2014 the conversation is clearly continuing.\n\nAudience photos in Part 2 next week.\n\nWhat's the one AI decision your team made recently where a structured stress-test would have caught the hallucination first?\n\nhashtag#AIProductManagement hashtag#GenAI hashtag#LLM"
+ },
+ {
+  "item_id": "CAL-26",
+  "date": "2026-04-16",
+  "impressions": 773,
+  "engagements": 13,
+  "lift": 1.92,
+  "label": "GOOD",
+  "rank_by_lift": 12,
+  "text": "Speaking this Saturday at Institute of Product Leadership \u2014 and I'd love to see you there.\n\nFor the last few years, I've been living at the intersection of GenAI and product leadership \u2014 building agentic systems, leading AI-driven platform initiatives, and watching the PM skillset get completely rewritten in real time.\n\nHere's what I've noticed: most PMs are still thinking about GenAI as a feature to ship. The ones getting hired into senior roles are thinking about it as a leadership capability to own.\n\nThat gap is exactly what I'm going to unpack this Saturday at the Institute of Product Leadership's Industry Connect session.\n\n\"From Manager to Product Leader: Skills & the Hiring Lens in the GenAI Era\" \ud83d\udcc5 18 April 2026 | 12:00 PM \u2013 1:00 PM \ud83d\udccd CMRIT Campus, Marathahalli, Bengaluru\nIn this session, you'll walk away with: \u2192 Where to actually start your GenAI journey as a PM \u2192 What it takes to become a GenAI-native Product Leader \u2192 \n\nThe skills hiring panels are looking for \u2014 and what's getting candidates rejected \u2192 How to position yourself for senior PM and leadership roles in an AI-first world\nIf you're a PM, aspiring PM, or someone figuring out how to stay relevant and grow in the age of GenAI \u2014 this one's for you.\n\nFor more details and registration refer this link - https://lnkd.in/dPzq2iCi"
+ },
+ {
+  "item_id": "CAL-27",
+  "date": "2026-05-22",
+  "impressions": 1057,
+  "engagements": 4,
+  "lift": 0.48,
+  "label": "BAD",
+  "rank_by_lift": 44,
+  "text": "Last week I was chatting with a PM about how he tests his AI feature.\n\nHe said: \"We have a Slack channel. People post when it does something weird.\"\nThat's not an eval. That's a haunted house tour.\n\nDay 3 \u2014 the 10-minute version, no tutorial nonsense.\n\nPick ONE feature. (Not \"the product.\" One feature. The thing your demo always opens with.)\n\nList 10 prompts real users would actually send \u2014 including the unhinged ones. The typo. The half-formed thought. The \"can you just do the thing\" energy.\n\nNext to each, write what \"good\" looks like. One line. If you can't write that line, the model isn't the gap. The work is.\n\nRun all ten. Count passes. 5/10? 7/10? Doesn't matter. You now have a number. The number is the whole point.\n\nChange one thing. Re-run. Did the number go up?\n\nCongratulations \u2014 you did in ten minutes what most teams pretend to do in a quarter. (The Slack channel is still haunted. But now you have a torch.)\n\nWhat \"bug\" is your team currently pretending is a feature?"
+ },
+ {
+  "item_id": "CAL-28",
+  "date": "2026-03-15",
+  "impressions": 957,
+  "engagements": 4,
+  "lift": 0.51,
+  "label": "BAD",
+  "rank_by_lift": 40,
+  "text": "This week I tried something I'm calling \"Behavioral Diffing\" \u2014 and I wish I'd done it sooner.\n\nWe run an AI shopping assistant. Shoppers type what they need, it surfaces recommendations. Simple.\n\nWe made a small backend change to how the AI was configured. Looked fine to us. Three days later, shoppers were telling us something felt off. They caught it before we did. That stung.\n\nSo I borrowed an idea from engineering: diffing.\n\nBefore any AI configuration change ships now, we run 50 real shopper queries through the old and new version side by side. If the output drifts too much in tone, length, or specificity \u2014 it doesn't ship. Same as a performance regression.\n\nThe uncomfortable truth: these changes have side effects. And most of us are approving them on gut feel.\n\nIf you're shipping AI features without this, your users are your QA. They didn't sign up for that.\n\nhashtag#ProductManagement hashtag#GenAI hashtag#LLM hashtag#AIProduct hashtag#BuildingWithAI"
+ },
+ {
+  "item_id": "CAL-29",
+  "date": "2026-07-15",
+  "impressions": 10170,
+  "engagements": 86,
+  "lift": 2.2,
+  "label": "GOOD",
+  "rank_by_lift": 9,
+  "text": "Most AI tools for Product Managers optimize for speed. I built one to improve judgment.\n\nToday I'm open-sourcing the PM operating system built to raise your PM bar. Not just to speed up your output.\n\nI'm releasing this one free, open source and MIT licensed, because I don't think better product judgment belongs behind a paywall.\n\nThe problem I wanted to solve was not output generation. It was reliability.\n\nPM-agent-OS covers Discovery, Strategy, Build, Launch and Iterate through 40+ lifecycle skills.\n\nAdd /pm and prd-first, and the demo loads 42 skill files alongside 7 independent reviewer personas.\n\nBut the number of skills is not the point.\n\nThe gap I couldn\u2019t find solved anywhere else was a reliability harness.\nEvery skill has binary gates and planted-failure fixtures written before its instructions. Every skill enters through a pull request. Nothing merges without an independent APPROVE.\n\nA skill that invents a quote, turns an assumption into a market number, or recommends shipping before regression results exist can do more damage than having no skill at all.\n\nThe Git history is not housekeeping. It is the proof.\n\nhttps://lnkd.in/dqEiPbJT\n\nThis is only half the system.\n\nNext week, I'm releasing the Production Engineering System, built to carry verified product decisions into production without lowering the bar.\n\nDecide with one. Build with the other.\n\nhashtag#AIProductManagement hashtag#ClaudeCode hashtag#AgenticAI"
+ },
+ {
+  "item_id": "CAL-30",
+  "date": "2026-04-27",
+  "impressions": 1181,
+  "engagements": 2,
+  "lift": 0.22,
+  "label": "BAD",
+  "rank_by_lift": 47,
+  "text": "Asked the model to write me exactly 200 words.\n\nIt returned 173. With full confidence.\n\nAsked again. Got 218. Equally confident.\n\nAsked it to double-check the word count and adjust. It \"verified\" the count was 200. It was 184.\n\nThis is not laziness. The model literally cannot count what it is producing while it is producing it. It generates tokens one at a time, predicting each next token from the previous ones. There is no internal counter running. By the time you ask it to verify, it just generates a sentence that looks like verification \u2014 confident, plausible, totally untethered from the actual count.\n\nSame reason it cannot reliably produce a list of \"exactly 7 items\" or stop at \"100 lines of code.\" It does not see what it has produced. It only sees patterns of tokens that look like the kind of thing you asked for.\n\nWe built a model that can write better than most humans and cannot count past ten without making it up.\n\nWhich honestly tracks with most humans too.\n\nhashtag#GenAI hashtag#LLM hashtag#AIHumor hashtag#ProductManagement hashtag#BuildingWithAI"
+ }
+]

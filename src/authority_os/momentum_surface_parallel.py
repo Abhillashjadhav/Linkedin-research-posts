@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -80,6 +81,37 @@ SURFACES: tuple[dict[str, object], ...] = (
         "instruction": "Search only primary company/research/standards/government sources and reputable technology/news reporting that show a current GenAI/product conversation or consequence.",
     },
 )
+
+# Closed failure vocabulary. Every non-OBSERVED surface must map to exactly one code so
+# scout attribution is countable across days instead of parsed from free text.
+SURFACE_REASON_CODES = (
+    "ok",
+    "no-signal",
+    "model-timeout",
+    "schema-violation",
+    "empty-response",
+    "lane-refusal",
+    "search-unavailable",
+    "unclassified-error",
+)
+
+_FAILURE_PATTERNS = (
+    ("model-timeout", ("timed out", "timeout", "deadline")),
+    ("empty-response", ("returned no output", "empty response", "no content")),
+    ("schema-violation", ("invalid", "must be", "schema", "did not match", "returned an")),
+    ("lane-refusal", ("refused", "cannot comply", "declined")),
+    ("search-unavailable", ("web search", "search unavailable", "rate limit", "429")),
+)
+
+
+def classify_surface_failure(message: str) -> str:
+    """Map a WorkflowError message onto one stable reason code."""
+    lowered = (message or "").lower()
+    for code, needles in _FAILURE_PATTERNS:
+        if any(needle in lowered for needle in needles):
+            return code
+    return "unclassified-error"
+
 
 _TRACE_DIR: Path | None = None
 _TRACE_LOCK = threading.Lock()
@@ -294,11 +326,13 @@ For each signal:
 - acceleration_percent: comparable recent growth percentage only if directly observable, otherwise null.
 
 Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings. Return evidence only; do not use the private authority profile and do not write a post."""
+    started_at = time.monotonic()
     validated: dict[str, object] = {
         "status": "UNAVAILABLE",
         "signals": [],
         "caveat": "Surface Scout did not execute.",
     }
+    reason_code = "unclassified-error"
     for attempt in range(1, MAX_SURFACE_ATTEMPTS + 1):
         try:
             result = invoke_structured(
@@ -311,8 +345,10 @@ Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings
                 stage_label=f"Surface Scout {label}",
             )
             validated = _validate_surface_result(result, surface=surface)
+            reason_code = "ok" if validated["status"] == "OBSERVED" else "no-signal"
         except workflow.WorkflowError as exc:
             validated = {"status": "UNAVAILABLE", "signals": [], "caveat": str(exc)}
+            reason_code = classify_surface_failure(str(exc))
         if validated["status"] != "UNAVAILABLE" or attempt == MAX_SURFACE_ATTEMPTS:
             break
         print(
@@ -325,13 +361,18 @@ Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings
                 "surface": key,
                 "label": label,
                 "attempt": attempt + 1,
+                "reason_code": reason_code,
             }
         )
+    duration_ms = int((time.monotonic() - started_at) * 1000)
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "surface": key,
         "label": label,
         "status": validated["status"],
+        "reason_code": reason_code,
+        "duration_ms": duration_ms,
+        "timed_out": duration_ms >= SURFACE_TIMEOUT * 1000,
         "signals": validated["signals"],
         "caveat": validated["caveat"],
     }
@@ -342,6 +383,8 @@ Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings
             "surface": key,
             "label": label,
             "status": validated["status"],
+            "reason_code": reason_code,
+            "duration_ms": duration_ms,
             "signal_count": len(validated["signals"]),
         }
     )
@@ -503,6 +546,19 @@ def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, obj
             "successful_surfaces": len(successful),
             "total_surfaces": len(SURFACES),
             "signal_count": len(signals),
+            "surfaces": [
+                {
+                    "surface": item["surface"],
+                    "status": item["status"],
+                    "reason_code": item.get("reason_code", "unclassified-error"),
+                    "signal_count": len(item["signals"]),
+                    "duration_ms": item.get("duration_ms"),
+                }
+                for item in ordered
+            ],
+            "degraded_surfaces": [
+                item["surface"] for item in ordered if item["status"] != "OBSERVED"
+            ],
         }
     )
     if len(signals) < MIN_SIGNALS_FOR_CONSOLIDATION:

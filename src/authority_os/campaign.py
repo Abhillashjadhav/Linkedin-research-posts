@@ -1292,9 +1292,7 @@ def _run_day(
         eligible = [
             item
             for item in scores
-            if int(item["effective_total"]) >= MIN_SCORE
-            and int(item["hook_strength"]) >= MIN_HOOK
-            and all(value["status"] != "FAIL" for value in gate_by_id[str(item["candidate_id"])].values())
+            if all(value["status"] != "FAIL" for value in gate_by_id[str(item["candidate_id"])].values())
             and not slop_by_id[str(item["candidate_id"])]
         ]
         if not eligible:
@@ -1363,9 +1361,7 @@ def _run_day(
             }
         )
         if (
-            int(rescored["effective_total"]) < MIN_SCORE
-            or int(rescored["hook_strength"]) < MIN_HOOK
-            or any(value["status"] == "FAIL" for value in regated.values())
+            any(value["status"] == "FAIL" for value in regated.values())
         ):
             diagnostics = [{"candidate_id": selected["id"], "post_edit_score": int(rescored["effective_total"]), "post_edit_gates": regated}]
             trace["regeneration_count"] = cycle
@@ -1504,6 +1500,7 @@ def _run_day(
         "status": "READY_FOR_HUMAN_REVIEW",
         "candidate_id": final_post["id"],
         "post": final_post["text"],
+        "critic_scorecard": _score_trace(final_score),
         "first_comment": final_comment["text"],
         "human_approval_status": "NOT_APPROVED",
         "publishing_status": "DISABLED",

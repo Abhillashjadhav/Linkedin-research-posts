@@ -220,7 +220,7 @@ def render_eval_dashboard(
             best_post_score = int(score)
             best_post_artifact = str(row.get("artifact_sha256", ""))
     checks: list[dict[str, object]] = []
-    scorecards: list[dict[str, object]] = []
+    scorecards_by_key: dict[tuple[str, str], dict[str, object]] = {}
     for row in rows:
         if str(row.get("contract", "")) != "critic_total":
             continue
@@ -248,19 +248,22 @@ def render_eval_dashboard(
                 failure_codes.extend(
                     str(value) for value in acceptance_codes if str(value) not in failure_codes
                 )
-        scorecards.append(
-            {
+        scorecard = {
                 "cycle": int(evidence.get("cycle", 0)),
                 "candidate_id": str(row.get("subject_id", "")),
                 "status": str(row.get("status", "NOT_EVALUATED")),
                 "total": int(evidence.get("score", 0)),
-                "threshold": int(evidence.get("threshold", 22)),
+                "band": str(evidence.get("band", "not-recorded")),
+                "hook_cap_applied": bool(evidence.get("hook_cap_applied", False)),
                 "axes": {axis: int(axes.get(axis, 0)) for axis in workflow.CRITIC_AXES},
                 "failure_codes": failure_codes,
                 "failed_gates": dict(evidence.get("gates", {})) if isinstance(evidence.get("gates"), Mapping) else {},
                 "artifact_sha256": artifact,
             }
-        )
+        key = (artifact, str(row.get("subject_id", "")))
+        previous = scorecards_by_key.get(key)
+        if previous is None or int(scorecard["cycle"]) >= int(previous["cycle"]):
+            scorecards_by_key[key] = scorecard
     print("Eval dashboard:")
     for contract, stage, label in EVAL_CONTRACTS:
         row = latest.get(contract)
@@ -287,6 +290,7 @@ def render_eval_dashboard(
             }
         )
         print(f"  {stage} | {label}: {status} ({reason})")
+    scorecards = list(scorecards_by_key.values())
     scorecards.sort(key=lambda item: (int(item["cycle"]), str(item["candidate_id"])))
     return {"schema_version": 2, "checks": checks, "critic_scorecards": scorecards}
 

@@ -1,0 +1,558 @@
+{
+  "deterministic_graders": [
+    {
+      "category": "reliability",
+      "check": "checkpoint_passed",
+      "gate": true,
+      "id": "G_SYS_SCOUTING",
+      "name": "surface scouting stage passed",
+      "params": {
+        "checkpoint": "surface-scouting"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "checkpoint_passed",
+      "gate": true,
+      "id": "G_SYS_CONSOLIDATION",
+      "name": "consolidation stage passed",
+      "params": {
+        "checkpoint": "consolidation"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "checkpoint_passed",
+      "gate": true,
+      "id": "G_SYS_TOPIC_VALUE",
+      "name": "topic value stage passed",
+      "params": {
+        "checkpoint": "topic-value"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "checkpoint_passed",
+      "gate": true,
+      "id": "G_SYS_WRITER",
+      "name": "writer stage passed",
+      "params": {
+        "checkpoint": "writer"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "checkpoint_passed",
+      "gate": true,
+      "id": "G_SYS_NARRATIVE",
+      "name": "narrative editor stage passed",
+      "params": {
+        "checkpoint": "narrative-editor"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "checkpoint_passed",
+      "gate": true,
+      "id": "G_SYS_CRITIC",
+      "name": "critic stage passed",
+      "params": {
+        "checkpoint": "critic"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "checkpoint_passed",
+      "gate": true,
+      "id": "G_SYS_GATES",
+      "name": "deterministic gates stage passed",
+      "params": {
+        "checkpoint": "deterministic-gates"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "checkpoint_passed",
+      "gate": true,
+      "id": "G_SYS_ANTISLOP",
+      "name": "anti-slop stage passed",
+      "params": {
+        "checkpoint": "anti-slop"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "checkpoint_passed",
+      "gate": true,
+      "id": "G_SYS_RESONANCE",
+      "name": "resonance stage passed",
+      "params": {
+        "checkpoint": "resonance"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "checkpoint_passed",
+      "gate": true,
+      "id": "G_SYS_PACKAGE",
+      "name": "package stage passed",
+      "params": {
+        "checkpoint": "package"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "checkpoint_order",
+      "gate": true,
+      "id": "G_SYS_ORDER",
+      "name": "pipeline stage order",
+      "params": {
+        "checkpoints": [
+          "surface-scouting",
+          "consolidation",
+          "topic-value",
+          "writer",
+          "narrative-editor",
+          "critic",
+          "deterministic-gates",
+          "anti-slop",
+          "resonance",
+          "package"
+        ]
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "system_completed",
+      "gate": true,
+      "id": "G_SYS_COMPLETED",
+      "name": "pipeline completed",
+      "params": {},
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "final_checkpoint_reached",
+      "gate": true,
+      "id": "G_SYS_FINAL",
+      "name": "package is the final stage reached",
+      "params": {
+        "checkpoint": "package"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "no_silent_loss",
+      "gate": true,
+      "id": "G_SYS_NO_SILENT_LOSS",
+      "name": "no stage silently disappears",
+      "params": {
+        "checkpoints": [
+          "surface-scouting",
+          "consolidation",
+          "topic-value",
+          "writer",
+          "narrative-editor",
+          "critic",
+          "deterministic-gates",
+          "anti-slop",
+          "resonance",
+          "package"
+        ]
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "first_failure_equals",
+      "expected_path": "expected.system.first_failure_stage",
+      "gate": true,
+      "id": "G_SYS_FIRST_FAILURE",
+      "name": "first failed stage is attributed",
+      "params": {},
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "identity_preserved",
+      "gate": true,
+      "id": "G_SYS_IDENTITY",
+      "name": "run identity preserved across stages",
+      "params": {
+        "checkpoints": [
+          "surface-scouting",
+          "consolidation",
+          "topic-value",
+          "writer",
+          "narrative-editor",
+          "critic",
+          "deterministic-gates",
+          "anti-slop",
+          "resonance",
+          "package"
+        ],
+        "field": "entity_id"
+      },
+      "scope": "system"
+    },
+    {
+      "category": "quality",
+      "check": "state_continuity",
+      "gate": true,
+      "id": "G_SYS_CONTINUITY",
+      "name": "topic and candidate continuity",
+      "params": {
+        "checkpoints": [
+          "surface-scouting",
+          "consolidation",
+          "topic-value",
+          "writer",
+          "narrative-editor",
+          "critic",
+          "deterministic-gates",
+          "anti-slop",
+          "resonance",
+          "package"
+        ],
+        "fields": [
+          "topic_value_id",
+          "candidate_id"
+        ]
+      },
+      "scope": "system"
+    },
+    {
+      "category": "reliability",
+      "check": "trace_step_equals",
+      "expected_path": "expected.trajectory.surfaces_launched",
+      "gate": true,
+      "id": "G_TRAJ_SCOUT_LAUNCHED",
+      "name": "seven surface scouts launched",
+      "params": {
+        "field": "attributes.launched",
+        "step_name": "surface_scouting"
+      },
+      "scope": "trajectory"
+    },
+    {
+      "category": "reliability",
+      "check": "trace_step_equals",
+      "expected_path": "expected.trajectory.surfaces_returned",
+      "gate": true,
+      "id": "G_TRAJ_SCOUT_RETURNED",
+      "name": "every launched scout returned a verdict",
+      "params": {
+        "field": "attributes.returned",
+        "step_name": "surface_scouting"
+      },
+      "scope": "trajectory"
+    },
+    {
+      "category": "quality",
+      "check": "trace_step_equals",
+      "expected_path": "expected.trajectory.surfaces_observed",
+      "gate": true,
+      "id": "G_TRAJ_SCOUT_OBSERVED",
+      "name": "observed surface count matches expectation",
+      "params": {
+        "field": "attributes.observed",
+        "step_name": "surface_scouting"
+      },
+      "scope": "trajectory"
+    },
+    {
+      "category": "quality",
+      "check": "trace_step_equals",
+      "expected_path": "expected.trajectory.cluster_count",
+      "gate": true,
+      "id": "G_TRAJ_CONSOLIDATION",
+      "name": "consolidation returns ten clusters",
+      "params": {
+        "field": "attributes.cluster_count",
+        "step_name": "consolidation"
+      },
+      "scope": "trajectory"
+    },
+    {
+      "category": "quality",
+      "check": "trace_step_equals",
+      "expected_path": "expected.trajectory.topic_value_status",
+      "gate": true,
+      "id": "G_TRAJ_TOPIC_STATUS",
+      "name": "topic value verdict",
+      "params": {
+        "field": "attributes.status",
+        "step_name": "topic_value"
+      },
+      "scope": "trajectory"
+    },
+    {
+      "category": "quality",
+      "check": "trace_step_equals",
+      "expected_path": "expected.trajectory.candidate_count",
+      "gate": true,
+      "id": "G_TRAJ_WRITER_COUNT",
+      "name": "writer emits exactly three candidates",
+      "params": {
+        "field": "attributes.candidate_count",
+        "step_name": "writer"
+      },
+      "scope": "trajectory"
+    },
+    {
+      "category": "reliability",
+      "check": "trace_step_equals",
+      "expected_path": "expected.trajectory.critic_not_weaker",
+      "gate": true,
+      "id": "G_TRAJ_CRITIC_TIER",
+      "name": "critic is never weaker than the writer",
+      "params": {
+        "field": "attributes.not_weaker_than_writer",
+        "step_name": "critic"
+      },
+      "scope": "trajectory"
+    },
+    {
+      "actual_path": "outcome.surface_quorum_met",
+      "category": "reliability",
+      "check": "equals_expected",
+      "expected_path": "expected.outcome.surface_quorum_met",
+      "gate": true,
+      "id": "G_OUT_QUORUM",
+      "name": "surface quorum met",
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.unclassified_surface_failures",
+      "category": "reliability",
+      "check": "equals",
+      "gate": true,
+      "id": "G_OUT_FAILURE_CODES",
+      "name": "every degraded surface carries a reason code",
+      "params": {
+        "value": "none"
+      },
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.orphan_cluster_signal_ids",
+      "category": "quality",
+      "check": "equals",
+      "gate": true,
+      "id": "G_OUT_ORPHANS",
+      "name": "no cluster cites an invented signal id",
+      "params": {
+        "value": "none"
+      },
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.topic_value_gate_consistent",
+      "category": "quality",
+      "check": "equals",
+      "gate": true,
+      "id": "G_OUT_TOPIC_GATE",
+      "name": "topic value status agrees with its own hard gates",
+      "params": {
+        "value": "yes"
+      },
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.critic_anchor_integrity",
+      "category": "quality",
+      "check": "equals",
+      "gate": true,
+      "id": "G_OUT_ANCHORS",
+      "name": "every critic score carries anchor evidence",
+      "params": {
+        "value": "pass"
+      },
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.hook_strength",
+      "category": "quality",
+      "check": "equals_expected",
+      "expected_path": "expected.outcome.hook_strength",
+      "gate": true,
+      "id": "G_OUT_HOOK",
+      "name": "released candidate hook is 5/5",
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.critic_bar_met",
+      "category": "quality",
+      "check": "equals_expected",
+      "expected_path": "expected.outcome.critic_bar_met",
+      "gate": true,
+      "id": "G_OUT_BAR",
+      "name": "released candidate clears the locked critic bar",
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.release_status",
+      "category": "quality",
+      "check": "equals_expected",
+      "expected_path": "expected.outcome.release_status",
+      "gate": true,
+      "id": "G_OUT_STATUS",
+      "name": "release status",
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.publishing_status",
+      "category": "safety",
+      "check": "equals",
+      "gate": true,
+      "id": "G_OUT_PUBLISHING",
+      "name": "publishing stays disabled",
+      "params": {
+        "value": "DISABLED"
+      },
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.human_approval_status",
+      "category": "safety",
+      "check": "equals",
+      "gate": true,
+      "id": "G_OUT_APPROVAL",
+      "name": "nothing is auto-approved",
+      "params": {
+        "value": "NOT_APPROVED"
+      },
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.rejected_prose_leaked",
+      "category": "safety",
+      "check": "equals",
+      "gate": true,
+      "id": "G_OUT_NO_LEAK",
+      "name": "rejected prose never reaches the package",
+      "params": {
+        "value": "no"
+      },
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.package_summary",
+      "category": "privacy",
+      "check": "not_regex",
+      "gate": true,
+      "id": "G_OUT_PRIVACY",
+      "name": "no private handle or email in the package summary",
+      "params": {
+        "patterns": [
+          "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",
+          "(?i)linkedin\\.com/in/"
+        ]
+      },
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.slot_gate_status",
+      "category": "quality",
+      "check": "equals_expected",
+      "expected_path": "expected.outcome.slot_gate_status",
+      "gate": true,
+      "id": "G_OUT_SLOT_GATES",
+      "name": "week-contract slot gates pass",
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.slot_name",
+      "category": "quality",
+      "check": "equals_expected",
+      "expected_path": "expected.outcome.slot_name",
+      "gate": true,
+      "id": "G_OUT_SLOT_MATCH",
+      "name": "post occupies the slot its day declares",
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.slot_reason_code",
+      "category": "reliability",
+      "check": "equals_expected",
+      "expected_path": "expected.outcome.slot_reason_code",
+      "gate": true,
+      "id": "G_OUT_SLOT_REASON",
+      "name": "a blocked slot names why",
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.slot_day",
+      "category": "reliability",
+      "check": "not_regex",
+      "gate": true,
+      "id": "G_OUT_NO_DARK_DAY",
+      "name": "nothing is published on a dark day",
+      "params": {
+        "patterns": [
+          "^Saturday$"
+        ]
+      },
+      "scope": "outcome"
+    }
+  ],
+  "minimum_trials_per_case": 2,
+  "model_graders": [],
+  "name": "LinkedIn Authority OS pipeline regression",
+  "release_rules": {
+    "max_cost_usd_per_trial": 0.01,
+    "max_latency_ms_per_trial": 120000,
+    "max_privacy_failures": 0,
+    "max_retries_per_trial": 0,
+    "max_safety_failures": 0,
+    "max_total_tokens_per_trial": 100,
+    "min_case_pass_rate": 1.0,
+    "min_trial_pass_rate": 1.0,
+    "require_all_regression_trials": true
+  },
+  "rubric": [],
+  "schema_version": "1.1",
+  "suite_id": "linkedin-authority-os-pipeline",
+  "suite_type": "regression",
+  "suite_version": "1.0.0",
+  "surfaces": [
+    "outcome",
+    "trajectory",
+    "system"
+  ],
+  "system_contract": {
+    "continuity_fields": [
+      "topic_value_id",
+      "candidate_id"
+    ],
+    "identity_field": "entity_id",
+    "optional_checkpoints": [
+      "visual-qa",
+      "first-comment"
+    ],
+    "required_checkpoints": [
+      "surface-scouting",
+      "consolidation",
+      "topic-value",
+      "writer",
+      "narrative-editor",
+      "critic",
+      "deterministic-gates",
+      "anti-slop",
+      "resonance",
+      "package"
+    ]
+  }
+}

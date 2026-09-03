@@ -1103,7 +1103,7 @@ class ProofBoundaryTests(unittest.TestCase):
         self.fixture = ProofFixture(attestations=["I built the reliability-budget workflow."])
         self.proof = self.fixture.load()
         self.voice = {
-            "provenance": "reconstructed-style-guidance",
+            "provenance": "measured-performance-anchors",
             "voice": "Direct practitioner voice.",
         }
 
