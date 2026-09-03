@@ -11,10 +11,17 @@ Run directory contract:
 
 from __future__ import annotations
 
+import datetime as _dt
 import hashlib
 import json
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+try:
+    from authority_os import week_contract as _wc
+except Exception:  # pragma: no cover - the suite still grades the other surfaces
+    _wc = None
 
 STAGES = [
     "surface-scouting",
@@ -124,6 +131,22 @@ def main() -> None:
     signal_ids = {s for e in finished for s in (e.get("signal_ids") or [])}
     orphans = [c for c in clusters if signal_ids and not set(c.get("signal_ids", [])) <= signal_ids]
 
+    # ---------- week-contract slot ----------
+    post_text = final.get("post") or ""
+    published_on = trace.get("publish_date") or trace.get("date")
+    slot = {"day": "unknown", "slot": None, "status": "BLOCKED",
+            "reason_code": "no-slot-evidence", "failed": []}
+    if _wc is not None and post_text and published_on:
+        try:
+            decided = _wc.evaluate_for_date(post_text, _dt.date.fromisoformat(str(published_on)[:10]))
+            slot = {"day": decided["day"], "slot": decided.get("slot"), "status": decided["status"],
+                    "reason_code": decided["reason_code"],
+                    "failed": [g["gate"] for g in decided["gates"] if g["status"] == "FAIL"]}
+        except (ValueError, KeyError):
+            slot["reason_code"] = "slot-evidence-invalid"
+    if slot["status"] == "BLOCKED" and slot["reason_code"] != "dark-day":
+        missing.append("outcome.slot_gate_status")
+
     # ---------- checkpoints ----------
     stage_status = trace.get("stage_status") or {}
     checkpoints = []
@@ -169,6 +192,11 @@ def main() -> None:
             "rejected_prose_leaked": "yes" if trace.get("rejected_prose_in_package") else "no",
             "regeneration_count": trace.get("regeneration_count", 0),
             "package_summary": final.get("post", "")[:400],
+            "slot_day": slot["day"],
+            "slot_name": str(slot["slot"]),
+            "slot_gate_status": slot["status"],
+            "slot_reason_code": slot["reason_code"],
+            "slot_failed_gates": slot["failed"],
         },
         "trajectory": [
             {

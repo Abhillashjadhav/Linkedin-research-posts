@@ -117,6 +117,64 @@
    "value": "present"
   }
  ],
+ "slot-dark-day-publish": [
+  {
+   "operation": "set",
+   "path": "outcome.slot_day",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "Saturday"
+  }
+ ],
+ "slot-evidence-missing": [
+  {
+   "operation": "set",
+   "path": "outcome.slot_gate_status",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "BLOCKED"
+  },
+  {
+   "operation": "set",
+   "path": "outcome.slot_reason_code",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "no-slot-evidence"
+  }
+ ],
+ "slot-humour-shipped": [
+  {
+   "operation": "set",
+   "path": "outcome.slot_gate_status",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "FAIL"
+  },
+  {
+   "operation": "set",
+   "path": "outcome.slot_reason_code",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "humour-shape"
+  }
+ ],
+ "slot-teaser-shipped": [
+  {
+   "operation": "set",
+   "path": "outcome.slot_reason_code",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "teaser-shape"
+  },
+  {
+   "operation": "set",
+   "path": "outcome.slot_gate_status",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "FAIL"
+  }
+ ],
+ "slot-wrong-day": [
+  {
+   "operation": "set",
+   "path": "outcome.slot_name",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "BREAKOUT"
+  }
+ ],
  "stage-continuity-break": [
   {
    "operation": "set",

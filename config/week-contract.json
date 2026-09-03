@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "contract_id": "authority-os-week-v1",
+  "derived_from": "50 ranked posts, LinkedIn aggregate analytics 2025-09-03 to 2026-09-02",
+  "timezone": "Asia/Kolkata",
+  "publish_time_hypothesis": {
+    "value": "08:00",
+    "status": "UNVERIFIED",
+    "note": "No posting times exist in the analytics export. Treat as an A/B to run, not a settled fact."
+  },
+  "objective": {
+    "primary": "organic followers",
+    "rationale": "Accepted connection requests are subtracted before measuring. Baseline organic gain is about 12 per month; the 2026-05-25 breakout produced 198 in one month.",
+    "organic_followers_per_1k_impressions": 0.9,
+    "note": "Conversion is flat across broad and niche reach, so organic follower growth is a function of impressions. Breakouts are the only mechanism that has moved it."
+  },
+  "cadence": {
+    "posting_days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Sunday"],
+    "dark_days": ["Saturday"],
+    "consecutive_day_penalty": false,
+    "consecutive_day_evidence": "Median impressions after a 0-1 day gap: 1057. After a 5+ day gap: 996. No penalty observed, so a strong post does not buy a rest day."
+  },
+  "slots": {
+    "Monday": {
+      "slot": "BREAKOUT",
+      "intent": "reach",
+      "avg_reach": 1046,
+      "evidence": "The 2026-05-25 breakout (227,264 impressions, 684 engagements) published on a Monday.",
+      "required_gates": ["no_humour", "no_teaser", "named_entity", "plain_language"],
+      "judge_on": ["impressions", "organic_followers"]
+    },
+    "Tuesday": {
+      "slot": "EDUCATIONAL",
+      "intent": "conversion",
+      "avg_reach": 1838,
+      "evidence": "Second-highest average reach and only 3 posts published all year. Most under-used slot.",
+      "required_gates": ["no_humour", "no_teaser", "named_entity", "prescriptive"],
+      "judge_on": ["engagements", "saves"]
+    },
+    "Wednesday": {
+      "slot": "BUILD",
+      "intent": "authority",
+      "avg_reach": 2458,
+      "evidence": "Highest average reach of any day. 2026-07-15 build post: 10,170 impressions, 86 engagements.",
+      "required_gates": ["no_humour", "no_teaser", "named_entity", "benefit_before_achievement"],
+      "judge_on": ["engagements", "repository_clicks"]
+    },
+    "Thursday": {
+      "slot": "NEWS_INCIDENT",
+      "intent": "reach",
+      "avg_reach": 1004,
+      "evidence": "Weakest day on both measures, so nothing is at risk in converting it to a second broad attempt.",
+      "required_gates": ["no_humour", "no_teaser", "named_entity", "plain_language"],
+      "judge_on": ["impressions", "organic_followers"]
+    },
+    "Friday": {
+      "slot": "NEWS_INCIDENT",
+      "intent": "reach",
+      "avg_reach": 2147,
+      "evidence": "Second-highest average reach, previously spent on humour. Humour posts scored 1, 2 and 2 engagements - the three worst results in the set.",
+      "required_gates": ["no_humour", "no_teaser", "named_entity", "plain_language"],
+      "judge_on": ["impressions", "organic_followers"]
+    },
+    "Sunday": {
+      "slot": "DEEP_RESEARCH",
+      "intent": "conversion",
+      "avg_reach": 870,
+      "evidence": "Lowest reach, highest engagement total of any day (142 excluding the breakout). The niche audience shows up on Sunday.",
+      "required_gates": ["no_humour", "no_teaser", "named_entity", "prescriptive"],
+      "judge_on": ["engagements", "saves", "comments"],
+      "never_judge_on": ["impressions"]
+    }
+  }
+}

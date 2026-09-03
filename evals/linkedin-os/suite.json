@@ -462,6 +462,50 @@
         ]
       },
       "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.slot_gate_status",
+      "category": "quality",
+      "check": "equals_expected",
+      "expected_path": "expected.outcome.slot_gate_status",
+      "gate": true,
+      "id": "G_OUT_SLOT_GATES",
+      "name": "week-contract slot gates pass",
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.slot_name",
+      "category": "quality",
+      "check": "equals_expected",
+      "expected_path": "expected.outcome.slot_name",
+      "gate": true,
+      "id": "G_OUT_SLOT_MATCH",
+      "name": "post occupies the slot its day declares",
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.slot_reason_code",
+      "category": "reliability",
+      "check": "equals_expected",
+      "expected_path": "expected.outcome.slot_reason_code",
+      "gate": true,
+      "id": "G_OUT_SLOT_REASON",
+      "name": "a blocked slot names why",
+      "scope": "outcome"
+    },
+    {
+      "actual_path": "outcome.slot_day",
+      "category": "reliability",
+      "check": "not_regex",
+      "gate": true,
+      "id": "G_OUT_NO_DARK_DAY",
+      "name": "nothing is published on a dark day",
+      "params": {
+        "patterns": [
+          "^Saturday$"
+        ]
+      },
+      "scope": "outcome"
     }
   ],
   "minimum_trials_per_case": 2,

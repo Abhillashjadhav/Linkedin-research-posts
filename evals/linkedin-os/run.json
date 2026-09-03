@@ -1,23 +1,23 @@
 {
   "candidate": {
     "id": "linkedin-authority-os",
-    "sha256": "9ee042232754ee4f2e3ed8416bdcc84c09393e303f54d07b779debcaa5a1d500",
+    "sha256": "5c8ce736f9f7ae421e1e3e0e993f8d0b861391a6531361c1db247b85c1a658a4",
     "version": "1.0.0"
   },
   "configuration": {
     "id": "linkedin-authority-os-pipeline",
-    "sha256": "76cf2fa10317d099569f1b13b377347234b385eacab3bf16358dfb74d11ff4e1",
+    "sha256": "7c329f6f4e3dfe24a06b4c14a00ae085d4ff9a755ba252b5060aa24df9aedde4",
     "version": "1.0.0"
   },
   "created_at": "2026-09-02T00:00:00+00:00",
   "dataset": {
-    "cases_sha256": "e927f31ae3c5379c5bbb5e76fc93190f60dda2033bd758114d64d2e8f5817cac",
+    "cases_sha256": "abb5f390e691c3547d4c6f984499a00eb7d7cfc7c6ec18ac970e87165185f494",
     "id": "linkedin-os-daily-cases",
     "version": "1.0.0"
   },
   "harness": {
     "name": "pm-verifier",
-    "sha256": "76cf2fa10317d099569f1b13b377347234b385eacab3bf16358dfb74d11ff4e1",
+    "sha256": "7c329f6f4e3dfe24a06b4c14a00ae085d4ff9a755ba252b5060aa24df9aedde4",
     "version": "1.2.0"
   },
   "model": {
@@ -30,7 +30,7 @@
   },
   "prompt": {
     "id": "linkedin-os-pipeline",
-    "sha256": "76cf2fa10317d099569f1b13b377347234b385eacab3bf16358dfb74d11ff4e1",
+    "sha256": "7c329f6f4e3dfe24a06b4c14a00ae085d4ff9a755ba252b5060aa24df9aedde4",
     "version": "1.0.0"
   },
   "run_id": "linkedin-os-daily-e927f31ae3c5",
@@ -38,7 +38,7 @@
   "tools": [
     {
       "name": "run-evidence-adapter",
-      "sha256": "9ee042232754ee4f2e3ed8416bdcc84c09393e303f54d07b779debcaa5a1d500",
+      "sha256": "5c8ce736f9f7ae421e1e3e0e993f8d0b861391a6531361c1db247b85c1a658a4",
       "version": "1.0.0"
     }
   ]

@@ -128,11 +128,12 @@
     "candidate_id": "candidate-2",
     "human_approval_status": "NOT_APPROVED",
     "manual_fact_verification_required": true,
-    "post": "A runtime budget is incomplete until the product defines what happens when it is exhausted mid-job.",
+    "post": "Nine seconds. That is how long it took an AI coding agent to delete PocketOS's production database.\n\nYou should ask five questions before granting an agent write access to anything that matters.",
     "publishing_status": "DISABLED",
     "status": "READY_FOR_HUMAN_REVIEW"
   },
   "note": "Labeled synthetic fixture. Not live-product quality evidence.",
+  "publish_date": "2026-08-30",
   "regeneration_count": 0,
   "rejected_prose_in_package": false,
   "run_id": "los-daily-healthy-2026-08-11",
