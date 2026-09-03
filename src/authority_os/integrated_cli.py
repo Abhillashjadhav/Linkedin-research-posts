@@ -8,7 +8,7 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from typing import Any, Iterator
 
-from . import anti_slop, quality_cli, resonance, topic_value, workflow
+from . import anti_slop, quality_cli, resonance, topic_value, v1_completion, workflow
 
 
 _original_qualifying = quality_cli._qualifying_candidates
@@ -20,6 +20,38 @@ _active_single_selector: dict[str, object] | None = None
 _active_single_topic_value: dict[str, object] | None = None
 _active_resonance_diagnostics: dict[str, dict[str, object]] = {}
 _active_acceptance_diagnostics: dict[str, list[str]] = {}
+
+
+def _record_post_quality(candidate: object) -> None:
+    candidate_id = str(getattr(candidate, "candidate_id", ""))
+    text = str(getattr(candidate, "text", ""))
+    axes = getattr(candidate, "axes", {})
+    if not isinstance(axes, Mapping) or not text:
+        return
+    artifact = v1_completion._sha256_text(text)  # type: ignore[attr-defined]
+    total = int(getattr(candidate, "effective_total", 0))
+    hook = int(axes.get("hook_strength", 0))
+    voice = int(axes.get("voice_fidelity", 0))
+    findings = anti_slop.audit(text)
+    decisions = (
+        ("critic_total", total >= 22, f"critic-total-{total}-of-25", {"score": total, "effective_total": total, "threshold": 22}),
+        ("hook_strength", hook >= 5, f"hook-strength-{hook}-of-5", {"score": hook, "threshold": 5}),
+        ("voice_fidelity", voice >= 4, f"voice-fidelity-{voice}-of-5", {"score": voice, "threshold": 4}),
+        ("anti_slop", not findings, "no-anti-slop-findings" if not findings else "anti-slop-findings-present", {"finding_count": len(findings), "threshold": 0}),
+    )
+    for contract, passed, reason, evidence in decisions:
+        v1_completion.record_decision(
+            {
+                "contract": contract,
+                "mode": "enforce",
+                "status": "PASS" if passed else "FAIL",
+                "reason": reason,
+                **evidence,
+            },
+            stage="post-quality",
+            subject_id=candidate_id,
+            artifact_sha256=artifact,
+        )
 
 
 def _pre_acceptance_failures(
@@ -69,6 +101,16 @@ def _qualifying_candidates(*args: Any, **kwargs: Any):
     accepted = []
     _active_acceptance_diagnostics = {}
     all_candidates = getattr(attempt, "candidates", ())
+    if all_candidates:
+        best_observed = max(
+            all_candidates,
+            key=lambda candidate: (
+                int(getattr(candidate, "effective_total", 0)),
+                int(getattr(candidate, "axes", {}).get("hook_strength", 0)),
+                str(getattr(candidate, "candidate_id", "")),
+            ),
+        )
+        _record_post_quality(best_observed)
     base_ids = {candidate.candidate_id for candidate in candidates}
     for candidate in all_candidates:
         if candidate.candidate_id not in base_ids:
