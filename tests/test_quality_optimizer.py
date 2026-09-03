@@ -315,6 +315,46 @@ class FourCycleConvergenceTests(unittest.TestCase):
         self.assertNotIn("Cycle one is weak but grounded.", rendered)
         self.assertEqual(responses, [])
 
+    def test_exhaustion_returns_best_overall_candidate_for_human_review(self) -> None:
+        best = candidate(
+            24,
+            {
+                "hook_strength": 5,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 5,
+                "voice_fidelity": 4,
+            },
+            text="The retained best overall candidate.",
+        )
+        best_attempt = quality_cli.AttemptResult(
+            candidates=(best,),
+            context_lines=(),
+            review_status="READY_FOR_HUMAN_REVIEW",
+            recommendation="candidate-1",
+            package_lines=("Content package: data/private/content-packages/best",),
+        )
+
+        def exhaust(_args: object) -> int:
+            quality_optimizer._state().observe(best_attempt)  # type: ignore[attr-defined]
+            raise workflow.WorkflowError(
+                "No candidate cleared the locked 22/25 quality and safety bar after 4 cycle(s)."
+            )
+
+        output = io.StringIO()
+        with (
+            patch.object(quality_optimizer, "_ORIGINAL_COMMAND_DRAFT", exhaust),
+            redirect_stdout(output),
+        ):
+            result = quality_optimizer._command_draft(SimpleNamespace())  # type: ignore[attr-defined]
+
+        self.assertEqual(result, 1)
+        rendered = output.getvalue()
+        self.assertIn("best overall=candidate-1 score=24/25", rendered)
+        self.assertIn("The retained best overall candidate.", rendered)
+        self.assertIn("Content package: data/private/content-packages/best", rendered)
+        self.assertIn("NEEDS_HUMAN_REVIEW", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()
