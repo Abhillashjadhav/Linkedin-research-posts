@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from . import daily_cli as base
-from . import momentum, storage, topic_value, v1_completion, workflow
+from . import eval_dashboard_html, momentum, storage, topic_value, v1_completion, workflow
 from .spine_feedback import CONTENT_SPINES
 
 
@@ -287,6 +287,36 @@ def _schema(kind: str) -> dict[str, object]:
         "required": ["cards"],
         "additionalProperties": False,
     }
+
+
+def persist_browser_dashboard(
+    folder: Path,
+    run_dashboard: dict[str, object],
+    decision_rows: Sequence[Mapping[str, object]],
+) -> tuple[Path, Path]:
+    """Persist the machine-readable evals and open their zero-install UI."""
+
+    dashboard = render_eval_dashboard(decision_rows)
+    dashboard["run_id"] = run_dashboard.get("run_id", "")
+    dashboard_path = base.write_private_json(
+        folder / "eval-dashboard.json",
+        dashboard,
+    )
+    browser_dashboard = eval_dashboard_html.write_dashboard(
+        folder,
+        run_dashboard,
+        dashboard,
+    )
+    opened = eval_dashboard_html.open_dashboard(browser_dashboard)
+    print(
+        f"Eval dashboard stored: "
+        f"{dashboard_path.relative_to(workflow.REPO_ROOT)}."
+    )
+    print(
+        f"Eval dashboard UI: {browser_dashboard.as_uri()}"
+        + (" (opened in your browser)." if opened else ".")
+    )
+    return dashboard_path, browser_dashboard
 
 
 def validate_cards(
@@ -595,6 +625,11 @@ def command(args: argparse.Namespace) -> int:
             str(exc),
         )
         persist_run_dashboard(folder, run_dashboard)
+        persist_browser_dashboard(
+            folder,
+            run_dashboard,
+            v1_completion._read_jsonl(ledger_path)[ledger_start:],
+        )
         raise
     mark_run_stage(
         run_dashboard,
@@ -645,6 +680,11 @@ def command(args: argparse.Namespace) -> int:
         )
         mark_run_stage(run_dashboard, "topic_admission", "FAIL", reason)
         persist_run_dashboard(folder, run_dashboard)
+        persist_browser_dashboard(
+            folder,
+            run_dashboard,
+            v1_completion._read_jsonl(ledger_path)[ledger_start:],
+        )
         raise workflow.WorkflowError(
             f"{reason} No thesis was generated."
         )
@@ -677,6 +717,11 @@ def command(args: argparse.Namespace) -> int:
             str(exc),
         )
         persist_run_dashboard(folder, run_dashboard)
+        persist_browser_dashboard(
+            folder,
+            run_dashboard,
+            v1_completion._read_jsonl(ledger_path)[ledger_start:],
+        )
         raise
     mark_run_stage(
         run_dashboard,
@@ -692,6 +737,11 @@ def command(args: argparse.Namespace) -> int:
     except workflow.WorkflowError as exc:
         mark_run_stage(run_dashboard, "topic_value", "FAIL", str(exc))
         persist_run_dashboard(folder, run_dashboard)
+        persist_browser_dashboard(
+            folder,
+            run_dashboard,
+            v1_completion._read_jsonl(ledger_path)[ledger_start:],
+        )
         raise
     mark_run_stage(
         run_dashboard,
@@ -758,6 +808,11 @@ def command(args: argparse.Namespace) -> int:
             **trace_details,
         )
         persist_run_dashboard(folder, run_dashboard)
+        persist_browser_dashboard(
+            folder,
+            run_dashboard,
+            v1_completion._read_jsonl(ledger_path)[ledger_start:],
+        )
         raise
     mark_run_stage(
         run_dashboard,
@@ -930,11 +985,26 @@ def command(args: argparse.Namespace) -> int:
             run_dashboard,
             outcome="PASS" if completed.returncode == 0 else "FAIL",
         )
+        browser_dashboard = eval_dashboard_html.write_dashboard(
+            folder,
+            run_dashboard,
+            dashboard,
+        )
+        opened = eval_dashboard_html.open_dashboard(browser_dashboard)
+        print(
+            f"Eval dashboard UI: {browser_dashboard.as_uri()}"
+            + (" (opened in your browser)." if opened else ".")
+        )
         return completed.returncode
     persist_run_dashboard(
         folder,
         run_dashboard,
         outcome="AWAITING_HUMAN_SELECTION",
+    )
+    persist_browser_dashboard(
+        folder,
+        run_dashboard,
+        v1_completion._read_jsonl(ledger_path)[ledger_start:],
     )
     print("No thesis was selected and no post was generated or published.")
     return 0
