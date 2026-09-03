@@ -278,8 +278,14 @@ def _validate_candidates(
         scores = _validate_scores(candidate.get("scores"))
         candidate["scores"] = scores
         expected_gravity = gravity_level(scores["gravity"])
-        if candidate.get("gravity") != expected_gravity:
-            raise workflow.WorkflowError("Topic Value gravity label contradicts its score.")
+        reported_gravity = str(candidate.get("gravity", ""))
+        normalization_warnings: list[str] = []
+        if reported_gravity != expected_gravity:
+            normalization_warnings.append(
+                f"model gravity {reported_gravity or '<missing>'} normalized to {expected_gravity}"
+            )
+        candidate["model_reported_gravity"] = reported_gravity
+        candidate["gravity"] = expected_gravity
         for field in ("brand_strip_pass", "feed_value_possible", "supports_authority_goal"):
             if type(candidate.get(field)) is not bool:
                 raise workflow.WorkflowError(f"Topic Value field {field!r} must be boolean.")
@@ -290,8 +296,16 @@ def _validate_candidates(
             supports_authority_goal=bool(candidate["supports_authority_goal"]),
         )
         expected_status = "PASS" if computed else "BLOCKED"
-        if candidate.get("status") != expected_status:
-            raise workflow.WorkflowError("Topic Value status contradicts its scores or hard gates.")
+        reported_status = str(candidate.get("status", ""))
+        if reported_status != expected_status:
+            normalization_warnings.append(
+                f"model status {reported_status or '<missing>'} normalized to {expected_status}"
+            )
+        candidate["model_reported_status"] = reported_status
+        candidate["status"] = expected_status
+        candidate["normalization_warnings"] = normalization_warnings
+        for warning in normalization_warnings:
+            print(f"Topic Value normalization [{candidate_id}]: {warning}.")
         candidate["total"] = sum(scores.values())
         candidate["priority"] = priority_for(candidate)
         candidates.append(candidate)
@@ -356,13 +370,20 @@ def invoke_discovery_selector(
         invoker=invoker,
     )
     blocked = [candidate for candidate in candidates if candidate["status"] != "PASS"]
-    if blocked:
+    passing = [candidate for candidate in candidates if candidate["status"] == "PASS"]
+    if not passing:
         diagnoses = "; ".join(str(candidate["diagnosis"]) for candidate in blocked)
         raise workflow.WorkflowError(
-            "Topic Value Selector could not find three authority-worthy situations. "
+            "Topic Value Selector could not find one authority-worthy situation. "
             f"Improve the source pool instead of drafting around weak material: {diagnoses}"
         )
-    return candidates
+    passing.sort(key=lambda item: (-int(item["total"]), str(item["id"])))
+    if blocked:
+        print(
+            f"Topic Value: retained {len(passing)} qualifying situation(s); "
+            f"{len(blocked)} weaker candidate(s) did not veto them."
+        )
+    return passing
 
 
 def invoke_campaign_selector(

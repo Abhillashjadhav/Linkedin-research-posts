@@ -133,6 +133,46 @@ class TopicValueRuntimeTests(unittest.TestCase):
 
         invoke.assert_called_once()
 
+    def test_derived_status_and_gravity_override_model_label_drift(self) -> None:
+        item = candidate(gravity_score=3)
+        item["gravity"] = "HIGH"
+        item["status"] = "BLOCKED"
+
+        validated = topic_value._validate_candidates(  # type: ignore[attr-defined]
+            [item], valid_source_ids={"signal-1"}, count=1
+        )[0]
+
+        self.assertEqual(validated["gravity"], "MEDIUM")
+        self.assertEqual(validated["status"], "PASS")
+        self.assertEqual(validated["model_reported_gravity"], "HIGH")
+        self.assertEqual(validated["model_reported_status"], "BLOCKED")
+        self.assertEqual(len(validated["normalization_warnings"]), 2)
+
+    def test_one_qualified_topic_is_not_vetoed_by_two_blocked_siblings(self) -> None:
+        qualified = candidate()
+        weak_one = candidate(reader_relevance=3)
+        weak_one["id"] = "topic-2"
+        weak_one["source_ids"] = ["signal-2"]
+        weak_one["situation"] = "A weak second situation."
+        weak_two = candidate(feed_value_possible=False)
+        weak_two["id"] = "topic-3"
+        weak_two["source_ids"] = ["signal-3"]
+        weak_two["situation"] = "A weak third situation."
+
+        selected = topic_value.invoke_discovery_selector(
+            {"target_audience": "AI PMs", "authority_goal": "Practical AI systems"},
+            [
+                {"id": "signal-1"},
+                {"id": "signal-2"},
+                {"id": "signal-3"},
+            ],
+            invoker=lambda *_args, **_kwargs: {
+                "candidates": [qualified, weak_one, weak_two]
+            },
+        )
+
+        self.assertEqual([item["id"] for item in selected], ["topic-1"])
+
 
 class TopicValueProjectionTests(unittest.TestCase):
     def test_project_discovery_signals_filters_and_annotates_selected_sources(self) -> None:
