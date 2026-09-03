@@ -37,7 +37,8 @@ class MonitoringExportTests(unittest.TestCase):
         private_text = "Candidate hook with personal@example.com and private source body"
         rows = [
             {
-                "schema_version": 1,
+                "schema_version": 2,
+                "run_id": "linkedin-production-1",
                 "recorded_at": "2026-08-30T12:00:00Z",
                 "contract": "research_trust",
                 "stage": "topic-value",
@@ -49,7 +50,8 @@ class MonitoringExportTests(unittest.TestCase):
                 "evidence": {"private_text": private_text},
             },
             {
-                "schema_version": 1,
+                "schema_version": 2,
+                "run_id": "linkedin-production-1",
                 "recorded_at": "2026-08-30T12:00:00Z",
                 "contract": "claim_body_support",
                 "stage": "topic-value",
@@ -65,13 +67,47 @@ class MonitoringExportTests(unittest.TestCase):
         rendered = json.dumps(exported)
         self.assertNotIn(private_text, rendered)
         self.assertNotIn("personal@example.com", rendered)
+        self.assertEqual(len(exported["cases"]), 1)
         case = exported["cases"][0]
-        self.assertEqual(case["case_type"], "topic-value")
+        self.assertEqual(case["case_type"], "linkedin-run")
         self.assertTrue(str(case["case"]["case_id"]).startswith("linkedin-"))
         self.assertEqual(
             {item["definition_id"] for item in case["checks"]},
-            {"research-trust", "claim-body-support"},
+            {
+                "research-trust",
+                "claim-body-support",
+                "atomic-value-novelty",
+                "critic-anchor-integrity",
+                "critic-reproducibility",
+                "solution-plausibility",
+                "reader-attention",
+            },
         )
+        by_definition = {item["definition_id"]: item for item in case["checks"]}
+        self.assertEqual(by_definition["research-trust"]["status"], "PASS")
+        self.assertEqual(by_definition["claim-body-support"]["status"], "FAIL")
+        self.assertEqual(
+            by_definition["reader-attention"]["status"], "NOT_EVALUATED"
+        )
+
+    def test_export_never_mixes_rows_from_another_run(self) -> None:
+        rows = [
+            {
+                "schema_version": 2,
+                "run_id": "another-run",
+                "recorded_at": "2026-08-30T12:00:00Z",
+                "contract": "research_trust",
+                "stage": "topic-value",
+                "mode": "enforce",
+                "status": "PASS",
+                "reason": "body-read-source-present",
+                "subject_id": "candidate-1",
+                "artifact_sha256": "a" * 64,
+                "evidence": {},
+            }
+        ]
+        with self.assertRaisesRegex(workflow.WorkflowError, "No V1 decisions match run ID"):
+            monitoring_export.build_normalized_export(context(), rows)
 
     def test_context_is_strict_and_timezone_aware(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
