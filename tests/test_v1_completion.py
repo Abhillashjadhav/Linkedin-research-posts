@@ -126,6 +126,38 @@ class V1CompletionTests(unittest.TestCase):
         self.assertEqual(row["mode"], "shadow")
         self.assertEqual(row["status"], "BLOCKED")
 
+    def test_critic_validator_records_complete_scorecard_as_diagnostic(self) -> None:
+        candidates = [
+            {
+                "id": "candidate-1",
+                "angle": "decision",
+                "text": "A grounded draft for human review.",
+                "claim_ids": ["source-1"],
+            }
+        ]
+        raw = [
+            {
+                "candidate_id": "candidate-1",
+                "hook_strength": 5,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 4,
+                "voice_fidelity": 4,
+            }
+        ]
+        validated = v1_completion._critic_validator_v1(raw, candidates)
+        row = v1_completion._read_jsonl(
+            self.root / v1_completion.DECISION_LEDGER_NAME
+        )[0]
+        self.assertEqual(validated[0]["effective_total"], 23)
+        self.assertEqual(row["contract"], "critic_total")
+        self.assertEqual(row["mode"], "shadow")
+        self.assertEqual(row["status"], "PASS")
+        self.assertEqual(row["evidence"]["effective_total"], 23)
+        self.assertEqual(row["evidence"]["band"], "one-light-revision")
+        self.assertIs(row["evidence"]["hook_cap_applied"], False)
+        self.assertEqual(row["evidence"]["axes"]["voice_fidelity"], 4)
+
     def test_calibration_snapshot_combines_leading_and_lagging_signals_without_mutating_rubric(self) -> None:
         v1_completion.record_decision(
             {

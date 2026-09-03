@@ -114,9 +114,17 @@ The effective-total bands have narrow meanings:
 - 22–23 permits one light revision of the current score leader. The Writer may be invoked once, the replacement candidate must still satisfy the full drafting contract, and the Critic may rescore it once. Revision does not recurse.
 - 21 or below is below the Critic bar for this run; major rewriting is outside this stage.
 
-The runtime reports a deterministic **score leader**, not a winner or recommended candidate. Candidate order cannot change the result: ranking compares effective total descending, raw total descending, the five rubric axes descending in the order listed above, and finally candidate ID ascending. Scoring is intentionally separated from safety policy: the Critic prompt contains the recovered five-axis rubric but excludes the authority-conversion, proof, honesty, citation, and relevance gates. Those gates run locally afterward. Only the later package stage can combine the score band and gate result into a recommendation for human review.
+In the live V1 path, the Critic scorecard is diagnostic rather than a release veto.
+Every five-axis score, effective total, band, and hook-cap state is recorded for
+review and ranking. A low Critic score cannot discard a draft. Honesty, citation,
+proof, privacy, relevance, authority-conversion, and integrated anti-slop checks
+remain enforced; among candidates that clear them, the highest Critic score advances
+to human review with its scorecard attached. The thresholds above remain the frozen
+V0 interpretation and must not be presented as outcome-calibrated.
 
-The visibly synthetic fixture contains validated scorecards and remains fully offline: it invokes neither Writer nor Critic. A private run requires the existing explicit `--allow-model-egress` consent before any Writer or Critic invocation. Live model calls remain zero-tools, stateless, and stdin-only; the Critic receives only the validated candidates, minimal selected evidence and voice context, and the scoring rubric. A 22–23 revision uses the same explicit consent for at most one further Writer call and one rescore.
+The runtime reports a deterministic **score leader**. Candidate order cannot change the result: ranking compares effective total descending, raw total descending, the five rubric axes descending in the order listed above, and finally candidate ID ascending. Scoring is intentionally separated from safety policy: the Critic prompt contains the recovered five-axis rubric but excludes the authority-conversion, proof, honesty, citation, and relevance gates. Those gates run locally afterward. In V1, the later package stage recommends the highest-ranked candidate that clears every enforced gate; the score band is attached as a diagnostic and is not an eligibility condition.
+
+The visibly synthetic fixture contains validated scorecards and remains fully offline: it invokes neither Writer nor Critic. A private run requires the existing explicit `--allow-model-egress` consent before any Writer or Critic invocation. Live model calls remain zero-tools, stateless, and stdin-only; the Critic receives only the validated candidates, minimal selected evidence and voice context, and the scoring rubric. V1 regeneration is driven by an enforced-gate failure, never by a Critic score alone.
 
 ### Deterministic authority and safety gates
 

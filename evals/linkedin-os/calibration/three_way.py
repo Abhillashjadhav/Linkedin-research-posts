@@ -36,7 +36,7 @@ class Agreement:
     kappa: float
     false_positive_rate: float
     false_negative_rate: float
-    interval_95: tuple[float, float]
+    agreement_interval_95: tuple[float, float]
     verdict: str
 
 
@@ -90,7 +90,7 @@ def compare(pair: str, left: Sequence[str], right: Sequence[str]) -> Agreement:
         expected_by_chance=round(expected, 3), kappa=round(kappa, 3),
         false_positive_rate=round(false_positives / actual_bad, 3) if actual_bad else 0.0,
         false_negative_rate=round(false_negatives / actual_good, 3) if actual_good else 0.0,
-        interval_95=tuple(round(v, 3) for v in _wilson(hits, n)),
+        agreement_interval_95=tuple(round(v, 3) for v in _wilson(hits, n)),
         verdict=_verdict(kappa),
     )
 

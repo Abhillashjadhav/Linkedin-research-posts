@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
+import math
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
@@ -36,6 +38,7 @@ DEFAULT_RUN1 = CALIBRATION_DIR / "judge-labels.run1.jsonl"
 DEFAULT_RUN2 = CALIBRATION_DIR / "judge-labels.run2.jsonl"
 DEFAULT_RESULTS = CALIBRATION_DIR / "three-way-results.json"
 DEFAULT_FINDINGS = CALIBRATION_DIR / "judge-calibration-findings.md"
+DEFAULT_DIAGNOSTICS = CALIBRATION_DIR / "axis-diagnostics.md"
 COMBINED_JUDGE_NAME = "judge-labels.jsonl"
 
 
@@ -109,10 +112,16 @@ def _validate_no_blocked(
 
 
 def _outcome_labels(path: Path) -> dict[str, str]:
+    payload = _calibration_records(path)
+    return {str(row["item_id"]): str(row["label"]) for row in payload}
+
+
+def _calibration_records(path: Path) -> list[dict[str, object]]:
     payload = _read_json(path)
     if not isinstance(payload, list) or len(payload) != EXPECTED_ITEMS:
         raise AnalysisFailure("calibration-set.json must contain exactly 30 rows")
-    labels: dict[str, str] = {}
+    labels: set[str] = set()
+    records: list[dict[str, object]] = []
     for row in payload:
         if not isinstance(row, Mapping):
             raise AnalysisFailure("calibration rows must be objects")
@@ -122,8 +131,9 @@ def _outcome_labels(path: Path) -> dict[str, str]:
             raise AnalysisFailure("calibration rows need unique item_id and GOOD/BAD label")
         if item_id in labels:
             raise AnalysisFailure(f"duplicate calibration item_id: {item_id}")
-        labels[item_id] = str(label)
-    return labels
+        labels.add(item_id)
+        records.append(dict(row))
+    return records
 
 
 def _score_map(row: Mapping[str, object], *, source: str) -> dict[str, int]:
@@ -258,6 +268,373 @@ def _sweep(
     }
 
 
+def _average_ranks(values: Sequence[float]) -> list[float]:
+    ordered = sorted(enumerate(values), key=lambda item: (item[1], item[0]))
+    ranks = [0.0] * len(values)
+    cursor = 0
+    while cursor < len(ordered):
+        end = cursor + 1
+        while end < len(ordered) and ordered[end][1] == ordered[cursor][1]:
+            end += 1
+        average = ((cursor + 1) + end) / 2
+        for original_index, _ in ordered[cursor:end]:
+            ranks[original_index] = average
+        cursor = end
+    return ranks
+
+
+def _pearson(left: Sequence[float], right: Sequence[float]) -> float:
+    if len(left) != len(right) or len(left) < 3:
+        raise AnalysisFailure("rank correlation needs at least three paired values")
+    left_mean = sum(left) / len(left)
+    right_mean = sum(right) / len(right)
+    numerator = sum(
+        (a - left_mean) * (b - right_mean) for a, b in zip(left, right, strict=True)
+    )
+    left_scale = math.sqrt(sum((value - left_mean) ** 2 for value in left))
+    right_scale = math.sqrt(sum((value - right_mean) ** 2 for value in right))
+    if left_scale == 0 or right_scale == 0:
+        return 0.0
+    return max(-1.0, min(1.0, numerator / (left_scale * right_scale)))
+
+
+def _beta_continued_fraction(a: float, b: float, x: float) -> float:
+    maximum_iterations = 200
+    epsilon = 3e-14
+    floor = 1e-300
+    qab = a + b
+    qap = a + 1.0
+    qam = a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    d = floor if abs(d) < floor else d
+    d = 1.0 / d
+    result = d
+    for iteration in range(1, maximum_iterations + 1):
+        twice = 2 * iteration
+        coefficient = iteration * (b - iteration) * x / (
+            (qam + twice) * (a + twice)
+        )
+        d = 1.0 + coefficient * d
+        d = floor if abs(d) < floor else d
+        c = 1.0 + coefficient / c
+        c = floor if abs(c) < floor else c
+        d = 1.0 / d
+        result *= d * c
+        coefficient = -(
+            (a + iteration) * (qab + iteration) * x
+            / ((a + twice) * (qap + twice))
+        )
+        d = 1.0 + coefficient * d
+        d = floor if abs(d) < floor else d
+        c = 1.0 + coefficient / c
+        c = floor if abs(c) < floor else c
+        d = 1.0 / d
+        delta = d * c
+        result *= delta
+        if abs(delta - 1.0) < epsilon:
+            return result
+    raise AnalysisFailure("rank-correlation p-value did not converge")
+
+
+def _regularized_beta(x: float, a: float, b: float) -> float:
+    if x <= 0:
+        return 0.0
+    if x >= 1:
+        return 1.0
+    front = math.exp(
+        math.lgamma(a + b)
+        - math.lgamma(a)
+        - math.lgamma(b)
+        + a * math.log(x)
+        + b * math.log1p(-x)
+    )
+    if x < (a + 1.0) / (a + b + 2.0):
+        return front * _beta_continued_fraction(a, b, x) / a
+    return 1.0 - front * _beta_continued_fraction(b, a, 1.0 - x) / b
+
+
+def _spearman(left: Sequence[float], right: Sequence[float]) -> dict[str, float]:
+    rho = _pearson(_average_ranks(left), _average_ranks(right))
+    if abs(rho) >= 1.0:
+        p_value = 0.0
+    else:
+        degrees = len(left) - 2
+        statistic = abs(rho) * math.sqrt(degrees / max(1e-15, 1.0 - rho * rho))
+        p_value = _regularized_beta(
+            degrees / (degrees + statistic * statistic), degrees / 2.0, 0.5
+        )
+    return {"rho": round(rho, 6), "p_value": round(p_value, 6)}
+
+
+def rank_check(
+    records: Sequence[Mapping[str, object]],
+    judge_totals: Mapping[str, int],
+    judge_scores: Mapping[str, Mapping[str, int]],
+    owner_scores: Mapping[str, Mapping[str, int]],
+) -> dict[str, object]:
+    ids = [str(row["item_id"]) for row in records]
+    lifts: list[float] = []
+    outcome_by_id: dict[str, str] = {}
+    for row in records:
+        lift = row.get("lift")
+        if isinstance(lift, bool) or not isinstance(lift, (int, float)):
+            raise AnalysisFailure("every calibration row needs a numeric lift for rank checking")
+        lifts.append(float(lift))
+        outcome_by_id[str(row["item_id"])] = str(row["label"])
+    _require_same_ids(
+        {item_id: True for item_id in ids},
+        judge_totals=judge_totals,
+        judge_scores=judge_scores,
+        owner_scores=owner_scores,
+    )
+    result: dict[str, object] = {
+        "method": "Spearman correlation with average ranks for ties and a two-sided t approximation for p",
+        "critic_total_vs_lift": _spearman(
+            [float(judge_totals[item_id]) for item_id in ids], lifts
+        ),
+        "critic_axes_vs_lift": {
+            axis: _spearman(
+                [float(judge_scores[item_id][axis]) for item_id in ids], lifts
+            )
+            for axis in AXES
+        },
+        "owner_total_vs_lift": _spearman(
+            [float(sum(owner_scores[item_id].values())) for item_id in ids], lifts
+        ),
+        "top_k_precision": {},
+        "tie_break": "descending effective_total, then fixed calibration-set order",
+    }
+    fixed_order = {item_id: index for index, item_id in enumerate(ids)}
+    ranked = sorted(ids, key=lambda item_id: (-judge_totals[item_id], fixed_order[item_id]))
+    for size in (5, 10):
+        selected = ranked[:size]
+        hits = sum(outcome_by_id[item_id] == "GOOD" for item_id in selected)
+        result["top_k_precision"][str(size)] = {  # type: ignore[index]
+            "hits": hits,
+            "k": size,
+            "precision": round(hits / size, 3),
+            "item_ids": selected,
+        }
+    return result
+
+
+def _subset_diagnostic(
+    axes: Sequence[str],
+    outcome: Mapping[str, str],
+    judge_scores: Mapping[str, Mapping[str, int]],
+    owner_scores: Mapping[str, Mapping[str, int]],
+) -> dict[str, object]:
+    totals = {
+        item_id: sum(scores[axis] for axis in axes)
+        for item_id, scores in judge_scores.items()
+    }
+    owner_totals = {
+        item_id: sum(scores[axis] for axis in axes)
+        for item_id, scores in owner_scores.items()
+    }
+    maximum = 5 * len(axes)
+    minimum = len(axes)
+    sweep = {
+        threshold: _agreement_at_threshold(
+            outcome,
+            totals,
+            threshold,
+            pair=f"outcome_vs_{'_'.join(axes)}_threshold_{threshold}",
+        )
+        for threshold in range(minimum, maximum + 1)
+    }
+    best_kappa = max(float(row["kappa"]) for row in sweep.values())
+    best_thresholds = [
+        threshold
+        for threshold, row in sweep.items()
+        if float(row["kappa"]) == best_kappa
+    ]
+    means: dict[str, float] = {}
+    for label in ("GOOD", "BAD"):
+        values = [
+            totals[item_id]
+            for item_id, outcome_label in outcome.items()
+            if outcome_label == label
+        ]
+        means[label] = sum(values) / len(values)
+    ids = sorted(outcome)
+    mae = sum(abs(totals[item_id] - owner_totals[item_id]) for item_id in ids) / len(ids)
+    return {
+        "axes": list(axes),
+        "score_maximum": maximum,
+        "best_achievable_kappa": round(best_kappa, 3),
+        "kappa_maximising_thresholds": best_thresholds,
+        "critic_mean_outcome_good": round(means["GOOD"], 3),
+        "critic_mean_outcome_bad": round(means["BAD"], 3),
+        "good_minus_bad_gap": round(means["GOOD"] - means["BAD"], 3),
+        "owner_vs_critic_mae": round(mae, 3),
+        "fitted_on_same_30_items": True,
+    }
+
+
+def axis_diagnostics(
+    outcome: Mapping[str, str],
+    judge_scores: Mapping[str, Mapping[str, int]],
+    owner_scores: Mapping[str, Mapping[str, int]],
+) -> dict[str, object]:
+    subsets: dict[str, dict[str, object]] = {}
+    for size in (1, 2, 3):
+        for axes in itertools.combinations(AXES, size):
+            subsets["+".join(axes)] = _subset_diagnostic(
+                axes, outcome, judge_scores, owner_scores
+            )
+    full = _subset_diagnostic(AXES, outcome, judge_scores, owner_scores)
+    without_closer_axes = tuple(axis for axis in AXES if axis != "earned_closer")
+    without_closer = _subset_diagnostic(
+        without_closer_axes, outcome, judge_scores, owner_scores
+    )
+    singles = [row for row in subsets.values() if len(row["axes"]) == 1]
+    best_single_kappa = max(float(row["best_achievable_kappa"]) for row in singles)
+    best_single = [
+        row for row in singles if float(row["best_achievable_kappa"]) == best_single_kappa
+    ]
+    strongest_subset = max(
+        float(row["best_achievable_kappa"]) for row in subsets.values()
+    )
+    return {
+        "warning": "Every threshold and subset result is fitted on these same 30 items and is overfitted.",
+        "full_five_axes": full,
+        "subsets": subsets,
+        "best_single_axes": [row["axes"][0] for row in best_single],
+        "best_single_kappa": best_single_kappa,
+        "best_pair_or_triple_kappa": strongest_subset,
+        "any_subset_beats_all_five": strongest_subset > float(full["best_achievable_kappa"]),
+        "excluding_earned_closer": without_closer,
+        "earned_closer_drop_kappa_change": round(
+            float(without_closer["best_achievable_kappa"])
+            - float(full["best_achievable_kappa"]),
+            3,
+        ),
+    }
+
+
+def _render_axis_diagnostics(
+    ranking: Mapping[str, object], diagnostics: Mapping[str, object]
+) -> str:
+    critic_total = ranking["critic_total_vs_lift"]
+    owner_total = ranking["owner_total_vs_lift"]
+    top_k = ranking["top_k_precision"]
+    subsets = diagnostics["subsets"]
+    full = diagnostics["full_five_axes"]
+    without_closer = diagnostics["excluding_earned_closer"]
+    lines = [
+        "# Critic rank and axis diagnostics",
+        "",
+        "> Every threshold, axis subset, and apparent winner below was fitted on the same 30 items. These results are overfitted and cannot promote an axis or threshold without held-out confirmation.",
+        "",
+        "## Rank check",
+        "",
+        f"Critic effective total vs lift: Spearman rho `{critic_total['rho']:.6f}`, two-sided p `{critic_total['p_value']:.6f}`.",
+        "",
+        f"Owner total vs lift: Spearman rho `{owner_total['rho']:.6f}`, two-sided p `{owner_total['p_value']:.6f}`.",
+        "",
+        "| Critic measure | Spearman rho | p-value |",
+        "|---|---:|---:|",
+    ]
+    for axis in AXES:
+        row = ranking["critic_axes_vs_lift"][axis]
+        lines.append(f"| `{axis}` | {row['rho']:.6f} | {row['p_value']:.6f} |")
+    for size in (5, 10):
+        row = top_k[str(size)]
+        lines.extend(
+            [
+                "",
+                f"Top-{size}: **{row['hits']} of {size}** are known top-15 posts; precision `{row['precision']:.3f}`.",
+                "",
+                "Selected IDs: " + ", ".join(row["item_ids"]),
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            f"Tie rule: {ranking['tie_break']}.",
+            "",
+            "## Single axes",
+            "",
+            "| Axis | Best fitted kappa | Threshold(s) | GOOD mean | BAD mean | Gap | Owner MAE |",
+            "|---|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for axis in AXES:
+        row = subsets[axis]
+        lines.append(
+            f"| `{axis}` | {row['best_achievable_kappa']:.3f} | "
+            f"{', '.join(str(value) for value in row['kappa_maximising_thresholds'])} | "
+            f"{row['critic_mean_outcome_good']:.3f} | {row['critic_mean_outcome_bad']:.3f} | "
+            f"{row['good_minus_bad_gap']:+.3f} | {row['owner_vs_critic_mae']:.3f} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Axis pairs and triples",
+            "",
+            "| Axes | Best fitted kappa | Threshold(s) | GOOD mean | BAD mean | Gap | Owner MAE |",
+            "|---|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for name, row in subsets.items():
+        if len(row["axes"]) == 1:
+            continue
+        lines.append(
+            f"| `{name}` | {row['best_achievable_kappa']:.3f} | "
+            f"{', '.join(str(value) for value in row['kappa_maximising_thresholds'])} | "
+            f"{row['critic_mean_outcome_good']:.3f} | {row['critic_mean_outcome_bad']:.3f} | "
+            f"{row['good_minus_bad_gap']:+.3f} | {row['owner_vs_critic_mae']:.3f} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Composite comparison",
+            "",
+            f"All five axes: best fitted kappa `{full['best_achievable_kappa']:.3f}` at threshold(s) "
+            + ", ".join(str(value) for value in full["kappa_maximising_thresholds"])
+            + ".",
+            "",
+            f"Excluding `earned_closer`: best fitted kappa `{without_closer['best_achievable_kappa']:.3f}` at threshold(s) "
+            + ", ".join(str(value) for value in without_closer["kappa_maximising_thresholds"])
+            + ".",
+            "",
+            f"Dropping `earned_closer` changes the best fitted kappa by `{diagnostics['earned_closer_drop_kappa_change']:+.3f}`.",
+            "",
+            f"Any tested single, pair, or triple beats all five: `{str(diagnostics['any_subset_beats_all_five']).lower()}`.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def generate_diagnostics(
+    calibration_path: Path,
+    owner_path: Path,
+    run1_path: Path,
+    diagnostics_path: Path,
+) -> dict[str, object]:
+    _reject_combined_path(run1_path)
+    run1_rows = _read_jsonl(run1_path)
+    _validate_no_blocked(run1_rows, ())
+    records = _calibration_records(calibration_path)
+    outcome = {str(row["item_id"]): str(row["label"]) for row in records}
+    owner, owner_scores = _owner_maps(_read_jsonl(owner_path))
+    run1, run1_scores, run1_totals = _judge_maps(
+        run1_rows, expected_run=PRIMARY_RUN
+    )
+    _require_same_ids(outcome, owner=owner, run1=run1)
+    ranking = rank_check(records, run1_totals, run1_scores, owner_scores)
+    axes = axis_diagnostics(outcome, run1_scores, owner_scores)
+    result = {"status": "PASS", "items": len(outcome), "rank_check": ranking, "axis_diagnostics": axes}
+    diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
+    diagnostics_path.write_text(
+        _render_axis_diagnostics(ranking, axes), encoding="utf-8"
+    )
+    return result
+
+
 def _test_retest(
     run1_labels: Mapping[str, str],
     run1_scores: Mapping[str, Mapping[str, int]],
@@ -383,7 +760,7 @@ def _render_findings(result: Mapping[str, object]) -> str:
     largest = result["largest_owner_judge_mae_axes"]
 
     def interval(row: Mapping[str, object]) -> str:
-        low, high = row["interval_95"]  # type: ignore[misc]
+        low, high = row["agreement_interval_95"]  # type: ignore[misc]
         return f"[{low:.3f}, {high:.3f}]"
 
     lines = [
@@ -401,7 +778,7 @@ def _render_findings(result: Mapping[str, object]) -> str:
         "",
         "## Three-way agreement",
         "",
-        "| Pair | Kappa | Wilson 95% interval* | False-positive rate | False-negative rate |",
+        "| Pair | Kappa | Wilson 95% agreement interval | False-positive rate | False-negative rate |",
         "|---|---:|---:|---:|---:|",
     ]
     for pair, row in (
@@ -416,7 +793,7 @@ def _render_findings(result: Mapping[str, object]) -> str:
     lines.extend(
         [
             "",
-            "*The Wilson interval is for observed agreement, matching `three_way.py`.",
+            "The Wilson interval is for observed agreement, not for kappa.",
             "",
             f"Outcome-vs-judge verdict: {_judge_gate_statement(float(primary['kappa']))}.",
             "",
@@ -535,7 +912,8 @@ def analyze(
     run2_rows = _read_jsonl(run2_path)
     _validate_no_blocked(run1_rows, run2_rows)
 
-    outcome = _outcome_labels(calibration_path)
+    records = _calibration_records(calibration_path)
+    outcome = {str(row["item_id"]): str(row["label"]) for row in records}
     owner, owner_scores = _owner_maps(_read_jsonl(owner_path))
     run1, run1_scores, run1_totals = _judge_maps(
         run1_rows, expected_run=PRIMARY_RUN
@@ -613,6 +991,7 @@ def analyze(
             "rate": round(len(winners_dropped) / 15, 3),
             "item_ids": winners_dropped,
         },
+        "rank_check": rank_check(records, run1_totals, run1_scores, owner_scores),
     }
     results_path.parent.mkdir(parents=True, exist_ok=True)
     findings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -629,12 +1008,27 @@ def parser() -> argparse.ArgumentParser:
     output.add_argument("--run2", type=Path, default=DEFAULT_RUN2)
     output.add_argument("--results", type=Path, default=DEFAULT_RESULTS)
     output.add_argument("--findings", type=Path, default=DEFAULT_FINDINGS)
+    output.add_argument("--diagnostics", type=Path, default=DEFAULT_DIAGNOSTICS)
+    output.add_argument("--diagnostics-only", action="store_true")
     return output
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
+        if args.diagnostics_only:
+            result = generate_diagnostics(
+                args.calibration,
+                args.owner,
+                args.run1,
+                args.diagnostics,
+            )
+            print(
+                f"Critic diagnostics: {result['status']} "
+                f"({result['items']} primary items)."
+            )
+            print(f"Diagnostics: {args.diagnostics}")
+            return 0
         result = analyze(
             args.calibration,
             args.owner,

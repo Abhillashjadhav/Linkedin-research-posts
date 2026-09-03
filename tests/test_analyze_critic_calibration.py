@@ -42,7 +42,13 @@ class AnalyzeCriticCalibrationTests(unittest.TestCase):
         for index in range(1, 31):
             item_id = f"CAL-{index:02d}"
             outcome = "GOOD" if index <= 15 else "BAD"
-            calibration.append({"item_id": item_id, "label": outcome})
+            calibration.append(
+                {
+                    "item_id": item_id,
+                    "label": outcome,
+                    "lift": float(31 - index),
+                }
+            )
             owner_value = 4 if outcome == "GOOD" else 2
             owner.append(
                 {
@@ -114,6 +120,8 @@ class AnalyzeCriticCalibrationTests(unittest.TestCase):
             )
             self.assertEqual(result["winner_false_negatives"]["count"], 1)
             self.assertEqual(result["winner_false_negatives"]["item_ids"], ["CAL-01"])
+            self.assertIn("rho", result["rank_check"]["critic_total_vs_lift"])
+            self.assertEqual(result["rank_check"]["top_k_precision"]["5"]["k"], 5)
             self.assertEqual(
                 result["effective_total_threshold_sweep"]["at_live_threshold"]["kappa"],
                 0.867,
@@ -144,6 +152,27 @@ class AnalyzeCriticCalibrationTests(unittest.TestCase):
                 "Specificity has a known downward bias",
             ):
                 self.assertIn(phrase, findings)
+
+    def test_rank_and_axis_diagnostics_are_precomputed_without_model_calls(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            paths = self.fixture(Path(temporary))
+            diagnostics = Path(temporary) / "axis-diagnostics.md"
+            result = analyze.generate_diagnostics(
+                paths["calibration"],
+                paths["owner"],
+                paths["run1"],
+                diagnostics,
+            )
+            self.assertEqual(result["status"], "PASS")
+            self.assertEqual(
+                analyze._spearman([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]),
+                {"rho": 1.0, "p_value": 0.0},
+            )
+            self.assertEqual(len(result["axis_diagnostics"]["subsets"]), 25)
+            rendered = diagnostics.read_text(encoding="utf-8")
+            self.assertIn("Every threshold, axis subset", rendered)
+            self.assertIn("Top-5", rendered)
+            self.assertIn("Axis pairs and triples", rendered)
 
     def test_blocked_row_exits_before_three_way(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -33,15 +33,16 @@ def _record_post_quality(candidate: object) -> None:
     voice = int(axes.get("voice_fidelity", 0))
     findings = anti_slop.audit(text)
     decisions = (
-        ("hook_strength", hook >= 5, f"hook-strength-{hook}-of-5", {"score": hook, "threshold": 5}),
-        ("voice_fidelity", voice >= 4, f"voice-fidelity-{voice}-of-5", {"score": voice, "threshold": 4}),
-        ("anti_slop", not findings, "no-anti-slop-findings" if not findings else "anti-slop-findings-present", {"finding_count": len(findings), "threshold": 0}),
+        ("hook_strength", True, "hook-strength-recorded-diagnostic", {"score": hook, "mode": "shadow"}),
+        ("voice_fidelity", True, "voice-fidelity-recorded-diagnostic", {"score": voice, "mode": "shadow"}),
+        ("anti_slop", not findings, "no-anti-slop-findings" if not findings else "anti-slop-findings-present", {"finding_count": len(findings), "threshold": 0, "mode": "enforce"}),
     )
     for contract, passed, reason, evidence in decisions:
+        mode = str(evidence.pop("mode"))
         v1_completion.record_decision(
             {
                 "contract": contract,
-                "mode": "enforce",
+                "mode": mode,
                 "status": "PASS" if passed else "FAIL",
                 "reason": reason,
                 **evidence,
@@ -58,18 +59,6 @@ def _pre_acceptance_failures(
     kwargs: Mapping[str, object],
 ) -> list[str]:
     reasons: list[str] = []
-    score = int(getattr(candidate, "effective_total", 0))
-    if score < 22:
-        reasons.append(f"critic-total:{score}/25<22/25")
-    axes = getattr(candidate, "axes", {})
-    if isinstance(axes, Mapping):
-        for axis in workflow.CRITIC_AXES:
-            value = int(axes.get(axis, 0))
-            if value < 4:
-                reasons.append(f"critic-axis:{axis}={value}/5<4/5")
-        hook = int(axes.get("hook_strength", 0))
-        if hook < 5:
-            reasons.append(f"hook-strength:{hook}/5<5/5")
     if not bool(getattr(candidate, "passes_required_gates", False)):
         gates = getattr(candidate, "gates", {})
         failed = (

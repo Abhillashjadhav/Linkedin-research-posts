@@ -82,7 +82,7 @@ class ThreeWayTests(unittest.TestCase):
 
     def test_the_interval_is_reported_because_thirty_items_is_not_many(self):
         result = three_way.compare("x", list(GOLD.values()), list(agree(3).values()))
-        low, high = result.interval_95
+        low, high = result.agreement_interval_95
         self.assertLess(low, result.observed)
         self.assertGreater(high, result.observed)
 

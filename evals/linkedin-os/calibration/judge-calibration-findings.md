@@ -8,7 +8,7 @@ Dropped winner item IDs: CAL-01, CAL-05, CAL-06, CAL-10, CAL-11, CAL-12, CAL-14,
 
 ## Three-way agreement
 
-| Pair | Kappa | Wilson 95% interval* | False-positive rate | False-negative rate |
+| Pair | Kappa | Wilson 95% agreement interval* | False-positive rate | False-negative rate |
 |---|---:|---:|---:|---:|
 | outcome vs judge | -0.067 | [0.302, 0.639] | 0.333 | 0.733 |
 | owner vs judge | -0.067 | [0.219, 0.545] | 0.375 | 0.727 |
