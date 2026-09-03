@@ -39,9 +39,14 @@ The profile contains:
 ./bin/linkedin-os discover \
   --profile data/private/authority-profile.json \
   --days 7 \
+  --week-slot 3 \
   --allow-web-research \
   --allow-model-egress
 ```
+
+In the default Monday, Wednesday, Thursday, Friday publishing cadence, Thursday
+is weekly slot 3. This discovery path produces authority posts, so it accepts
+the two authority slots only: 2 and 3.
 
 The public-web Scout runs through Codex with live native web search as its only enabled model tool. It cannot use shell, browser automation, apps, plugins, subagents, local files, repository-writing tools, private data, credentials, or authenticated services. Public search-index snippets from X/Twitter or LinkedIn may contribute momentum evidence only when visible without authentication. The private authority profile reaches only zero-web Codex scoring/thesis stages after explicit model-egress consent.
 
