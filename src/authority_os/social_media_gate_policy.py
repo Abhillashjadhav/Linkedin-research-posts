@@ -8,11 +8,15 @@ so the human reviewer can replace them with a real internal metric before publis
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from . import quality_cli, workflow
 
 _INSTALLED = False
 _ORIGINAL_PARSE_ATTEMPT_OUTPUT = quality_cli.parse_attempt_output
 _ORIGINAL_BUILD_WRITER_PROMPT = workflow.build_writer_prompt
+
+ADVISORY_GATES = frozenset({"honesty", "citation"})
 
 
 _PLACEHOLDER_GUIDANCE = """
@@ -37,7 +41,7 @@ def _build_writer_prompt_social(*args: object, **kwargs: object) -> str:
 def _soften_candidate(candidate: quality_cli.CandidateResult) -> quality_cli.CandidateResult:
     gates = dict(candidate.gates)
     softened = False
-    for name in ("honesty", "citation"):
+    for name in ADVISORY_GATES:
         if gates.get(name) == "FAIL":
             gates[name] = "HUMAN_REVIEW"
             softened = True
@@ -58,6 +62,30 @@ def _soften_candidate(candidate: quality_cli.CandidateResult) -> quality_cli.Can
         passes_required_gates=not hard_failures,
         gate_reasons=candidate.gate_reasons,
     )
+
+
+def soften_gate_result(gate_result: Mapping[str, object]) -> dict[str, object]:
+    """Apply the same V1 advisory policy to package evaluation rows.
+
+    Candidate parsing and package generation happen at different points in the live
+    command.  Keeping this projection shared prevents a candidate from printing
+    ``required_gates=pass`` while its approval package remains blocked by the raw
+    honesty/citation statuses.
+    """
+
+    softened = dict(gate_result)
+    raw_gates = gate_result.get("gates")
+    if not isinstance(raw_gates, Mapping):
+        return softened
+    gates = {str(name): str(status) for name, status in raw_gates.items()}
+    for name in ADVISORY_GATES:
+        if gates.get(name) == "FAIL":
+            gates[name] = "HUMAN_REVIEW"
+    softened["gates"] = gates
+    softened["passes_required_gates"] = not any(
+        status == "FAIL" for status in gates.values()
+    )
+    return softened
 
 
 def _parse_attempt_output_social(stdout: str) -> quality_cli.AttemptResult:

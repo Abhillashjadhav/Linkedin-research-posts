@@ -86,6 +86,45 @@ class IntegratedGateTests(unittest.TestCase):
         self.assertEqual(findings[0]["code"], "faux-insight")
         self.assertIs(feedback["anti_slop_required"], True)
 
+    def test_package_mismatch_diagnostic_names_both_exact_conditions(self) -> None:
+        candidate = quality_cli.CandidateResult(
+            candidate_id="candidate-3",
+            angle="decision",
+            text="A grounded candidate.",
+            axes={
+                "hook_strength": 5,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 5,
+                "voice_fidelity": 5,
+            },
+            raw_total=25,
+            effective_total=25,
+            band="advance-to-gates",
+            gates={"honesty": "HUMAN_REVIEW", "citation": "HUMAN_REVIEW"},
+            passes_required_gates=True,
+            gate_reasons=(),
+        )
+        attempt = quality_cli.AttemptResult(
+            candidates=(candidate,),
+            context_lines=(),
+            review_status="BLOCKED",
+            recommendation=None,
+            package_lines=(),
+        )
+        reasons = integrated_cli._pre_acceptance_failures(  # type: ignore[attr-defined]
+            candidate,
+            attempt,
+            {"package_requested": True, "fixture_mode": False},
+        )
+        self.assertEqual(
+            reasons,
+            [
+                "package-review-status:BLOCKED",
+                "package-recommendation:none!=candidate:candidate-3",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
