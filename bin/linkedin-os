@@ -94,5 +94,6 @@ from authority_os import quality_optimizer
 quality_optimizer.install()
 from authority_os import integrated_cli
 quality_optimizer.wire_integrated_dispatch(integrated_cli)
-raise SystemExit(integrated_cli.main())
+from authority_os import standalone_draft_observability
+raise SystemExit(standalone_draft_observability.run(integrated_cli.main, sys.argv[1:]))
 ' "$@"
