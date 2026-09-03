@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,8 +15,15 @@ class V1CompletionTests(unittest.TestCase):
         self.root = Path(self.temp.name) / "v1-evals"
         self.state_patch = mock.patch.object(v1_completion, "STATE_ROOT", self.root)
         self.state_patch.start()
+        self.run_id_patch = mock.patch.object(v1_completion, "_PROCESS_RUN_ID", "")
+        self.run_id_patch.start()
+        self.env_patch = mock.patch.dict("os.environ", {}, clear=False)
+        self.env_patch.start()
+        os.environ.pop(v1_completion.RUN_ID_ENV, None)
 
     def tearDown(self) -> None:
+        self.env_patch.stop()
+        self.run_id_patch.stop()
         self.state_patch.stop()
         self.temp.cleanup()
 
@@ -71,10 +79,18 @@ class V1CompletionTests(unittest.TestCase):
             self.root / v1_completion.DECISION_LEDGER_NAME
         )
         self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["schema_version"], 2)
+        self.assertTrue(str(rows[0]["run_id"]).startswith("linkedin-"))
         self.assertEqual(rows[0]["contract"], "solution_plausibility")
         self.assertEqual(rows[0]["stage"], "resonance-post")
         self.assertEqual(rows[0]["subject_id"], "candidate-2")
         self.assertEqual(rows[0]["artifact_sha256"], artifact)
+
+    def test_inherited_run_id_groups_parent_and_child_decisions(self) -> None:
+        run_id = v1_completion.begin_run("linkedin-one-run")
+        self.assertEqual(run_id, "linkedin-one-run")
+        with mock.patch.object(v1_completion, "_PROCESS_RUN_ID", ""):
+            self.assertEqual(v1_completion.current_run_id(), "linkedin-one-run")
 
     def test_reproducibility_is_recorded_but_never_becomes_a_release_gate(self) -> None:
         first = [

@@ -20,14 +20,15 @@ from typing import Mapping
 from . import v1_completion, workflow
 
 CONTRACTS = {
-    "research_trust": ("topic-value", "research-trust"),
-    "claim_body_support": ("topic-value", "claim-body-support"),
-    "atomic_value_novelty": ("topic-value", "atomic-value-novelty"),
-    "critic_anchor_integrity": ("critic", "critic-anchor-integrity"),
-    "critic_reproducibility": ("critic-reproducibility", "critic-reproducibility"),
-    "solution_plausibility": ("resonance", "solution-plausibility"),
-    "reader_attention": ("resonance", "reader-attention"),
+    "research_trust": "research-trust",
+    "claim_body_support": "claim-body-support",
+    "atomic_value_novelty": "atomic-value-novelty",
+    "critic_anchor_integrity": "critic-anchor-integrity",
+    "critic_reproducibility": "critic-reproducibility",
+    "solution_plausibility": "solution-plausibility",
+    "reader_attention": "reader-attention",
 }
+CASE_TYPE = "linkedin-run"
 CONTEXT_FIELDS = {
     "run_id",
     "comparison_run_id",
@@ -109,92 +110,91 @@ def _reason_code(value: object) -> str:
     return code[:120] or "NO_REASON_RECORDED"
 
 
-def _case_key(row: Mapping[str, object]) -> tuple[str, str, str, str]:
-    stage = str(row.get("stage", "unknown"))
-    subject = str(row.get("subject_id", ""))
-    artifact = str(row.get("artifact_sha256", ""))
-    recorded_at = _timestamp(row.get("recorded_at"), field="ledger recorded_at").isoformat()
-    return stage, subject, artifact, recorded_at
-
-
-def _case_type(stage: str, contract: str) -> str | None:
-    expected = CONTRACTS.get(contract)
-    if expected is None:
-        return None
-    if stage == "topic-value":
-        return "topic-value"
-    if stage == "critic":
-        return "critic"
-    if stage.startswith("critic-reproducibility"):
-        return "critic-reproducibility"
-    if stage == "resonance-post":
-        return "resonance"
-    return None
-
-
 def build_normalized_export(
     context: Mapping[str, str], rows: list[dict[str, object]]
 ) -> dict[str, object]:
     since = _timestamp(context["since"], field="since")
     through = _timestamp(context["through"], field="through")
     selected: list[dict[str, object]] = []
+    legacy_rows = 0
     for row in rows:
         recorded_at = _timestamp(row.get("recorded_at"), field="ledger recorded_at")
-        if since <= recorded_at <= through:
+        if not since <= recorded_at <= through:
+            continue
+        if "run_id" not in row:
+            legacy_rows += 1
+            continue
+        if row.get("run_id") == context["run_id"]:
             selected.append(row)
     if not selected:
-        raise workflow.WorkflowError("No V1 decision rows exist in the requested export window.")
+        suffix = " Legacy rows in the window have no run ID." if legacy_rows else ""
+        raise workflow.WorkflowError(
+            f"No V1 decisions match run ID {context['run_id']!r} in the export window.{suffix}"
+        )
 
-    grouped: dict[tuple[str, str, str, str], list[dict[str, object]]] = {}
+    latest: dict[str, dict[str, object]] = {}
     for row in selected:
         contract = str(row.get("contract", ""))
-        case_type = _case_type(str(row.get("stage", "")), contract)
-        if case_type is not None:
-            grouped.setdefault(_case_key(row), []).append(row)
-    cases: list[dict[str, object]] = []
-    for key, group in sorted(grouped.items()):
-        stage, subject, artifact, _recorded_at = key
-        case_type = _case_type(stage, str(group[0].get("contract", "")))
-        assert case_type is not None
-        fingerprint = _digest(json.dumps(key, separators=(",", ":")).encode())
-        checks: list[dict[str, object]] = []
-        seen: set[str] = set()
-        for row in group:
-            contract = str(row.get("contract", ""))
-            mapping = CONTRACTS.get(contract)
-            if mapping is None or mapping[1] in seen:
-                continue
-            seen.add(mapping[1])
-            status = str(row.get("status", "BLOCKED"))
-            if status not in {"PASS", "FAIL", "BLOCKED", "NOT_EVALUATED"}:
-                status = "BLOCKED"
-            canonical = json.dumps(row, sort_keys=True, separators=(",", ":")).encode()
-            check: dict[str, object] = {
-                "definition_id": mapping[1],
+        if contract in CONTRACTS:
+            latest[contract] = row
+    if not latest:
+        raise workflow.WorkflowError("The selected run contains no supported V1 contracts.")
+
+    checks: list[dict[str, object]] = []
+    for contract, definition_id in CONTRACTS.items():
+        row = latest.get(contract)
+        if row is None:
+            checks.append(
+                {
+                    "definition_id": definition_id,
+                    "status": "NOT_EVALUATED",
+                    "current_value": None,
+                    "expected_value": 1.0,
+                    "reason_code": "STAGE_NOT_REACHED",
+                    "evidence_refs": [],
+                }
+            )
+            continue
+        status = str(row.get("status", "BLOCKED"))
+        if status not in {"PASS", "FAIL", "BLOCKED", "NOT_EVALUATED"}:
+            status = "BLOCKED"
+        canonical = json.dumps(row, sort_keys=True, separators=(",", ":")).encode()
+        checks.append(
+            {
+                "definition_id": definition_id,
                 "status": status,
                 "current_value": 1.0 if status == "PASS" else 0.0 if status == "FAIL" else None,
                 "expected_value": 1.0,
                 "reason_code": _reason_code(row.get("reason")),
                 "evidence_refs": [
-                    {"uri": f"urn:linkedin-os:decision:{_digest(canonical)[7:]}", "sha256": _digest(canonical)}
+                    {
+                        "uri": f"urn:linkedin-os:decision:{_digest(canonical)[7:]}",
+                        "sha256": _digest(canonical),
+                    }
                 ],
             }
-            checks.append(check)
-        cases.append(
-            {
-                "case_type": case_type,
-                "case": {
-                    "case_id": f"linkedin-{fingerprint[7:31]}",
-                    "display_name": "LinkedIn evaluation case",
-                    "use_case_id": "linkedin-authority-post",
-                    "segment": stage,
-                    "input_fingerprint": fingerprint,
-                },
-                "checks": checks,
-            }
         )
-    if not cases:
-        raise workflow.WorkflowError("The export window contains no supported V1 contracts.")
+    identity = {
+        "run_id": context["run_id"],
+        "product_version": context["product_version"],
+        "use_case_version": context["use_case_version"],
+    }
+    fingerprint = _digest(
+        json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+    )
+    cases = [
+        {
+            "case_type": CASE_TYPE,
+            "case": {
+                "case_id": f"linkedin-{fingerprint[7:31]}",
+                "display_name": "LinkedIn V1 end-to-end run",
+                "use_case_id": "linkedin-authority-post",
+                "segment": CASE_TYPE,
+                "input_fingerprint": fingerprint,
+            },
+            "checks": checks,
+        }
+    ]
 
     selected_bytes = json.dumps(selected, sort_keys=True, separators=(",", ":")).encode()
     return {

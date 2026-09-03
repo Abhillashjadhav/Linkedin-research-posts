@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import stat
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,9 +35,12 @@ ATOMIC_BINDINGS_LEDGER_NAME = "review-ready-atomic-bindings.jsonl"
 DECISION_LEDGER_NAME = "decisions.jsonl"
 CALIBRATION_LEDGER_NAME = "calibration-snapshots.jsonl"
 MAX_LEDGER_BYTES = 5_000_000
+RUN_ID_ENV = "LINKEDIN_OS_RUN_ID"
+RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9._:@+-]{1,160}")
 
 _INSTALLED = False
 _REPRO_SAMPLED = {"legacy": False, "campaign": False}
+_PROCESS_RUN_ID = ""
 
 # These are captured when this module is imported. The live launcher imports us only after
 # v1_gates.install(), so the captured Topic Value/Critic/Resonance functions already include
@@ -52,6 +56,38 @@ _BASE_WRITE_WEEKLY_REVIEW = learning.write_weekly_review
 
 def _now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def begin_run(run_id: str | None = None) -> str:
+    """Create and expose one opaque identity for an end-to-end V1 run."""
+
+    global _PROCESS_RUN_ID
+    value = run_id or (
+        "linkedin-"
+        + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        + "-"
+        + secrets.token_hex(6)
+    )
+    if RUN_ID_PATTERN.fullmatch(value) is None:
+        raise workflow.WorkflowError("V1 run ID must be a bounded public-safe label.")
+    _PROCESS_RUN_ID = value
+    os.environ[RUN_ID_ENV] = value
+    return value
+
+
+def current_run_id() -> str:
+    """Return the process run ID, inheriting it across the draft subprocess."""
+
+    global _PROCESS_RUN_ID
+    if _PROCESS_RUN_ID:
+        return _PROCESS_RUN_ID
+    inherited = os.environ.get(RUN_ID_ENV, "")
+    if inherited:
+        if RUN_ID_PATTERN.fullmatch(inherited) is None:
+            raise workflow.WorkflowError("Inherited V1 run ID is invalid.")
+        _PROCESS_RUN_ID = inherited
+        return inherited
+    return begin_run()
 
 
 def _sha256_text(value: str) -> str:
@@ -223,7 +259,8 @@ def _decision_row(
         if isinstance(value, (str, int, float, bool)) or value is None:
             evidence[key] = value
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "run_id": current_run_id(),
         "recorded_at": _now(),
         "contract": contract,
         "stage": _safe_token(stage, maximum=80),
