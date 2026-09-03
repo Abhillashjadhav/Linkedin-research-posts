@@ -1,0 +1,74 @@
+{
+  "schema_version": 2,
+  "rubric_id": "linkedin-authority-critic-v2",
+  "derived_from": "30 published posts scored by the owner, with measured lift. Anchors are his own posts.",
+  "gate_types": {
+    "outcome_gate": "Earns its place by predicting lift. Changed only when new outcome data says so.",
+    "values_gate": "Held regardless of outcome. Voice is one: an AI-sounding post is refused even if it would perform."
+  },
+  "axes": {
+    "voice_fidelity": {
+      "type": "values_gate",
+      "floor": 4,
+      "note": "Rescaled. On the v1 scale the owner gave 2 to 17 of his own 30 published posts and 4-or-5 to only two, so a floor of 4 passed nothing. The v2 anchors move his working standard to 4, which is the same bar honestly labelled.",
+      "detector": "Sentence-length variance separates his voice from AI cadence at kappa 0.48 - directional, not gate-grade. A model judge is required; the deterministic signal is a prior, not a verdict.",
+      "1": "Uniform sentence rhythm, stacked adjectives, no contractions, tidy parallel structure. Reads as competent copy nobody wrote. His example: the 40-year-veteran-engineer post.",
+      "2": "Recognisably his subject matter but the cadence is even. Sentences cluster near one length; the connective tissue is smooth where he would be abrupt.",
+      "3": "Mostly his, with passages where the rhythm flattens into explanation. A reader who knows him would not flinch, but would not point at it either.",
+      "4": "WORKING STANDARD. Sentence lengths swing hard - a three-word line against a thirty-word one. Colons that reveal rather than list. Contractions. An aside in parentheses. His examples: 'Your first AI eval should be a spreadsheet, not a platform', 'I think AI PMs should stop learning sooner.'",
+      "5": "Unmistakably him and could not have been generated. Digression that earns its place, a number that sat with him, a judgement stated without hedging. His example: the frontier-lab friend earning just shy of a million dollars."
+    },
+    "hook_strength": {
+      "type": "outcome_gate",
+      "floor": 4,
+      "note": "Distinct from reader_stake, which is the binary subject test at kappa 0.80. This axis scores craft once the subject already qualifies.",
+      "1": "No concrete situation. Abstract claim or throat-clearing.",
+      "2": "A real situation, but the subject is his own project and the reader has nothing at stake. His examples: 'Spent last weekend wiring a second agent', 'Been going deep on RAG architectures lately.'",
+      "3": "Concrete and external, but the stake arrives late or the opening spends its first clause on setup. His example: 'Why does it think I'm based in Belgium?'",
+      "4": "WORKING STANDARD. Line 1 names a problem the target reader recognises, or a claim about the group they belong to, and the payoff is visible immediately. His examples: 'An AI agent forgetting what you said is a context problem', 'I think AI PMs should stop learning sooner.'",
+      "5": "A named external party, a hard number, and a consequence, inside the first two lines. His example: 'A Meta AI safety director - reportedly paid $100M+ to keep AI aligned - could not stop her own agent from deleting her inbox. She typed STOP. It ignored her.'"
+    },
+    "specificity_and_source_quality": {
+      "type": "outcome_gate",
+      "floor": null,
+      "1": "The post is largely abstract or generic, and consequential factual claims are difficult to inspect or depend on weak, social-only, title-only, or unsupported evidence.",
+      "2": "Some concrete details exist, but the central situation or claim remains weakly inspectable, generic, or only partially supported by the supplied evidence.",
+      "3": "The reader can picture the core situation and inspect the main claim through supplied evidence, but mechanism detail, source quality, precision, or translation to an understandable consequence is incomplete.",
+      "4": "The post contains a concrete situation and enough mechanism to explain it, and consequential factual claims are supported by body-read credible evidence without false precision; technical nouns alone do not count as specificity.",
+      "5": "The situation is highly concrete and strongly inspectable through primary or reputable evidence, artifacts, measured results, or clear mechanisms; every consequential factual detail is traceable, numbers appear only when they materially help, and specificity makes the post easier rather than denser."
+    },
+    "middle_escalation": {
+      "type": "outcome_gate",
+      "floor": null,
+      "1": "The body is mostly a list, specification, architecture walkthrough, summary, repetition, or disconnected observations; understanding does not deepen and technical detail is not translated into why it matters.",
+      "2": "There is some useful detail, but the body is flat, jargon-heavy, or repetitive and adds little understandable mechanism, trade-off, consequence, or decision depth.",
+      "3": "The body forms a coherent explanation and adds at least one meaningful mechanism, implication, or trade-off, but progression is uneven or some technical detail still makes the reader work too hard.",
+      "4": "Each major beat advances the reader from situation to only the necessary mechanism and then to a concrete human or team consequence, trade-off, or decision with little filler and no unexplained jargon.",
+      "5": "The body is tightly sequenced and unusually easy to follow: every paragraph adds one necessary layer of mechanism, consequence, trade-off, or decision; technical concepts are translated into plain-language impact and removing a major beat would materially weaken the argument."
+    },
+    "earned_closer": {
+      "type": "diagnostic",
+      "floor": null,
+      "note": "Recorded, never scored. Across 26 clean closers the best rule reached kappa 0.20 against outcomes, and the owner's own closer scores ran inverted: 3.73 on posts that flopped against 3.33 on posts that landed.",
+      "1": "The ending is a generic CTA, generic question, slogan, or unrelated kicker that is not earned by the body.",
+      "2": "The ending mostly restates the post or uses familiar engagement bait such as a generic invitation for opinions.",
+      "3": "The ending is relevant and understandable, but predictable; it summarizes or suggests an action without sharply crystallizing the post's value.",
+      "4": "The ending delivers a specific takeaway, decision, implication, or question that follows naturally from the evidence, human stake, and argument.",
+      "5": "The ending concisely crystallizes the post's atomic value or decision in language a reader could carry into work, leaving a credible implication or question that feels inevitable rather than manufactured."
+    }
+  },
+  "release_rule": {
+    "hard_floors": {
+      "voice_fidelity": 4,
+      "hook_strength": 4
+    },
+    "scored": [
+      "specificity_and_source_quality",
+      "middle_escalation"
+    ],
+    "bonus": {
+      "big_name_present": 2
+    },
+    "note": "Voice is refused below 4 whatever the rest of the post scores. That is a values decision, not an outcome one."
+  }
+}
