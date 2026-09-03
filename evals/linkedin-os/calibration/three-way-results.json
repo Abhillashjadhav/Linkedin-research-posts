@@ -1,0 +1,196 @@
+{
+  "status": "PASS",
+  "items": 30,
+  "agreements": [
+    {
+      "pair": "outcome_vs_owner",
+      "n": 30,
+      "observed": 0.567,
+      "expected_by_chance": 0.5,
+      "kappa": 0.133,
+      "false_positive_rate": 0.667,
+      "false_negative_rate": 0.2,
+      "interval_95": [
+        0.392,
+        0.726
+      ],
+      "verdict": "no better than chance"
+    },
+    {
+      "pair": "outcome_vs_judge",
+      "n": 30,
+      "observed": 0.467,
+      "expected_by_chance": 0.5,
+      "kappa": -0.067,
+      "false_positive_rate": 0.333,
+      "false_negative_rate": 0.733,
+      "interval_95": [
+        0.302,
+        0.639
+      ],
+      "verdict": "no better than chance"
+    },
+    {
+      "pair": "owner_vs_judge",
+      "n": 30,
+      "observed": 0.367,
+      "expected_by_chance": 0.407,
+      "kappa": -0.067,
+      "false_positive_rate": 0.375,
+      "false_negative_rate": 0.727,
+      "interval_95": [
+        0.219,
+        0.545
+      ],
+      "verdict": "no better than chance"
+    }
+  ],
+  "score_mae": {
+    "hook_strength": 0.9,
+    "middle_escalation": 0.9,
+    "specificity_and_source_quality": 1.2,
+    "voice_fidelity": 1.8,
+    "earned_closer": 1.2,
+    "overall": 1.2
+  },
+  "calibration_target": "outcome",
+  "target_reason": "neither predicts outcomes yet; outcomes are the only anchor that cannot drift",
+  "limitations": [
+    "30 items is enough for a direction, not a guarantee; read the interval, not the point estimate.",
+    "Labels come from lift, which is conversion at a given reach. A judge calibrated on it predicts conversion, never distribution.",
+    "The middle band was excluded by design, so these are the clear cases and agreement will read higher than on live drafts."
+  ],
+  "analysis_protocol": {
+    "primary_run": 1,
+    "retest_run": 2,
+    "run2_averaged_or_substituted": false,
+    "combined_judge_file_loaded": false,
+    "live_threshold": 24,
+    "variant_rule": "raw sum of remaining four axes, no hook cap; sweep thresholds 1-20 and report proportional threshold 19"
+  },
+  "largest_owner_judge_mae_axes": [
+    "voice_fidelity"
+  ],
+  "largest_owner_judge_mae": 1.8,
+  "test_retest": {
+    "per_axis_mean_absolute_difference": {
+      "hook_strength": 0.167,
+      "middle_escalation": 0.033,
+      "specificity_and_source_quality": 0.333,
+      "voice_fidelity": 0.333,
+      "earned_closer": 0.167
+    },
+    "label_flip_count": 5,
+    "label_flip_rate": 0.167,
+    "flipped_item_ids": [
+      "CAL-03",
+      "CAL-13",
+      "CAL-24",
+      "CAL-27",
+      "CAL-29"
+    ]
+  },
+  "closer_inversion": {
+    "critic_mean_outcome_good": 4.267,
+    "critic_mean_outcome_bad": 4.533,
+    "owner_mean_outcome_good": 3.33,
+    "owner_mean_outcome_bad": 3.73,
+    "critic_runs_backwards": true
+  },
+  "effective_total_threshold_sweep": {
+    "live_threshold": 24,
+    "at_live_threshold": {
+      "pair": "outcome_vs_judge_live_threshold_24",
+      "n": 30,
+      "observed": 0.5,
+      "expected_by_chance": 0.5,
+      "kappa": 0.0,
+      "false_positive_rate": 0.0,
+      "false_negative_rate": 1.0,
+      "interval_95": [
+        0.332,
+        0.668
+      ],
+      "verdict": "no better than chance"
+    },
+    "maximum_kappa": 0.067,
+    "maximising_thresholds": [
+      11,
+      12,
+      13,
+      14
+    ],
+    "maximum_is_overfitted_to_n_30": true
+  },
+  "variants": {
+    "excluding_earned_closer": {
+      "excluded_axis": "earned_closer",
+      "sum_rule": "raw sum of the remaining four axes; no hook cap",
+      "score_maximum": 20,
+      "proportional_live_threshold": 19,
+      "at_proportional_live_threshold": {
+        "pair": "excluding_earned_closer_proportional_threshold_19",
+        "n": 30,
+        "observed": 0.5,
+        "expected_by_chance": 0.5,
+        "kappa": 0.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 1.0,
+        "interval_95": [
+          0.332,
+          0.668
+        ],
+        "verdict": "no better than chance"
+      },
+      "maximum_kappa": 0.133,
+      "maximising_thresholds": [
+        10
+      ],
+      "overfitted_to_n_30": true
+    },
+    "excluding_specificity_and_source_quality": {
+      "excluded_axis": "specificity_and_source_quality",
+      "sum_rule": "raw sum of the remaining four axes; no hook cap",
+      "score_maximum": 20,
+      "proportional_live_threshold": 19,
+      "at_proportional_live_threshold": {
+        "pair": "excluding_specificity_and_source_quality_proportional_threshold_19",
+        "n": 30,
+        "observed": 0.4,
+        "expected_by_chance": 0.5,
+        "kappa": -0.2,
+        "false_positive_rate": 0.533,
+        "false_negative_rate": 0.667,
+        "interval_95": [
+          0.246,
+          0.577
+        ],
+        "verdict": "no better than chance"
+      },
+      "maximum_kappa": 0.067,
+      "maximising_thresholds": [
+        9,
+        10
+      ],
+      "overfitted_to_n_30": true
+    }
+  },
+  "winner_false_negatives": {
+    "known_winners": 15,
+    "count": 11,
+    "rate": 0.733,
+    "item_ids": [
+      "CAL-01",
+      "CAL-05",
+      "CAL-06",
+      "CAL-10",
+      "CAL-11",
+      "CAL-12",
+      "CAL-14",
+      "CAL-15",
+      "CAL-19",
+      "CAL-25",
+      "CAL-26"
+    ]
+  }
+}
