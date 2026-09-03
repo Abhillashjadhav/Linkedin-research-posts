@@ -261,6 +261,31 @@ def _decision_row(
         value = decision.get(key)
         if isinstance(value, (str, int, float, bool)) or value is None:
             evidence[key] = value
+    axes = decision.get("axes")
+    if isinstance(axes, Mapping):
+        cleaned_axes = {
+            str(key): int(value)
+            for key, value in axes.items()
+            if str(key) in workflow.CRITIC_AXES
+            and type(value) is int
+            and 1 <= int(value) <= 5
+        }
+        if cleaned_axes:
+            evidence["axes"] = cleaned_axes
+    cycle = decision.get("cycle")
+    if type(cycle) is int and int(cycle) > 0:
+        evidence["cycle"] = int(cycle)
+    failure_codes = decision.get("failure_codes")
+    if isinstance(failure_codes, Sequence) and not isinstance(failure_codes, (str, bytes)):
+        evidence["failure_codes"] = [
+            _safe_token(value, maximum=180) for value in failure_codes
+        ][:20]
+    gates = decision.get("gates")
+    if isinstance(gates, Mapping):
+        evidence["gates"] = {
+            _safe_token(key, maximum=80): _safe_token(value, maximum=80)
+            for key, value in gates.items()
+        }
     return {
         "schema_version": 2,
         "run_id": current_run_id(),
