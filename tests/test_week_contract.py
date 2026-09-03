@@ -34,7 +34,11 @@ class SlotGateTests(unittest.TestCase):
     def test_build_slot_rejects_an_achievement_first_opening(self):
         result = wc.evaluate(ACHIEVEMENT, day_name="Wednesday")
         self.assertEqual(result["status"], "FAIL")
-        self.assertEqual(result["reason_code"], "achievement-first")
+        # reader_stake now catches this earlier and more fundamentally: the
+        # subject is the author's own build, which is why the framing failed.
+        self.assertEqual(result["reason_code"], "subject-is-your-own-work")
+        failed = {g["gate"] for g in result["gates"] if g["status"] == "FAIL"}
+        self.assertIn("benefit_before_achievement", failed)
 
     def test_build_slot_accepts_a_benefit_first_opening(self):
         self.assertEqual(wc.evaluate(BENEFIT, day_name="Wednesday")["status"], "PASS")

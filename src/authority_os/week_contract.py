@@ -14,7 +14,7 @@ from datetime import date
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from . import workflow
+from . import hook_stake, workflow
 
 CONTRACT_PATH = workflow.REPO_ROOT / "config" / "week-contract.json"
 
@@ -75,7 +75,7 @@ _JARGON = (
 )
 
 GATES = ("no_humour", "no_teaser", "named_entity", "benefit_before_achievement",
-         "prescriptive", "plain_language")
+         "prescriptive", "plain_language", "reader_stake")
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +138,12 @@ def check_gate(gate: str, text: str) -> GateResult:
             return GateResult(gate, "FAIL", "not-prescriptive",
                               "Top posts tell the reader to do something differently.")
         return GateResult(gate, "PASS", "ok")
+
+    if gate == "reader_stake":
+        verdict = hook_stake.evaluate(text)
+        if verdict.status == "FAIL":
+            return GateResult(gate, "FAIL", verdict.reason_code, verdict.evidence)
+        return GateResult(gate, "PASS", "ok", verdict.subject)
 
     if gate == "plain_language":
         hits = [j for j in _JARGON if j in body.lower()]
