@@ -724,7 +724,10 @@ def command(args: argparse.Namespace) -> int:
         f"Topic Value evidence stored: "
         f"{topic_value_package.relative_to(workflow.REPO_ROOT)}."
     )
-    print("Three situations cleared Topic Value before thesis generation:")
+    print(
+        f"{len(topic_value_candidates)} situation(s) cleared Topic Value before "
+        "thesis generation:"
+    )
     for candidate in topic_value_candidates:
         print(
             f"{candidate['id']}: {candidate['reader_value_type']} | "
