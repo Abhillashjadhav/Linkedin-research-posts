@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Iterator, Mapping, Sequence
 
 from . import package as approval_package
-from . import quality_cli, workflow
+from . import quality_cli, social_media_gate_policy, workflow
 
 TARGET_QUALITY_SCORE = 24
 ACCEPTABLE_QUALITY_FLOOR = 22
@@ -278,10 +278,14 @@ def _package_data(
         for row in scorecards
         if isinstance(row, Mapping)
     }
-    gates_by_id = {
-        str(row.get("candidate_id")): row
+    normalized_gate_results = [
+        social_media_gate_policy.soften_gate_result(row)
         for row in gate_results
         if isinstance(row, Mapping)
+    ]
+    gates_by_id = {
+        str(row.get("candidate_id")): row
+        for row in normalized_gate_results
     }
     eligible = [
         str(candidate_id)
@@ -310,6 +314,7 @@ def _package_data(
             "eligible_candidate_ids": eligible,
             "recommended_candidate_id": recommended,
             "review_status": "READY_FOR_HUMAN_REVIEW",
+            "gate_results": normalized_gate_results,
         }
     )
 
