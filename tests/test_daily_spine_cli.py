@@ -160,6 +160,51 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual(by_contract["hook_strength"]["reason"], "5")
         self.assertEqual(by_contract["hook_strength"]["subject_id"], "candidate-3")
 
+    def test_eval_dashboard_keeps_all_critic_axes_and_acceptance_failures(self) -> None:
+        artifact = "a" * 64
+        dashboard = daily_spine_cli.render_eval_dashboard(
+            [
+                {
+                    "contract": "critic_total",
+                    "status": "PASS",
+                    "reason": "critic-score-24-of-25",
+                    "artifact_sha256": artifact,
+                    "subject_id": "candidate-3",
+                    "evidence": {
+                        "score": 24,
+                        "threshold": 22,
+                        "cycle": 2,
+                        "axes": {
+                            "hook_strength": 5,
+                            "middle_escalation": 5,
+                            "earned_closer": 5,
+                            "specificity_and_source_quality": 5,
+                            "voice_fidelity": 4,
+                        },
+                        "failure_codes": [],
+                    },
+                },
+                {
+                    "contract": "candidate_acceptance",
+                    "status": "FAIL",
+                    "reason": "package-recommendation:none!=candidate:candidate-3",
+                    "artifact_sha256": artifact,
+                    "subject_id": "candidate-3",
+                    "evidence": {
+                        "failure_codes": [
+                            "package-recommendation:none!=candidate:candidate-3"
+                        ]
+                    },
+                },
+            ]
+        )
+
+        self.assertEqual(len(dashboard["critic_scorecards"]), 1)
+        scorecard = dashboard["critic_scorecards"][0]
+        self.assertEqual(scorecard["cycle"], 2)
+        self.assertEqual(scorecard["axes"]["voice_fidelity"], 4)
+        self.assertIn("package-recommendation:none", scorecard["failure_codes"][0])
+
     def test_thesis_search_keeps_a_qualifying_leader_from_a_mixed_batch(self) -> None:
         mixed_scores = [
             {
