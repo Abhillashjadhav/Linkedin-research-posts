@@ -41,9 +41,10 @@ DISCOVERY_STAGES = (
 )
 
 
-def new_run_dashboard() -> dict[str, object]:
+def new_run_dashboard(run_id: str = "") -> dict[str, object]:
     return {
         "schema_version": 1,
+        "run_id": run_id,
         "outcome": "RUNNING",
         "stopped_at": None,
         "checks": [
@@ -558,6 +559,8 @@ def command(args: argparse.Namespace) -> int:
         raise workflow.WorkflowError(
             "Discovery requires --allow-model-egress before the private profile reaches thesis models."
         )
+    run_id = v1_completion.begin_run()
+    print(f"Run ID: {run_id}")
     ledger_path = (
         v1_completion.STATE_ROOT / v1_completion.DECISION_LEDGER_NAME
     )
@@ -573,7 +576,7 @@ def command(args: argparse.Namespace) -> int:
         or base.OUTPUT_ROOT / as_of[:10] / as_of[11:19].replace(":", "")
     )
     base.legacy_cli._ensure_owner_only_directory(folder)
-    run_dashboard = new_run_dashboard()
+    run_dashboard = new_run_dashboard(run_id)
 
     try:
         momentum_candidates = momentum.invoke_scout(args.topic, args.days, as_of)
@@ -852,6 +855,7 @@ def command(args: argparse.Namespace) -> int:
         )
         current_rows = v1_completion._read_jsonl(ledger_path)[ledger_start:]
         dashboard = render_eval_dashboard(current_rows)
+        dashboard["run_id"] = run_id
         dashboard_path = base.write_private_json(
             folder / "eval-dashboard.json",
             dashboard,
