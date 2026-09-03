@@ -254,6 +254,9 @@ def _decision_row(
         "max_axis_disagreement",
         "stable_within_one_point",
         "compared_values",
+        "score",
+        "effective_total",
+        "finding_count",
     ):
         value = decision.get(key)
         if isinstance(value, (str, int, float, bool)) or value is None:
