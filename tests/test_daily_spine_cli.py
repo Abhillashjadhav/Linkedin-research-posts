@@ -144,6 +144,21 @@ class SpineCardTests(unittest.TestCase):
             by_contract["reader_attention"]["status"],
             "NOT_EVALUATED",
         )
+        self.assertEqual(by_contract["hook_strength"]["category"], "post_quality")
+
+    def test_eval_dashboard_keeps_best_observed_post_score_across_cycles(self) -> None:
+        dashboard = daily_spine_cli.render_eval_dashboard(
+            [
+                {"contract": "critic_total", "status": "PASS", "reason": "25", "artifact_sha256": "a" * 64, "subject_id": "candidate-3", "evidence": {"score": 25}},
+                {"contract": "hook_strength", "status": "PASS", "reason": "5", "artifact_sha256": "a" * 64, "subject_id": "candidate-3", "evidence": {"score": 5}},
+                {"contract": "critic_total", "status": "PASS", "reason": "22", "artifact_sha256": "b" * 64, "subject_id": "candidate-2", "evidence": {"score": 22}},
+                {"contract": "hook_strength", "status": "FAIL", "reason": "4", "artifact_sha256": "b" * 64, "subject_id": "candidate-2", "evidence": {"score": 4}},
+            ]
+        )
+        by_contract = {item["contract"]: item for item in dashboard["checks"]}
+        self.assertEqual(by_contract["critic_total"]["reason"], "25")
+        self.assertEqual(by_contract["hook_strength"]["reason"], "5")
+        self.assertEqual(by_contract["hook_strength"]["subject_id"], "candidate-3")
 
     def test_thesis_search_keeps_a_qualifying_leader_from_a_mixed_batch(self) -> None:
         mixed_scores = [

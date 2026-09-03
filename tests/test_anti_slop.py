@@ -125,6 +125,33 @@ class IntegratedGateTests(unittest.TestCase):
             ],
         )
 
+    def test_post_quality_records_hook_voice_total_and_anti_slop(self) -> None:
+        candidate = quality_cli.CandidateResult(
+            candidate_id="candidate-3",
+            angle="decision",
+            text="A grounded candidate with a clear reader decision.",
+            axes={
+                "hook_strength": 5,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 5,
+                "voice_fidelity": 4,
+            },
+            raw_total=24,
+            effective_total=24,
+            band="advance-to-gates",
+            gates={},
+            passes_required_gates=True,
+            gate_reasons=(),
+        )
+        with patch.object(integrated_cli.v1_completion, "record_decision") as record:
+            integrated_cli._record_post_quality(candidate)  # type: ignore[attr-defined]
+        contracts = [call.args[0]["contract"] for call in record.call_args_list]
+        self.assertEqual(
+            contracts,
+            ["critic_total", "hook_strength", "voice_fidelity", "anti_slop"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

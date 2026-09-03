@@ -43,6 +43,34 @@ class EvalDashboardHtmlTests(unittest.TestCase):
         with patch.object(eval_dashboard_html.sys, "platform", "linux"):
             self.assertFalse(eval_dashboard_html.open_dashboard(Path("dashboard.html")))
 
+    def test_render_surfaces_scout_reasons_baseline_versions_and_post_quality(self) -> None:
+        rendered = eval_dashboard_html.render_dashboard(
+            {
+                "run_id": "linkedin-current",
+                "outcome": "FAIL",
+                "surface_scouts": [
+                    {"label": "Reddit", "status": "OBSERVED", "reason_code": "evidence-returned", "reason": "Public evidence only.", "signal_count": 5},
+                    {"label": "YouTube", "status": "UNAVAILABLE", "reason_code": "timeout", "reason": "Timed out.", "signal_count": 0},
+                ],
+                "baseline": [
+                    {"run_id": "linkedin-prior", "outcome": "PASS", "stopped_at": None, "passed_stages": 7}
+                ],
+                "evaluator_versions": {
+                    "linkedin_os": "6.0.0",
+                    "models": {"critic": {"model": "gpt-test", "reasoning": "high"}},
+                    "rubrics": {"critic-rubric-v1.json": "abc123"},
+                },
+                "checks": [],
+            },
+            {
+                "checks": [
+                    {"contract": "hook_strength", "category": "post_quality", "label": "hook strength", "status": "PASS", "reason": "hook-strength-5-of-5"}
+                ]
+            },
+        )
+        for expected in ("Reddit", "YouTube", "timeout", "5 usable signal", "linkedin-prior", "gpt-test", "abc123", "Would the post itself clear the bar?", "hook-strength-5-of-5"):
+            self.assertIn(expected, rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

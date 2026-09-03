@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from . import daily_cli as base
-from . import eval_dashboard_html, momentum, storage, topic_value, v1_completion, workflow
+from . import __version__, campaign, eval_dashboard_html, momentum, storage, topic_value, v1_completion, workflow
 from .spine_feedback import CONTENT_SPINES
 
 
@@ -27,8 +28,15 @@ EVAL_CONTRACTS = (
     ("atomic_value_novelty", "Topic Value", "atomic-value novelty"),
     ("critic_anchor_integrity", "Critic", "anchor integrity"),
     ("critic_reproducibility", "Critic", "score reproducibility"),
+    ("critic_total", "Post quality", "Critic total"),
+    ("hook_strength", "Post quality", "hook strength"),
+    ("voice_fidelity", "Post quality", "voice fidelity"),
+    ("anti_slop", "Post quality", "anti-AI-slop"),
     ("solution_plausibility", "Resonance", "solution plausibility"),
     ("reader_attention", "Resonance", "reader attention"),
+)
+POST_QUALITY_CONTRACTS = frozenset(
+    {"critic_total", "hook_strength", "voice_fidelity", "anti_slop", "solution_plausibility", "reader_attention"}
 )
 DISCOVERY_STAGES = (
     ("conversation_discovery", "Conversation discovery"),
@@ -47,6 +55,8 @@ def new_run_dashboard(run_id: str = "") -> dict[str, object]:
         "run_id": run_id,
         "outcome": "RUNNING",
         "stopped_at": None,
+        "evaluator_versions": evaluator_versions(),
+        "surface_scouts": [],
         "checks": [
             {
                 "stage": stage,
@@ -58,6 +68,93 @@ def new_run_dashboard(run_id: str = "") -> dict[str, object]:
             for stage, label in DISCOVERY_STAGES
         ],
     }
+
+
+def evaluator_versions() -> dict[str, object]:
+    models = campaign.StageModels.preferred()
+    model_rows = {
+        name: getattr(models, name).trace()
+        for name in ("writer", "narrative_editor", "critic", "artisanal_editor")
+    }
+    scout = getattr(momentum, "MODEL", None)
+    if hasattr(scout, "trace"):
+        model_rows["surface_scout"] = scout.trace()
+    rubrics: dict[str, str] = {}
+    for name in ("critic-rubric-v1.json", "eval-v1.json", "eval-v1-calibration.json"):
+        path = workflow.REPO_ROOT / "config" / name
+        try:
+            rubrics[name] = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+        except OSError:
+            rubrics[name] = "unavailable"
+    return {"linkedin_os": __version__, "models": model_rows, "rubrics": rubrics}
+
+
+def _recent_run_baseline(folder: Path, limit: int = 5) -> list[dict[str, object]]:
+    candidates = [
+        *base.OUTPUT_ROOT.glob("*/*/run-dashboard.json"),
+        *(workflow.DEFAULT_PRIVATE_DATA / "draft-runs").glob("*/run-dashboard.json"),
+    ]
+    safe: list[tuple[float, Path]] = []
+    for path in candidates:
+        try:
+            if path.parent.resolve() == folder.resolve() or path.is_symlink():
+                continue
+            safe.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    baseline: list[dict[str, object]] = []
+    for _modified, path in sorted(safe, reverse=True)[:limit]:
+        try:
+            payload = base._private_json(path, "Prior run dashboard")
+        except workflow.WorkflowError:
+            continue
+        checks = payload.get("checks")
+        passed = (
+            sum(1 for item in checks if isinstance(item, Mapping) and item.get("status") == "PASS")
+            if isinstance(checks, list)
+            else 0
+        )
+        baseline.append(
+            {
+                "run_id": str(payload.get("run_id", path.parent.name)),
+                "outcome": str(payload.get("outcome", "UNKNOWN")),
+                "stopped_at": payload.get("stopped_at"),
+                "passed_stages": passed,
+            }
+        )
+    return baseline
+
+
+def surface_diagnostics(folder: Path) -> list[dict[str, object]]:
+    diagnostics: list[dict[str, object]] = []
+    for path in sorted(folder.glob("surface-*.json")):
+        try:
+            payload = base._private_json(path, "Surface Scout trace")
+        except workflow.WorkflowError:
+            continue
+        status = str(payload.get("status", "UNAVAILABLE"))
+        caveat = str(payload.get("caveat", "No reason recorded."))
+        signals = payload.get("signals")
+        count = len(signals) if isinstance(signals, list) else 0
+        normal = caveat.casefold()
+        reason_code = (
+            "evidence-returned" if status == "OBSERVED"
+            else "no-current-signal" if status == "NO_SIGNAL"
+            else "timeout" if "timed out" in normal or "timeout" in normal
+            else "invalid-response" if "schema" in normal or "invalid" in normal
+            else "surface-unavailable"
+        )
+        diagnostics.append(
+            {
+                "surface": str(payload.get("surface", path.stem.removeprefix("surface-"))),
+                "label": str(payload.get("label", path.stem)),
+                "status": status,
+                "reason_code": reason_code,
+                "reason": caveat,
+                "signal_count": count,
+            }
+        )
+    return diagnostics
 
 
 def mark_run_stage(
@@ -90,6 +187,7 @@ def persist_run_dashboard(
 ) -> Path:
     if outcome is not None:
         dashboard["outcome"] = outcome
+    dashboard["baseline"] = _recent_run_baseline(folder)
     path = base.write_private_json(folder / "run-dashboard.json", dashboard)
     print("Run dashboard:")
     for check in dashboard["checks"]:  # type: ignore[index]
@@ -104,14 +202,29 @@ def render_eval_dashboard(
     rows: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
     latest: dict[str, Mapping[str, object]] = {}
+    best_post_artifact = ""
+    best_post_score = -1
     for row in rows:
         contract = str(row.get("contract", ""))
         if contract:
             latest[contract] = row
+        evidence = row.get("evidence")
+        score = evidence.get("score") if isinstance(evidence, Mapping) else None
+        if contract == "critic_total" and type(score) is int and int(score) > best_post_score:
+            best_post_score = int(score)
+            best_post_artifact = str(row.get("artifact_sha256", ""))
     checks: list[dict[str, str]] = []
     print("Eval dashboard:")
     for contract, stage, label in EVAL_CONTRACTS:
         row = latest.get(contract)
+        if contract in POST_QUALITY_CONTRACTS and best_post_artifact:
+            matching = [
+                item for item in rows
+                if str(item.get("contract", "")) == contract
+                and str(item.get("artifact_sha256", "")) == best_post_artifact
+            ]
+            if matching:
+                row = matching[-1]
         status = str(row.get("status", "NOT_EVALUATED")) if row else "NOT_EVALUATED"
         reason = str(row.get("reason", "stage was not reached")) if row else "stage was not reached"
         checks.append(
@@ -119,8 +232,11 @@ def render_eval_dashboard(
                 "stage": stage,
                 "contract": contract,
                 "label": label,
+                "category": "post_quality" if contract in POST_QUALITY_CONTRACTS else "pipeline",
                 "status": status,
                 "reason": reason,
+                "subject_id": str(row.get("subject_id", "")) if row else "",
+                "evidence": dict(row.get("evidence", {})) if row and isinstance(row.get("evidence"), Mapping) else {},
             }
         )
         print(f"  {stage} | {label}: {status} ({reason})")
@@ -618,6 +734,7 @@ def command(args: argparse.Namespace) -> int:
         authority_scores = momentum.score_authority_fit(top_five, profile)
         top_five = momentum.attach_authority_fit(top_five, authority_scores)
     except workflow.WorkflowError as exc:
+        run_dashboard["surface_scouts"] = surface_diagnostics(folder)
         mark_run_stage(
             run_dashboard,
             "conversation_discovery",
@@ -631,6 +748,7 @@ def command(args: argparse.Namespace) -> int:
             v1_completion._read_jsonl(ledger_path)[ledger_start:],
         )
         raise
+    run_dashboard["surface_scouts"] = surface_diagnostics(folder)
     mark_run_stage(
         run_dashboard,
         "conversation_discovery",
@@ -638,6 +756,15 @@ def command(args: argparse.Namespace) -> int:
         "conversation candidates were collected and ranked",
         signal_count=len(momentum_candidates),
         ranked_count=len(ranked),
+        observed_scouts=sum(
+            1 for item in run_dashboard["surface_scouts"]  # type: ignore[index]
+            if isinstance(item, Mapping) and item.get("status") == "OBSERVED"
+        ),
+        surface_signals=sum(
+            int(item.get("signal_count", 0))
+            for item in run_dashboard["surface_scouts"]  # type: ignore[index]
+            if isinstance(item, Mapping)
+        ),
     )
     inventory_path, inventory = update_candidate_inventory(
         top_five,
@@ -912,6 +1039,11 @@ def command(args: argparse.Namespace) -> int:
             f"Voice stage: LOADED ({len(anchors)} non-blank anchor(s)); "
             "Writer and Critic receive the same guidance."
         )
+        run_dashboard["voice_stage"] = {
+            "status": "LOADED",
+            "anchor_count": len(anchors),
+            "provenance": str(guidance.get("provenance", "not-recorded")),
+        }
         print("Drafting: starting the high-bar post workflow.", flush=True)
         completed = subprocess.run(
             selected[1],
