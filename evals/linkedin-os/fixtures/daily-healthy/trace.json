@@ -1,0 +1,172 @@
+{
+  "cluster_count": 10,
+  "consolidation": {
+    "clusters": [
+      {
+        "id": "cluster-1",
+        "signal_ids": [
+          "google-1",
+          "google-2"
+        ]
+      },
+      {
+        "id": "cluster-2",
+        "signal_ids": [
+          "google-1",
+          "google-2"
+        ]
+      },
+      {
+        "id": "cluster-3",
+        "signal_ids": [
+          "google-1",
+          "google-2"
+        ]
+      },
+      {
+        "id": "cluster-4",
+        "signal_ids": [
+          "google-1",
+          "google-2"
+        ]
+      },
+      {
+        "id": "cluster-5",
+        "signal_ids": [
+          "google-1",
+          "google-2"
+        ]
+      },
+      {
+        "id": "cluster-6",
+        "signal_ids": [
+          "google-1",
+          "google-2"
+        ]
+      },
+      {
+        "id": "cluster-7",
+        "signal_ids": [
+          "google-1",
+          "google-2"
+        ]
+      },
+      {
+        "id": "cluster-8",
+        "signal_ids": [
+          "google-1",
+          "google-2"
+        ]
+      },
+      {
+        "id": "cluster-9",
+        "signal_ids": [
+          "google-1",
+          "google-2"
+        ]
+      },
+      {
+        "id": "cluster-10",
+        "signal_ids": [
+          "google-1",
+          "google-2"
+        ]
+      }
+    ]
+  },
+  "critic": {
+    "cycles": [
+      {
+        "cycle": 1,
+        "scorecards": [
+          {
+            "band": "reject",
+            "candidate_id": "candidate-1",
+            "earned_closer": 4,
+            "effective_total": 22,
+            "hook_cap_applied": false,
+            "hook_strength": 4,
+            "middle_escalation": 5,
+            "raw_total": 22,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-2",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 5,
+            "voice_fidelity": 4
+          },
+          {
+            "band": "advance-to-gates",
+            "candidate_id": "candidate-3",
+            "earned_closer": 5,
+            "effective_total": 24,
+            "hook_cap_applied": false,
+            "hook_strength": 5,
+            "middle_escalation": 5,
+            "raw_total": 24,
+            "specificity_and_source_quality": 4,
+            "voice_fidelity": 5
+          }
+        ]
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "runtime": "codex"
+    }
+  },
+  "final": {
+    "candidate_id": "candidate-2",
+    "human_approval_status": "NOT_APPROVED",
+    "manual_fact_verification_required": true,
+    "post": "A runtime budget is incomplete until the product defines what happens when it is exhausted mid-job.",
+    "publishing_status": "DISABLED",
+    "status": "READY_FOR_HUMAN_REVIEW"
+  },
+  "note": "Labeled synthetic fixture. Not live-product quality evidence.",
+  "regeneration_count": 0,
+  "rejected_prose_in_package": false,
+  "run_id": "los-daily-healthy-2026-08-11",
+  "schema_version": 2,
+  "synthetic": true,
+  "thesis": {
+    "status": "PASS"
+  },
+  "topic_value": {
+    "scores": {
+      "authority_fit": 4,
+      "evidence_strength": 4,
+      "gravity": 4,
+      "reader_relevance": 5,
+      "reader_value": 4
+    },
+    "status": "PASS"
+  },
+  "topic_value_id": "tv-agent-budget-exhaustion",
+  "writer": {
+    "cycles": [
+      {
+        "candidate_ids": [
+          "candidate-1",
+          "candidate-2",
+          "candidate-3"
+        ],
+        "cycle": 1
+      }
+    ],
+    "model": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "runtime": "codex"
+    }
+  }
+}

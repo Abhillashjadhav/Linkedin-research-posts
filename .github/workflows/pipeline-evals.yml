@@ -1,0 +1,44 @@
+name: pipeline-evals
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pm-verifier
+        run: |
+          git clone --depth 1 https://github.com/Abhillashjadhav/AI-PM-essential-skills.git /tmp/aipm
+          python3 -m pip install --no-deps /tmp/aipm/pm-verifier
+      - name: Run pipeline evals
+        working-directory: evals/linkedin-os
+        run: |
+          pm-verifier execute --project . \
+            --trials-out trials.executed.jsonl --results-out results.json \
+            -- python3 adapter.py
+          pm-verifier report --results results.json --out report.md
+      - name: Fail-injection check
+        working-directory: evals/linkedin-os
+        run: |
+          missed=0
+          for n in $(python3 -c "import json;print(' '.join(json.load(open('faults/specs.json'))))"); do
+            pm-verifier fault --project . --trials trials.executed.jsonl \
+              --specs faults/specs.json --name "$n" --out trials.faulted.jsonl >/dev/null
+            if pm-verifier run --project . --trials trials.faulted.jsonl \
+                 --out results.faulted.json >/dev/null 2>&1; then
+              echo "MISSED: $n"; missed=1
+            fi
+          done
+          exit $missed
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: evals/linkedin-os/report.md

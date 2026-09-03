@@ -1,0 +1,83 @@
+{
+  "calibration": {
+    "calibration_id": "linkedin-critic-cal-v1",
+    "judge_id": "linkedin-critic-v1",
+    "maximum_false_positive_rate": 0.1,
+    "maximum_score_mae": 0.75,
+    "minimum_agreement": 0.8,
+    "minimum_golden_items": 30,
+    "minimum_kappa": 0.6
+  },
+  "deterministic_graders": [],
+  "minimum_trials_per_case": 1,
+  "model_graders": [
+    {
+      "category": "quality",
+      "gate": true,
+      "id": "G_CRITIC_ADVANCE",
+      "name": "the candidate deserves to advance to the deterministic gates",
+      "prompt_version": "linkedin-critic-judge-v1",
+      "scope": "outcome"
+    }
+  ],
+  "name": "LinkedIn Critic judge calibration",
+  "release_rules": {
+    "max_cost_usd_per_trial": 0.05,
+    "max_latency_ms_per_trial": 120000,
+    "max_privacy_failures": 0,
+    "max_retries_per_trial": 0,
+    "max_safety_failures": 0,
+    "max_total_tokens_per_trial": 20000,
+    "min_case_pass_rate": 1.0,
+    "min_trial_pass_rate": 1.0
+  },
+  "rubric": [
+    {
+      "anchor_1": "generic, jargon-first opening with no reader problem or reason to continue",
+      "anchor_5": "the reader instantly recognises the problem, sees the concrete payoff, and the body delivers it without hype",
+      "definition": "line 1 makes the target reader stop and see the payoff",
+      "id": "C_HOOK",
+      "name": "hook strength",
+      "worked_example": "Fill this in with one real post that you scored 4 on hook strength, and say why it is not a 5."
+    },
+    {
+      "anchor_1": "the middle restates the opening or drifts into unrelated points",
+      "anchor_5": "each beat adds a concrete new constraint, number, or consequence the reader could not predict",
+      "definition": "the body raises stakes or specificity rather than restating the hook",
+      "id": "C_MIDDLE",
+      "name": "middle escalation",
+      "worked_example": "Fill this in with one real post that you scored 4 on middle escalation, and say why it is not a 5."
+    },
+    {
+      "anchor_1": "unsupported generalities or claims with no traceable source",
+      "anchor_5": "every load-bearing claim is specific and maps to a body-read primary source",
+      "definition": "claims are concrete and traceable to body-read evidence",
+      "id": "C_SPECIFICITY",
+      "name": "specificity and source quality",
+      "worked_example": "Fill this in with one real post that you scored 4 on specificity and source quality, and say why it is not a 5."
+    },
+    {
+      "anchor_1": "generic LinkedIn-model cadence with banned filler",
+      "anchor_5": "indistinguishable from the owner's best published posts in rhythm and vocabulary",
+      "definition": "the post sounds like the owner, not like a model",
+      "id": "C_VOICE",
+      "name": "voice fidelity",
+      "worked_example": "Fill this in with one real post that you scored 4 on voice fidelity, and say why it is not a 5."
+    },
+    {
+      "anchor_1": "a generic call to action unconnected to the argument",
+      "anchor_5": "the closer follows necessarily from the body and asks for one specific, useful response",
+      "definition": "the ending is earned by the body, not bolted on",
+      "id": "C_CLOSER",
+      "name": "earned closer",
+      "worked_example": "Fill this in with one real post that you scored 4 on earned closer, and say why it is not a 5."
+    }
+  ],
+  "schema_version": "1.1",
+  "suite_id": "linkedin-critic-judge",
+  "suite_type": "capability",
+  "suite_version": "1.0.0",
+  "surfaces": [
+    "outcome"
+  ]
+}

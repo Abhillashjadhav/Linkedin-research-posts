@@ -17,3 +17,9 @@ outputs/**
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# eval run artifacts
+evals/linkedin-os/results.json
+evals/linkedin-os/report.md
+evals/linkedin-os/trials.faulted.jsonl
+evals/linkedin-os/results.faulted.json

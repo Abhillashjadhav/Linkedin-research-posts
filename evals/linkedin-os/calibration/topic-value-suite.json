@@ -1,0 +1,83 @@
+{
+  "calibration": {
+    "calibration_id": "linkedin-topic-cal-v1",
+    "judge_id": "linkedin-topic-value-v1",
+    "maximum_false_positive_rate": 0.1,
+    "maximum_score_mae": 0.75,
+    "minimum_agreement": 0.8,
+    "minimum_golden_items": 30,
+    "minimum_kappa": 0.6
+  },
+  "deterministic_graders": [],
+  "minimum_trials_per_case": 1,
+  "model_graders": [
+    {
+      "category": "quality",
+      "gate": true,
+      "id": "G_TOPIC_ADVANCE",
+      "name": "the topic clears the Topic Value hard gates",
+      "prompt_version": "linkedin-topic-value-judge-v1",
+      "scope": "outcome"
+    }
+  ],
+  "name": "LinkedIn Topic Value judge calibration",
+  "release_rules": {
+    "max_cost_usd_per_trial": 0.05,
+    "max_latency_ms_per_trial": 120000,
+    "max_privacy_failures": 0,
+    "max_retries_per_trial": 0,
+    "max_safety_failures": 0,
+    "max_total_tokens_per_trial": 20000,
+    "min_case_pass_rate": 1.0,
+    "min_trial_pass_rate": 1.0
+  },
+  "rubric": [
+    {
+      "anchor_1": "interesting only to the author or a tiny niche",
+      "anchor_5": "a decision the target reader is actively facing this month",
+      "definition": "the topic matters to the broader GenAI audience now",
+      "id": "T_RELEVANCE",
+      "name": "reader relevance",
+      "worked_example": "Fill this in with one real post that you scored 4 on reader relevance, and say why it is not a 5."
+    },
+    {
+      "anchor_1": "no usable takeaway; commentary only",
+      "anchor_5": "one specific, reusable artifact, rule, or decision the reader can apply immediately",
+      "definition": "one concrete atomic unit of value the reader can act on",
+      "id": "T_VALUE",
+      "name": "reader value",
+      "worked_example": "Fill this in with one real post that you scored 4 on reader value, and say why it is not a 5."
+    },
+    {
+      "anchor_1": "no observable current discussion",
+      "anchor_5": "sustained, accelerating discussion with real consequences for practitioners",
+      "definition": "the conversation has current pull and consequence",
+      "id": "T_GRAVITY",
+      "name": "gravity",
+      "worked_example": "Fill this in with one real post that you scored 4 on gravity, and say why it is not a 5."
+    },
+    {
+      "anchor_1": "social chatter only, or no source read in full",
+      "anchor_5": "multiple primary sources read in full and directly supporting every factual claim",
+      "definition": "non-social, body-read evidence supports the factual core",
+      "id": "T_EVIDENCE",
+      "name": "evidence strength",
+      "worked_example": "Fill this in with one real post that you scored 4 on evidence strength, and say why it is not a 5."
+    },
+    {
+      "anchor_1": "outside the niche; borrowed authority",
+      "anchor_5": "squarely in the niche where the owner has first-hand, defensible experience",
+      "definition": "the topic sits inside the owner's evals and agent-reliability niche",
+      "id": "T_AUTHORITY",
+      "name": "authority fit",
+      "worked_example": "Fill this in with one real post that you scored 4 on authority fit, and say why it is not a 5."
+    }
+  ],
+  "schema_version": "1.1",
+  "suite_id": "linkedin-topic-value-judge",
+  "suite_type": "capability",
+  "suite_version": "1.0.0",
+  "surfaces": [
+    "outcome"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "cases_path": "cases.jsonl",
+  "cases_sha256": "e927f31ae3c5379c5bbb5e76fc93190f60dda2033bd758114d64d2e8f5817cac",
+  "dataset_id": "linkedin-os-daily-cases",
+  "dataset_version": "1.0.0",
+  "schema_version": "1.1",
+  "source": "synthetic-known-answer"
+}

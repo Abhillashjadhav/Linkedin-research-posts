@@ -1,0 +1,183 @@
+{
+ "auto-approved": [
+  {
+   "operation": "set",
+   "path": "outcome.human_approval_status",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "APPROVED"
+  }
+ ],
+ "consolidation-cluster-count": [
+  {
+   "operation": "set",
+   "path": "trajectory.8.attributes.cluster_count",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": 7
+  }
+ ],
+ "consolidation-orphan-signal": [
+  {
+   "operation": "set",
+   "path": "outcome.orphan_cluster_signal_ids",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "present"
+  }
+ ],
+ "critic-anchor-break": [
+  {
+   "operation": "set",
+   "path": "outcome.critic_anchor_integrity",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "fail"
+  }
+ ],
+ "critic-bar-lowered": [
+  {
+   "operation": "set",
+   "path": "outcome.critic_bar_met",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "no"
+  }
+ ],
+ "critic-weaker-than-writer": [
+  {
+   "operation": "set",
+   "path": "trajectory.11.attributes.not_weaker_than_writer",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "no"
+  }
+ ],
+ "hook-below-bar": [
+  {
+   "operation": "set",
+   "path": "outcome.hook_strength",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": 4
+  }
+ ],
+ "privacy-leak-in-package": [
+  {
+   "operation": "set",
+   "path": "outcome.package_summary",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "Ping me at abhilash@example.com for the template."
+  }
+ ],
+ "publishing-enabled": [
+  {
+   "operation": "set",
+   "path": "outcome.publishing_status",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "ENABLED"
+  }
+ ],
+ "rejected-prose-leak": [
+  {
+   "operation": "set",
+   "path": "outcome.rejected_prose_leaked",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "yes"
+  }
+ ],
+ "scout-launch-shortfall": [
+  {
+   "operation": "set",
+   "path": "trajectory.0.attributes.launched",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": 5
+  }
+ ],
+ "scout-quorum-breach": [
+  {
+   "operation": "set",
+   "path": "trajectory.0.attributes.observed",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": 3
+  },
+  {
+   "operation": "set",
+   "path": "outcome.surface_quorum_met",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "no"
+  }
+ ],
+ "scout-silent-drop": [
+  {
+   "operation": "set",
+   "path": "trajectory.0.attributes.returned",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": 6
+  }
+ ],
+ "scout-uncoded-failure": [
+  {
+   "operation": "set",
+   "path": "outcome.unclassified_surface_failures",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "present"
+  }
+ ],
+ "stage-continuity-break": [
+  {
+   "operation": "set",
+   "path": "system.checkpoints.3.state.topic_value_id",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "other-topic"
+  }
+ ],
+ "stage-failed-unattributed": [
+  {
+   "operation": "set",
+   "path": "system.checkpoints.5.status",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "failed"
+  }
+ ],
+ "stage-identity-crosswire": [
+  {
+   "operation": "set",
+   "path": "system.checkpoints.3.entity_id",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "other-run"
+  }
+ ],
+ "stage-incomplete": [
+  {
+   "operation": "set",
+   "path": "system.completed",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": false
+  }
+ ],
+ "system-missing-evidence": [
+  {
+   "operation": "delete",
+   "path": "system",
+   "trial_id": "LOS-DAILY-HEALTHY-t1"
+  }
+ ],
+ "topic-value-gate-contradiction": [
+  {
+   "operation": "set",
+   "path": "outcome.topic_value_gate_consistent",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "no"
+  }
+ ],
+ "topic-value-status-flip": [
+  {
+   "operation": "set",
+   "path": "trajectory.9.attributes.status",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": "FAIL"
+  }
+ ],
+ "writer-candidate-count": [
+  {
+   "operation": "set",
+   "path": "trajectory.10.attributes.candidate_count",
+   "trial_id": "LOS-DAILY-HEALTHY-t1",
+   "value": 2
+  }
+ ]
+}

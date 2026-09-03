@@ -1,0 +1,45 @@
+{
+  "candidate": {
+    "id": "linkedin-authority-os",
+    "sha256": "9ee042232754ee4f2e3ed8416bdcc84c09393e303f54d07b779debcaa5a1d500",
+    "version": "1.0.0"
+  },
+  "configuration": {
+    "id": "linkedin-authority-os-pipeline",
+    "sha256": "76cf2fa10317d099569f1b13b377347234b385eacab3bf16358dfb74d11ff4e1",
+    "version": "1.0.0"
+  },
+  "created_at": "2026-09-02T00:00:00+00:00",
+  "dataset": {
+    "cases_sha256": "e927f31ae3c5379c5bbb5e76fc93190f60dda2033bd758114d64d2e8f5817cac",
+    "id": "linkedin-os-daily-cases",
+    "version": "1.0.0"
+  },
+  "harness": {
+    "name": "pm-verifier",
+    "sha256": "76cf2fa10317d099569f1b13b377347234b385eacab3bf16358dfb74d11ff4e1",
+    "version": "1.2.0"
+  },
+  "model": {
+    "name": "recorded-run-evidence",
+    "parameters": {
+      "temperature": 0
+    },
+    "provider": "replay",
+    "version": "1.0.0"
+  },
+  "prompt": {
+    "id": "linkedin-os-pipeline",
+    "sha256": "76cf2fa10317d099569f1b13b377347234b385eacab3bf16358dfb74d11ff4e1",
+    "version": "1.0.0"
+  },
+  "run_id": "linkedin-os-daily-e927f31ae3c5",
+  "schema_version": "1.1",
+  "tools": [
+    {
+      "name": "run-evidence-adapter",
+      "sha256": "9ee042232754ee4f2e3ed8416bdcc84c09393e303f54d07b779debcaa5a1d500",
+      "version": "1.0.0"
+    }
+  ]
+}
