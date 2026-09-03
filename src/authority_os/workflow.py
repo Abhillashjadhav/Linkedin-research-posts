@@ -1205,12 +1205,20 @@ def build_strategy_brief(
 def load_voice_guidance(
     paths: Mapping[str, Path | str] | None = None,
 ) -> dict[str, str]:
-    """Load the reconstructed, non-citable style anchors used by the Writer."""
+    """Load the voice anchors used by the Writer.
+
+    These were reconstructed placeholders until the published record was
+    recovered. They are now the author's own posts ordered by measured lift,
+    which is why the provenance token changed: the Writer should know it is
+    reading real published work, not an approximation of it. The anchors remain
+    non-citable - the atomic-value novelty ledger blocks a topic already
+    published, and anti-slop catches lifted phrasing.
+    """
 
     selected_paths = VOICE_ANCHOR_PATHS if paths is None else paths
     if not isinstance(selected_paths, Mapping) or not selected_paths:
-        raise WorkflowError("At least one reconstructed voice anchor is required.")
-    guidance = {"provenance": "reconstructed-style-guidance"}
+        raise WorkflowError("At least one voice anchor is required.")
+    guidance = {"provenance": "measured-performance-anchors"}
     normalized_labels = {"provenance"}
     for label, raw_path in selected_paths.items():
         if not isinstance(label, str) or not label.strip():
@@ -1846,9 +1854,9 @@ def build_writer_prompt(
     safe_evidence = _writer_evidence_projection(evidence)
     safe_proof = _public_proof_projection(proof)
     if not isinstance(voice_guidance, Mapping) or (
-        voice_guidance.get("provenance") != "reconstructed-style-guidance"
+        voice_guidance.get("provenance") != "measured-performance-anchors"
     ):
-        raise WorkflowError("Writer prompt needs reconstructed voice guidance provenance.")
+        raise WorkflowError("Writer prompt needs measured voice guidance provenance.")
     anchors = {
         key: value
         for key, value in voice_guidance.items()
@@ -2090,7 +2098,7 @@ def build_critic_prompt(
     safe_proof = _public_proof_projection(proof)
     guidance = load_voice_guidance() if voice_guidance is None else voice_guidance
     if not isinstance(guidance, Mapping) or (
-        guidance.get("provenance") != "reconstructed-style-guidance"
+        guidance.get("provenance") != "measured-performance-anchors"
     ):
         raise WorkflowError("Critic prompt needs reconstructed voice provenance.")
     voice_anchors = {
@@ -2364,7 +2372,7 @@ def _build_writer_revision_prompt(
     safe_evidence = _writer_evidence_projection(evidence)
     safe_proof = _public_proof_projection(proof)
     if not isinstance(voice_guidance, Mapping) or (
-        voice_guidance.get("provenance") != "reconstructed-style-guidance"
+        voice_guidance.get("provenance") != "measured-performance-anchors"
     ):
         raise WorkflowError("Writer revision needs reconstructed voice provenance.")
     anchors = {

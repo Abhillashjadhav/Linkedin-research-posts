@@ -91,13 +91,13 @@ class SingleTopicSelectionTests(unittest.TestCase):
                 first = workflow.build_writer_prompt(
                     brief=brief(),
                     evidence=evidence(),
-                    voice_guidance={"provenance": "reconstructed-style-guidance", "voice": "x"},
+                    voice_guidance={"provenance": "measured-performance-anchors", "voice": "x"},
                     proof=None,
                 )
                 second = workflow.build_writer_prompt(
                     brief=brief(),
                     evidence=evidence(),
-                    voice_guidance={"provenance": "reconstructed-style-guidance", "voice": "x"},
+                    voice_guidance={"provenance": "measured-performance-anchors", "voice": "x"},
                     proof=None,
                 )
 

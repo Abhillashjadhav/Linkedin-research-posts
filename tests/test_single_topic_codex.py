@@ -31,7 +31,7 @@ class SingleTopicCodexRuntimeTests(unittest.TestCase):
                 brief={},
                 evidence=[],
                 allow_model_egress=True,
-                voice_guidance={"provenance": "reconstructed-style-guidance", "voice": "plain"},
+                voice_guidance={"provenance": "measured-performance-anchors", "voice": "plain"},
             )
 
         self.assertEqual(result, returned)
@@ -113,7 +113,7 @@ class SingleTopicCodexRuntimeTests(unittest.TestCase):
                 [],
                 scorecard={},
                 allow_model_egress=True,
-                voice_guidance={"provenance": "reconstructed-style-guidance", "voice": "plain"},
+                voice_guidance={"provenance": "measured-performance-anchors", "voice": "plain"},
             )
 
         self.assertEqual(result, revised)

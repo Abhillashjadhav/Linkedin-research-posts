@@ -768,7 +768,7 @@ class WriterRevisionInvocationTests(unittest.TestCase):
         self.voice = {
             "voice_guide": "Direct practitioner voice sentinel.",
             "performance_anchors": "Mechanism anchor sentinel.",
-            "provenance": "reconstructed-style-guidance",
+            "provenance": "measured-performance-anchors",
         }
 
     @patch("authority_os.workflow.subprocess.run")

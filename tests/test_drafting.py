@@ -122,16 +122,16 @@ def candidate_set(
 
 
 class VoiceGuidanceTests(unittest.TestCase):
-    def test_default_guidance_loads_both_reconstructed_nonempty_anchors(self) -> None:
+    def test_default_guidance_loads_both_measured_nonempty_anchors(self) -> None:
         guidance = workflow.load_voice_guidance()
         self.assertEqual(
             set(guidance),
             {"voice_guide", "performance_patterns", "provenance"},
         )
-        self.assertEqual(guidance["provenance"], "reconstructed-style-guidance")
-        self.assertIn("Reconstructed voice guide", guidance["voice_guide"])
+        self.assertEqual(guidance["provenance"], "measured-performance-anchors")
+        self.assertIn("voice guide", guidance["voice_guide"].casefold())
         self.assertIn(
-            "Reconstructed performance-pattern anchors",
+            "Voice anchors — real posts, ranked by measured conversion",
             guidance["performance_patterns"],
         )
         self.assertTrue(all(value.strip() for value in guidance.values()))
@@ -151,7 +151,7 @@ class VoiceGuidanceTests(unittest.TestCase):
         self.assertEqual(
             guidance["performance_anchors"], "Mechanism before consequence."
         )
-        self.assertEqual(guidance["provenance"], "reconstructed-style-guidance")
+        self.assertEqual(guidance["provenance"], "measured-performance-anchors")
 
     def test_missing_empty_or_absent_voice_paths_fail_instead_of_falling_back(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -841,7 +841,7 @@ class WriterPromptAndInvocationTests(unittest.TestCase):
         self.voice = {
             "voice_guide": "Direct practitioner voice sentinel.",
             "performance_anchors": "Mechanism anchor sentinel.",
-            "provenance": "reconstructed-style-guidance",
+            "provenance": "measured-performance-anchors",
         }
 
     def test_prompt_marks_sources_untrusted_and_voice_non_citable(self) -> None:
