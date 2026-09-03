@@ -32,11 +32,12 @@ EVAL_CONTRACTS = (
     ("hook_strength", "Post quality", "hook strength"),
     ("voice_fidelity", "Post quality", "voice fidelity"),
     ("anti_slop", "Post quality", "anti-AI-slop"),
+    ("candidate_acceptance", "Post quality", "candidate acceptance"),
     ("solution_plausibility", "Resonance", "solution plausibility"),
     ("reader_attention", "Resonance", "reader attention"),
 )
 POST_QUALITY_CONTRACTS = frozenset(
-    {"critic_total", "hook_strength", "voice_fidelity", "anti_slop", "solution_plausibility", "reader_attention"}
+    {"critic_total", "hook_strength", "voice_fidelity", "anti_slop", "candidate_acceptance", "solution_plausibility", "reader_attention"}
 )
 DISCOVERY_STAGES = (
     ("conversation_discovery", "Conversation discovery"),
@@ -202,18 +203,64 @@ def render_eval_dashboard(
     rows: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
     latest: dict[str, Mapping[str, object]] = {}
+    acceptance_by_artifact: dict[str, Mapping[str, object]] = {}
     best_post_artifact = ""
     best_post_score = -1
     for row in rows:
         contract = str(row.get("contract", ""))
         if contract:
             latest[contract] = row
+        if contract == "candidate_acceptance":
+            artifact = str(row.get("artifact_sha256", ""))
+            if artifact:
+                acceptance_by_artifact[artifact] = row
         evidence = row.get("evidence")
         score = evidence.get("score") if isinstance(evidence, Mapping) else None
         if contract == "critic_total" and type(score) is int and int(score) > best_post_score:
             best_post_score = int(score)
             best_post_artifact = str(row.get("artifact_sha256", ""))
-    checks: list[dict[str, str]] = []
+    checks: list[dict[str, object]] = []
+    scorecards: list[dict[str, object]] = []
+    for row in rows:
+        if str(row.get("contract", "")) != "critic_total":
+            continue
+        evidence = row.get("evidence")
+        if not isinstance(evidence, Mapping):
+            continue
+        axes = evidence.get("axes")
+        if not isinstance(axes, Mapping):
+            continue
+        artifact = str(row.get("artifact_sha256", ""))
+        failure_codes = (
+            list(evidence.get("failure_codes", []))
+            if isinstance(evidence.get("failure_codes"), list)
+            else []
+        )
+        acceptance = acceptance_by_artifact.get(artifact)
+        if acceptance is not None and str(acceptance.get("status")) != "PASS":
+            acceptance_evidence = acceptance.get("evidence")
+            acceptance_codes = (
+                acceptance_evidence.get("failure_codes", [])
+                if isinstance(acceptance_evidence, Mapping)
+                else []
+            )
+            if isinstance(acceptance_codes, list):
+                failure_codes.extend(
+                    str(value) for value in acceptance_codes if str(value) not in failure_codes
+                )
+        scorecards.append(
+            {
+                "cycle": int(evidence.get("cycle", 0)),
+                "candidate_id": str(row.get("subject_id", "")),
+                "status": str(row.get("status", "NOT_EVALUATED")),
+                "total": int(evidence.get("score", 0)),
+                "threshold": int(evidence.get("threshold", 22)),
+                "axes": {axis: int(axes.get(axis, 0)) for axis in workflow.CRITIC_AXES},
+                "failure_codes": failure_codes,
+                "failed_gates": dict(evidence.get("gates", {})) if isinstance(evidence.get("gates"), Mapping) else {},
+                "artifact_sha256": artifact,
+            }
+        )
     print("Eval dashboard:")
     for contract, stage, label in EVAL_CONTRACTS:
         row = latest.get(contract)
@@ -240,7 +287,8 @@ def render_eval_dashboard(
             }
         )
         print(f"  {stage} | {label}: {status} ({reason})")
-    return {"schema_version": 1, "checks": checks}
+    scorecards.sort(key=lambda item: (int(item["cycle"]), str(item["candidate_id"])))
+    return {"schema_version": 2, "checks": checks, "critic_scorecards": scorecards}
 
 
 def _parse_timestamp(value: str) -> datetime:
@@ -1062,12 +1110,17 @@ def command(args: argparse.Namespace) -> int:
             for check in dashboard["checks"]
             if check["status"] != "NOT_EVALUATED"
         ]
+        post_evaluated_rows = [
+            check
+            for check in evaluated_rows
+            if check.get("category") == "post_quality"
+        ]
         failed_rows = [
             check
             for check in evaluated_rows
             if check["status"] in {"FAIL", "BLOCKED"}
         ]
-        if completed.returncode == 0 or evaluated_rows:
+        if completed.returncode == 0 or post_evaluated_rows:
             mark_run_stage(
                 run_dashboard,
                 "drafting",
@@ -1084,14 +1137,22 @@ def command(args: argparse.Namespace) -> int:
                 return_code=completed.returncode,
             )
         if failed_rows:
+            first_failure = failed_rows[0]
             mark_run_stage(
                 run_dashboard,
                 "final_evals",
                 "FAIL",
-                f"{len(failed_rows)} evaluated contract(s) failed or blocked",
+                f"{first_failure['label']}: {first_failure['reason']}",
                 failed_contracts=[str(check["contract"]) for check in failed_rows],
+                failure_reasons=[
+                    {
+                        "contract": str(check["contract"]),
+                        "reason": str(check["reason"]),
+                    }
+                    for check in failed_rows
+                ],
             )
-        elif completed.returncode != 0 and evaluated_rows:
+        elif completed.returncode != 0 and post_evaluated_rows:
             mark_run_stage(
                 run_dashboard,
                 "final_evals",
@@ -1100,6 +1161,14 @@ def command(args: argparse.Namespace) -> int:
                 evaluated_contracts=[
                     str(check["contract"]) for check in evaluated_rows
                 ],
+            )
+        elif completed.returncode != 0:
+            mark_run_stage(
+                run_dashboard,
+                "final_evals",
+                "FAIL",
+                "draft subprocess exited before a valid Critic 1-5 scorecard was recorded",
+                return_code=completed.returncode,
             )
         elif completed.returncode == 0:
             mark_run_stage(
