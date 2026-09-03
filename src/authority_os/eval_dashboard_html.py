@@ -31,6 +31,13 @@ def _status(value: object) -> str:
     } else "BLOCKED"
 
 
+def _scout_css(value: object) -> str:
+    status = str(value or "UNAVAILABLE").upper()
+    return status.casefold().replace("_", "-") if status in {
+        "OBSERVED", "NO_SIGNAL", "UNAVAILABLE"
+    } else "unavailable"
+
+
 def _card(check: Mapping[str, object]) -> str:
     status = _status(check.get("status"))
     css = status.casefold().replace("_", "-")
@@ -55,6 +62,8 @@ def render_dashboard(
 
     run_checks = _checks(run_dashboard)
     eval_checks = _checks(eval_dashboard)
+    pipeline_checks = [item for item in eval_checks if item.get("category") != "post_quality"]
+    post_checks = [item for item in eval_checks if item.get("category") == "post_quality"]
     all_checks = [*run_checks, *eval_checks]
     blockers = [
         item for item in all_checks if _status(item.get("status")) in {"FAIL", "BLOCKED"}
@@ -77,15 +86,51 @@ def render_dashboard(
     run_id = run_dashboard.get("run_id") or eval_dashboard.get("run_id")
     outcome_css = "pass" if outcome == "PASS" else "fail" if outcome == "FAIL" else "incomplete"
     run_cards = "".join(_card(item) for item in run_checks) or '<p class="empty">No workflow checks recorded.</p>'
-    eval_cards = "".join(_card(item) for item in eval_checks) or '<p class="empty">No eval checks recorded.</p>'
+    pipeline_cards = "".join(_card(item) for item in pipeline_checks) or '<p class="empty">No pipeline contracts recorded.</p>'
+    post_cards = "".join(_card(item) for item in post_checks) or '<p class="empty">No post-quality contracts recorded.</p>'
+    raw_scouts = run_dashboard.get("surface_scouts")
+    scouts = [item for item in raw_scouts if isinstance(item, Mapping)] if isinstance(raw_scouts, list) else []
+    observed_scouts = sum(1 for item in scouts if item.get("status") == "OBSERVED")
+    signal_count = sum(int(item.get("signal_count", 0)) for item in scouts)
+    scout_cards = "".join(
+        '<article class="scout">'
+        f'<span class="status {_scout_css(item.get("status"))}">{_safe(item.get("status"))}</span>'
+        f'<strong>{_safe(item.get("label"))}</strong>'
+        f'<p>{_safe(item.get("reason_code"))} · {int(item.get("signal_count", 0))} signal(s)</p>'
+        f'<small>{_safe(item.get("reason"))}</small></article>'
+        for item in scouts
+    ) or '<p class="empty">No per-scout trace was recorded.</p>'
+    raw_baseline = run_dashboard.get("baseline")
+    baseline = [item for item in raw_baseline if isinstance(item, Mapping)] if isinstance(raw_baseline, list) else []
+    baseline_rows = "".join(
+        f'<tr><td>{_safe(item.get("run_id"))}</td><td><span class="status {_status(item.get("outcome")).casefold()}">{_safe(item.get("outcome"))}</span></td><td>{_safe(item.get("stopped_at"), "Completed")}</td><td>{int(item.get("passed_stages", 0))}</td></tr>'
+        for item in baseline
+    ) or '<tr><td colspan="4">No prior local runs available yet.</td></tr>'
+    versions = run_dashboard.get("evaluator_versions")
+    version_rows = ""
+    if isinstance(versions, Mapping):
+        version_rows += f'<tr><td>LinkedIn OS</td><td>{_safe(versions.get("linkedin_os"))}</td></tr>'
+        models = versions.get("models")
+        if isinstance(models, Mapping):
+            for name, config in models.items():
+                if isinstance(config, Mapping):
+                    version_rows += f'<tr><td>{_safe(name)}</td><td>{_safe(config.get("model"))} · {_safe(config.get("reasoning"))}</td></tr>'
+        rubrics = versions.get("rubrics")
+        if isinstance(rubrics, Mapping):
+            for name, digest in rubrics.items():
+                version_rows += f'<tr><td>{_safe(name)}</td><td>{_safe(digest)}</td></tr>'
+    version_rows = version_rows or '<tr><td colspan="2">Evaluator versions were not recorded.</td></tr>'
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LinkedIn OS run {_safe(run_id)}</title><style>
-:root{{--bg:#07101d;--panel:#0e1a2b;--line:#253650;--text:#eef5ff;--muted:#94a6bd;--blue:#62a8ff;--green:#4ade80;--red:#fb7185;--amber:#fbbf24}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 90% 0,rgba(45,112,207,.18),transparent 35rem),var(--bg);color:var(--text);font:16px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}main{{width:min(1380px,calc(100% - 40px));margin:auto;padding:36px 0 60px}}.eyebrow{{color:var(--blue);font:700 12px/1.2 ui-monospace,monospace;letter-spacing:.12em}}h1{{margin:8px 0 6px;font-size:clamp(32px,5vw,62px);line-height:1.03;letter-spacing:-.045em}}.run{{color:var(--muted);font-family:ui-monospace,monospace;overflow-wrap:anywhere}}.summary{{display:grid;grid-template-columns:1fr 2fr .7fr .7fr;gap:14px;margin:28px 0 20px}}.box,.panel,.rule{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(145deg,#111f32,#0a1422)}}.box{{min-height:150px;padding:21px}}.label{{display:block;margin-bottom:18px;color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}}.box strong{{display:block;font-size:20px}}.box p{{margin:8px 0 0;color:var(--muted);font-size:14px}}.metric strong{{font-size:42px;line-height:1}}.metric.pass-count strong{{color:var(--green)}}.metric.gap-count strong{{color:var(--amber)}}.verdict{{display:inline-block!important;width:max-content;padding:7px 10px;border-radius:7px;font:800 14px/1 ui-monospace,monospace;letter-spacing:.06em}}.verdict.pass{{color:#092313;background:var(--green)}}.verdict.fail{{color:#2a070e;background:var(--red)}}.verdict.incomplete{{color:#2a1b02;background:var(--amber)}}.grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}}.panel{{overflow:hidden}}.heading{{padding:21px;border-bottom:1px solid var(--line)}}h2{{margin:4px 0 0;font-size:21px}}.check{{display:grid;grid-template-columns:112px 1fr;gap:15px;padding:17px 21px;border-bottom:1px solid rgba(37,54,80,.75)}}.check:last-child{{border-bottom:0}}.check strong{{display:block}}.check p{{margin:4px 0;color:var(--muted);font-size:14px}}.check small{{color:#6f829b;font:700 11px/1.2 ui-monospace,monospace;text-transform:uppercase}}.status{{width:max-content;height:max-content;padding:5px 7px;border:1px solid currentColor;border-radius:6px;font:800 11px/1 ui-monospace,monospace}}.status.pass{{color:var(--green)}}.status.fail,.status.blocked{{color:var(--red)}}.status.not-evaluated{{color:var(--amber)}}.status.running{{color:var(--blue)}}.rule{{display:flex;gap:18px;margin-top:20px;padding:17px 21px}}.rule p{{margin:0;color:var(--muted);font-size:14px}}.empty{{padding:24px;color:var(--muted)}}@media(max-width:900px){{.summary,.grid{{grid-template-columns:1fr 1fr}}}}@media(max-width:650px){{main{{width:calc(100% - 24px);padding-top:22px}}.summary,.grid{{grid-template-columns:1fr}}.check{{grid-template-columns:1fr}}.rule{{flex-direction:column;gap:6px}}}}
+:root{{--bg:#07101d;--panel:#0e1a2b;--line:#253650;--text:#eef5ff;--muted:#94a6bd;--blue:#62a8ff;--green:#4ade80;--red:#fb7185;--amber:#fbbf24}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 90% 0,rgba(45,112,207,.18),transparent 35rem),var(--bg);color:var(--text);font:16px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}main{{width:min(1380px,calc(100% - 40px));margin:auto;padding:36px 0 60px}}.eyebrow{{color:var(--blue);font:700 12px/1.2 ui-monospace,monospace;letter-spacing:.12em}}h1{{margin:8px 0 6px;font-size:clamp(32px,5vw,62px);line-height:1.03;letter-spacing:-.045em}}.run{{color:var(--muted);font-family:ui-monospace,monospace;overflow-wrap:anywhere}}.summary{{display:grid;grid-template-columns:1fr 2fr .8fr .8fr .8fr;gap:14px;margin:28px 0 20px}}.box,.panel,.rule{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(145deg,#111f32,#0a1422)}}.box{{min-height:150px;padding:21px}}.label{{display:block;margin-bottom:18px;color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}}.box strong{{display:block;font-size:20px}}.box p{{margin:8px 0 0;color:var(--muted);font-size:14px}}.metric strong{{font-size:38px;line-height:1}}.metric.pass-count strong{{color:var(--green)}}.metric.gap-count strong{{color:var(--amber)}}.metric.scout-count strong{{color:var(--blue)}}.verdict{{display:inline-block!important;width:max-content;padding:7px 10px;border-radius:7px;font:800 14px/1 ui-monospace,monospace;letter-spacing:.06em}}.verdict.pass{{color:#092313;background:var(--green)}}.verdict.fail{{color:#2a070e;background:var(--red)}}.verdict.incomplete{{color:#2a1b02;background:var(--amber)}}.grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}}.panel{{overflow:hidden;margin-top:20px}}.heading{{padding:21px;border-bottom:1px solid var(--line)}}h2{{margin:4px 0 0;font-size:21px}}.check{{display:grid;grid-template-columns:112px 1fr;gap:15px;padding:17px 21px;border-bottom:1px solid rgba(37,54,80,.75)}}.check:last-child{{border-bottom:0}}.check strong{{display:block}}.check p{{margin:4px 0;color:var(--muted);font-size:14px}}.check small,.scout small{{color:#6f829b;font:700 11px/1.4 ui-monospace,monospace}}.status{{width:max-content;height:max-content;padding:5px 7px;border:1px solid currentColor;border-radius:6px;font:800 11px/1 ui-monospace,monospace}}.status.pass,.status.observed{{color:var(--green)}}.status.fail,.status.blocked,.status.unavailable{{color:var(--red)}}.status.not-evaluated,.status.no-signal{{color:var(--amber)}}.status.running{{color:var(--blue)}}.scouts{{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line)}}.scout{{display:flex;flex-direction:column;gap:8px;padding:18px;background:var(--panel)}}.scout p{{margin:0;color:var(--muted);font-size:13px}}table{{width:100%;border-collapse:collapse}}th,td{{padding:13px 18px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}}th{{color:var(--muted);font-size:11px;text-transform:uppercase}}td:first-child{{overflow-wrap:anywhere}}.rule{{display:flex;gap:18px;margin-top:20px;padding:17px 21px}}.rule p{{margin:0;color:var(--muted);font-size:14px}}.empty{{padding:24px;color:var(--muted)}}@media(max-width:1000px){{.summary{{grid-template-columns:1fr 1fr}}.scouts{{grid-template-columns:repeat(2,1fr)}}}}@media(max-width:650px){{main{{width:calc(100% - 24px);padding-top:22px}}.summary,.grid,.scouts{{grid-template-columns:1fr}}.check{{grid-template-columns:1fr}}.rule{{flex-direction:column;gap:6px}}}}
 </style></head><body><main>
 <p class="eyebrow">LINKEDIN OS · LOCAL EVAL REVIEW</p><h1>See exactly where this post stopped.</h1><p class="run">Run {_safe(run_id)}</p>
-<section class="summary"><article class="box"><span class="label">Run outcome</span><strong class="verdict {outcome_css}">{_safe(outcome)}</strong><p>Human approval remains separate.</p></article><article class="box"><span class="label">First blocker</span><strong>{_safe(first_label)}</strong><p>{_safe(first_reason)}</p></article><article class="box metric pass-count"><span class="label">Passed</span><strong>{len(passed)}</strong><p>recorded checks</p></article><article class="box metric gap-count"><span class="label">Not evaluated</span><strong>{len(gaps)}</strong><p>visible gaps</p></article></section>
-<div class="grid"><section class="panel"><div class="heading"><p class="eyebrow">OPERATING FLOW</p><h2>Workflow stages</h2></div>{run_cards}</section><section class="panel"><div class="heading"><p class="eyebrow">QUALITY CONTRACTS</p><h2>Post evals</h2></div>{eval_cards}</section></div>
+<section class="summary"><article class="box"><span class="label">Run outcome</span><strong class="verdict {outcome_css}">{_safe(outcome)}</strong><p>Human approval remains separate.</p></article><article class="box"><span class="label">First blocker</span><strong>{_safe(first_label)}</strong><p>{_safe(first_reason)}</p></article><article class="box metric scout-count"><span class="label">Scout evidence</span><strong>{observed_scouts}/{len(scouts) or 7}</strong><p>{signal_count} usable signal(s)</p></article><article class="box metric pass-count"><span class="label">Passed</span><strong>{len(passed)}</strong><p>recorded checks</p></article><article class="box metric gap-count"><span class="label">Not evaluated</span><strong>{len(gaps)}</strong><p>visible gaps</p></article></section>
+<section class="panel"><div class="heading"><p class="eyebrow">SURFACE SCOUTS</p><h2>What ran, what returned, and why</h2></div><div class="scouts">{scout_cards}</div></section>
+<div class="grid"><section class="panel"><div class="heading"><p class="eyebrow">OPERATING FLOW</p><h2>Workflow stages</h2></div>{run_cards}</section><section class="panel"><div class="heading"><p class="eyebrow">PIPELINE CONTRACTS</p><h2>Input and execution evals</h2></div>{pipeline_cards}</section></div>
+<section class="panel"><div class="heading"><p class="eyebrow">POST QUALITY</p><h2>Would the post itself clear the bar?</h2></div>{post_cards}</section>
+<div class="grid"><section class="panel"><div class="heading"><p class="eyebrow">BASELINE</p><h2>Last five local runs</h2></div><table><thead><tr><th>Run</th><th>Outcome</th><th>Stopped at</th><th>Passed stages</th></tr></thead><tbody>{baseline_rows}</tbody></table></section><section class="panel"><div class="heading"><p class="eyebrow">REPRODUCIBILITY</p><h2>Evaluator, model and rubric versions</h2></div><table><tbody>{version_rows}</tbody></table></section></div>
 <section class="rule"><strong>Reading rule</strong><p>PASS means the check ran and cleared its bar. FAIL or BLOCKED is a stopping condition. NOT_EVALUATED is an observability gap, never a pass.</p></section>
 </main></body></html>"""
 
@@ -137,4 +182,3 @@ def open_dashboard(path: Path) -> bool:
         stderr=subprocess.DEVNULL,
     )
     return completed.returncode == 0
-
