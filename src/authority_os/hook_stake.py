@@ -30,20 +30,65 @@ The fit is in-sample on 30 items and needs out-of-sample confirmation.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 HOOK_LINES = 2
 
-# Words he does not use. Line 1 is usually his because he writes it deliberately;
-# line 2 is where explanatory register creeps in, which is why the hook is scored
-# across both lines and never on the opener alone.
-OFF_REGISTER = re.compile(
-    r"\b(shy of|delve|myriad|testament|underscore[sd]?|crucible|paradigm|"
-    r"nuanced|albeit|hitherto|veritable|tapestry|realm|multifaceted|"
-    r"meticulous|intricate|paramount)\b",
-    re.IGNORECASE,
-)
+# Register is measured, not listed. A blocklist of literary words runs to
+# millions and still misses the next one; his own corpus plus a frozen
+# common-English list generalises with nothing to maintain. The list is frozen
+# at build time so the runtime keeps this repository's zero-dependency boundary.
+# See data/voice/voice-profile.json.
+#
+# It catches rare literary vocabulary. It does not catch idioms built from
+# common words - "shy of" rather than "short of" - which is why the result is a
+# flag handed to the judge rather than a verdict on its own.
+_PROFILE_PATH = Path(__file__).resolve().parents[2] / "data" / "voice" / "voice-profile.json"
+_profile: dict | None = None
+
+
+def _load() -> dict:
+    global _profile
+    if _profile is None:
+        try:
+            _profile = json.loads(_PROFILE_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _profile = {}
+    return _profile
+
+
+def _known_words() -> set[str]:
+    profile = _load()
+    return set(profile.get("corpus_words", ())) | set(profile.get("common_english_words", ()))
+
+
+def off_register_words(text: str) -> list[str]:
+    """Words that are neither common English nor his. A prior, not a verdict.
+
+    Capitalised tokens are skipped: a proper noun is not a register choice, and
+    a rare-word check that flags PocketOS or Jason Lemkin is measuring the wrong
+    thing. Sentence-initial words are skipped with them, which costs little
+    because openers are ordinary words.
+    """
+    known = _known_words()
+    if not known:
+        return []
+    found: list[str] = []
+    for token in re.findall(r"\b[A-Za-z][A-Za-z']{2,}\b", text):
+        if token[0].isupper() or any(c.isupper() for c in token[1:]):
+            continue
+        word = token.lower()
+        for suffix in ("'s", "'"):
+            if word.endswith(suffix):
+                word = word[: -len(suffix)]
+                break
+        if word and word not in known and word not in found:
+            found.append(word)
+    return found
+
 
 # A checkable third party. Not an exhaustive list - a maintained one, because a
 # regex that tries to detect "any proper noun" also matches the author's own
@@ -102,12 +147,12 @@ def evaluate(text: str) -> StakeVerdict:
     if not hook:
         return StakeVerdict("FAIL", "empty-hook", "unclear")
 
-    off = OFF_REGISTER.search(hook)
+    off = off_register_words(hook)
     if off:
         return StakeVerdict(
             "FAIL", "off-register-word", "unclear",
-            f"'{off.group(0)}' is not a word he uses. Industry terms are fine; "
-            f"literary ones are not.",
+            f"{', '.join(off[:3])} — neither common English nor in his corpus. "
+            f"If one is a domain term, publishing the post adds it and the flag stops.",
         )
 
     named = NAMED_EXTERNAL.search(hook)
