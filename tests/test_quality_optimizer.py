@@ -163,6 +163,54 @@ class AcceptanceTests(unittest.TestCase):
 
 
 class RepairStateTests(unittest.TestCase):
+    def test_run_attempt_records_every_candidate_critic_scorecard(self) -> None:
+        first = candidate(
+            24,
+            {
+                "hook_strength": 5,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 5,
+                "voice_fidelity": 4,
+            },
+            candidate_id="candidate-1",
+        )
+        second = candidate(
+            20,
+            {
+                "hook_strength": 4,
+                "middle_escalation": 4,
+                "earned_closer": 4,
+                "specificity_and_source_quality": 4,
+                "voice_fidelity": 4,
+            },
+            candidate_id="candidate-2",
+            gates_pass=False,
+        )
+        with (
+            patch.object(
+                quality_optimizer,
+                "_ORIGINAL_RUN_ATTEMPT",
+                return_value=attempt(first, second),
+            ),
+            patch.object(quality_optimizer.v1_completion, "record_decision") as record,
+        ):
+            result = quality_optimizer._run_attempt(  # type: ignore[attr-defined]
+                SimpleNamespace(), {"rejected_cycle": 1}
+            )
+
+        self.assertEqual(result.candidates, (first, second))
+        self.assertEqual(record.call_count, 2)
+        first_decision = record.call_args_list[0].args[0]
+        second_decision = record.call_args_list[1].args[0]
+        self.assertEqual(first_decision["contract"], "critic_total")
+        self.assertEqual(first_decision["cycle"], 2)
+        self.assertEqual(first_decision["score"], 24)
+        self.assertEqual(first_decision["axes"]["voice_fidelity"], 4)
+        self.assertEqual(second_decision["status"], "FAIL")
+        self.assertEqual(second_decision["gates"], {"honesty": "FAIL"})
+        self.assertIn("unsupported-factual-marker", second_decision["failure_codes"])
+
     def test_best_so_far_survives_a_later_score_regression(self) -> None:
         state = quality_optimizer.RepairState()
         first = candidate(

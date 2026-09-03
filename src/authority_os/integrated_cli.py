@@ -29,12 +29,10 @@ def _record_post_quality(candidate: object) -> None:
     if not isinstance(axes, Mapping) or not text:
         return
     artifact = v1_completion._sha256_text(text)  # type: ignore[attr-defined]
-    total = int(getattr(candidate, "effective_total", 0))
     hook = int(axes.get("hook_strength", 0))
     voice = int(axes.get("voice_fidelity", 0))
     findings = anti_slop.audit(text)
     decisions = (
-        ("critic_total", total >= 22, f"critic-total-{total}-of-25", {"score": total, "effective_total": total, "threshold": 22}),
         ("hook_strength", hook >= 5, f"hook-strength-{hook}-of-5", {"score": hook, "threshold": 5}),
         ("voice_fidelity", voice >= 4, f"voice-fidelity-{voice}-of-5", {"score": voice, "threshold": 4}),
         ("anti_slop", not findings, "no-anti-slop-findings" if not findings else "anti-slop-findings-present", {"finding_count": len(findings), "threshold": 0}),
@@ -137,6 +135,23 @@ def _qualifying_candidates(*args: Any, **kwargs: Any):
             _active_acceptance_diagnostics[candidate.candidate_id] = reasons
         if not reasons and resonance_passed:
             accepted.append(candidate)
+    accepted_ids = {candidate.candidate_id for candidate in accepted}
+    for candidate in all_candidates:
+        candidate_id = str(getattr(candidate, "candidate_id", ""))
+        text = str(getattr(candidate, "text", ""))
+        reasons = list(_active_acceptance_diagnostics.get(candidate_id, []))
+        v1_completion.record_decision(
+            {
+                "contract": "candidate_acceptance",
+                "mode": "enforce",
+                "status": "PASS" if candidate_id in accepted_ids else "FAIL",
+                "reason": "candidate-cleared-every-acceptance-check" if candidate_id in accepted_ids else " | ".join(reasons),
+                "failure_codes": reasons,
+            },
+            stage="candidate-acceptance",
+            subject_id=candidate_id,
+            artifact_sha256=v1_completion._sha256_text(text) if text else "",  # type: ignore[attr-defined]
+        )
     return tuple(accepted)
 
 

@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Iterator, Mapping, Sequence
 
 from . import package as approval_package
-from . import quality_cli, social_media_gate_policy, workflow
+from . import quality_cli, social_media_gate_policy, v1_completion, workflow
 
 TARGET_QUALITY_SCORE = 24
 ACCEPTABLE_QUALITY_FLOOR = 22
@@ -25,6 +25,7 @@ MIN_HOOK_SCORE = 5
 _INSTALLED = False
 _ORIGINAL_COMMAND_DRAFT = quality_cli.command_draft
 _ORIGINAL_PACKAGE_DATA = approval_package._package_data  # type: ignore[attr-defined]
+_ORIGINAL_RUN_ATTEMPT = quality_cli._run_attempt  # type: ignore[attr-defined]
 
 
 def _failed_gate_count(candidate: quality_cli.CandidateResult) -> int:
@@ -82,6 +83,42 @@ class RepairState:
 
 
 _ACTIVE_STATE: RepairState | None = None
+
+
+def _run_attempt(args: object, feedback: Mapping[str, object] | None):
+    """Persist every 1-5 Critic scorecard before acceptance can reject it."""
+
+    attempt = _ORIGINAL_RUN_ATTEMPT(args, feedback)
+    cycle = (
+        int(feedback.get("rejected_cycle", 0)) + 1
+        if isinstance(feedback, Mapping)
+        else 1
+    )
+    for candidate in attempt.candidates:
+        failed_gates = {
+            name: status
+            for name, status in candidate.gates.items()
+            if status == "FAIL"
+        }
+        v1_completion.record_decision(
+            {
+                "contract": "critic_total",
+                "mode": "enforce",
+                "status": "PASS" if candidate.effective_total >= ACCEPTABLE_QUALITY_FLOOR else "FAIL",
+                "reason": f"critic-score-{candidate.effective_total}-of-25",
+                "score": candidate.effective_total,
+                "effective_total": candidate.effective_total,
+                "threshold": ACCEPTABLE_QUALITY_FLOOR,
+                "axes": dict(candidate.axes),
+                "cycle": cycle,
+                "failure_codes": list(candidate.gate_reasons),
+                "gates": failed_gates,
+            },
+            stage=f"quality-cycle-{cycle}",
+            subject_id=candidate.candidate_id,
+            artifact_sha256=v1_completion._sha256_text(candidate.text),  # type: ignore[attr-defined]
+        )
+    return attempt
 
 
 def _state() -> RepairState:
@@ -415,6 +452,7 @@ def install() -> None:
     if _INSTALLED:
         return
     quality_cli.MIN_QUALITY_SCORE = ACCEPTABLE_QUALITY_FLOOR
+    quality_cli._run_attempt = _run_attempt  # type: ignore[attr-defined,assignment]
     quality_cli._qualifying_candidates = _qualifying_candidates  # type: ignore[assignment]
     quality_cli._quality_feedback = _quality_feedback  # type: ignore[assignment]
     quality_cli._writer_retry_prompt = _writer_retry_prompt  # type: ignore[assignment]

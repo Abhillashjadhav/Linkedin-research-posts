@@ -149,7 +149,7 @@ class IntegratedGateTests(unittest.TestCase):
         contracts = [call.args[0]["contract"] for call in record.call_args_list]
         self.assertEqual(
             contracts,
-            ["critic_total", "hook_strength", "voice_fidelity", "anti_slop"],
+            ["hook_strength", "voice_fidelity", "anti_slop"],
         )
 
 

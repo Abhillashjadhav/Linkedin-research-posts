@@ -33,6 +33,9 @@ def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
         check for check in eval_dashboard["checks"]  # type: ignore[index]
         if check["status"] != "NOT_EVALUATED"
     ]
+    post_evaluated = [
+        check for check in evaluated if check.get("category") == "post_quality"
+    ]
     failed = [
         check for check in evaluated
         if check["status"] in {"FAIL", "BLOCKED"}
@@ -40,24 +43,39 @@ def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
     daily_spine_cli.mark_run_stage(
         run_dashboard,
         "drafting",
-        "PASS" if result == 0 or evaluated else "FAIL",
-        "draft candidates reached evaluation" if result == 0 or evaluated else "drafting stopped before an eval was recorded",
+        "PASS" if result == 0 or post_evaluated else "FAIL",
+        "draft candidates reached evaluation" if result == 0 or post_evaluated else "drafting stopped before a valid Critic 1-5 scorecard was recorded",
         return_code=result,
     )
     if failed:
+        first_failure = failed[0]
         daily_spine_cli.mark_run_stage(
             run_dashboard,
             "final_evals",
             "FAIL",
-            f"{len(failed)} evaluated contract(s) failed or blocked",
+            f"{first_failure['label']}: {first_failure['reason']}",
             failed_contracts=[str(check["contract"]) for check in failed],
+            failure_reasons=[
+                {
+                    "contract": str(check["contract"]),
+                    "reason": str(check["reason"]),
+                }
+                for check in failed
+            ],
+        )
+    elif result != 0 and post_evaluated:
+        daily_spine_cli.mark_run_stage(
+            run_dashboard,
+            "final_evals",
+            "FAIL",
+            "drafting failed although every recorded eval passed; an unobserved gate remains",
         )
     elif result != 0:
         daily_spine_cli.mark_run_stage(
             run_dashboard,
             "final_evals",
             "FAIL",
-            "drafting failed although every recorded eval passed; an unobserved gate remains",
+            "draft command exited before a valid Critic 1-5 scorecard was recorded",
         )
     else:
         daily_spine_cli.mark_run_stage(
