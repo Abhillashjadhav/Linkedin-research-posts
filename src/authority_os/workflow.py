@@ -1208,9 +1208,9 @@ def load_voice_guidance(
     """Load the voice anchors used by the Writer.
 
     These were reconstructed placeholders until the published record was
-    recovered. They are now the author's own posts ordered by measured lift,
-    which is why the provenance token changed: the Writer should know it is
-    reading real published work, not an approximation of it. The anchors remain
+    recovered. They are now the author's own posts with all outcome labels,
+    rankings and conversion figures removed. The provenance token identifies
+    real published work without exposing an answer key. The anchors remain
     non-citable - the atomic-value novelty ledger blocks a topic already
     published, and anti-slop catches lifted phrasing.
     """

@@ -1,25 +1,14 @@
-# Voice anchors — real posts, ranked by measured conversion
+# Voice anchors — real published text
 
-Replaces the reconstructed placeholder. Every post below is Abhillash's own
-published text, ordered by lift: engagements divided by what a post of that
-reach normally earns him. Lift is used rather than raw engagement because raw
-engagement mostly measures distribution, which the writing does not control.
+Every sample below is Abhillash's own published text. This file contains
+language and cadence examples only; it is not an answer key.
 
-Source: LinkedIn aggregate analytics 2025-09-03 to 2026-09-02, 50 ranked posts,
-21 with recovered bodies. URLs are omitted deliberately; this file is a voice
-reference, not a link index.
-
-## What the high-lift posts share
-
-- Length: median 276 words against 177 for the low-lift set. Longer posts convert better for him,
-  which is the opposite of the usual advice.
-- A named, checkable subject in almost every one: a company, a person, an incident, a figure.
-- The opening states a reader problem or a concrete scene, never the technology.
-- Prescription over observation: the reader is told what to do differently.
+URLs are omitted deliberately; this file is a voice reference, not a link
+index. The sample numbering is only an identifier.
 
 ---
 
-## Anchor 1 — lift 4.13, 316 words, 2026-05-17
+## Published voice sample 1
 
 ```text
 Most decision-makers use AI to write faster.
@@ -55,7 +44,7 @@ What's the one AI decision your team made recently where a structured stress-tes
 hashtag#AIProductManagement hashtag#GenAI hashtag#LLM
 ```
 
-## Anchor 2 — lift 3.95, 254 words, 2026-08-31
+## Published voice sample 2
 
 ```text
 Your first AI eval should be a spreadsheet, not a platform.
@@ -98,7 +87,7 @@ Production is Stage 4. First prove you know what “better” means.
 What failure did your successful demo hide?
 ```
 
-## Anchor 3 — lift 3.83, 170 words, 2026-08-30
+## Published voice sample 3
 
 ```text
 Nine seconds. That is how long it took an AI coding agent to delete PocketOS’s production database and its volume-level backups.
@@ -125,7 +114,7 @@ That diagnosis became today’s article about the operating layer between what a
 That layer is the harness.
 ```
 
-## Anchor 4 — lift 3.70, 171 words, 2026-03-28
+## Published voice sample 4
 
 ```text
 In tech, we keep saying: “Any problem can be solved with GenAI.”
@@ -144,7 +133,7 @@ hashtag#IndiaTech hashtag#Bharat hashtag#IndicKnowledgeSystems hashtag#VedicWisd
 Disclaimer: For educational/learning purposes only. Jyotish is interpretive and predictive in nature; results aren’t guaranteed. Not medical/legal/financial advice.
 ```
 
-## Anchor 5 — lift 3.07, 300 words, 2026-06-28
+## Published voice sample 5
 
 ```text
 Jason Lemkin — The founder of SaaStr — could not stop Replit's AI from wiping his production database during a code freeze.
@@ -169,7 +158,7 @@ Which of the four — write schema, retrieval scorer, priority schema, checkpoin
 hashtag#GenAI hashtag#AgenticAI hashtag#ProductManagement hashtag#LLM hashtag#AIEngineering
 ```
 
-## Anchor 6 — lift 3.01, 359 words, 2026-06-19
+## Published voice sample 6
 
 ```text
 A couple of months ago i was talking to a friend who works at a frontier AI lab, making just shy of a million dollars a year (yes — that number sat with me for a while too).
@@ -207,7 +196,7 @@ Which one are you starting with — and who's one person you've learned the most
 hashtag#GenAI hashtag#Productmanagement
 ```
 
-## Anchor 7 — lift 2.73, 298 words, 2026-08-24
+## Published voice sample 7
 
 ```text
 I think AI PMs should stop learning sooner.Not stop learning AI.
@@ -246,7 +235,7 @@ If that happened, the prototype did its job.
 Production is Stage 4. I’ll get there.
 ```
 
-## Anchor 8 — lift 2.20, 229 words, 2026-07-15
+## Published voice sample 8
 
 ```text
 Most AI tools for Product Managers optimize for speed. I built one to improve judgment.
@@ -283,11 +272,7 @@ hashtag#AIProductManagement hashtag#ClaudeCode hashtag#AgenticAI
 
 ---
 
-## Counter-anchors — the same author, lowest measured conversion
-
-Kept so the contrast is visible. Do not imitate these.
-
-### Counter-anchor 1 — lift 0.12, 177 words, 2026-05-18
+## Published voice sample 9
 
 ```text
 There's a skill in GenAI product management right now that most PMs have heard of, almost nobody has built, and the few who can do it well are getting offers 3x what a senior PM with the same years of experience would have made just two years ago.
@@ -301,7 +286,7 @@ So here's what I'm doing instead.
 For the next 7 days, I'll post one short piece every morning. Plain E
 ```
 
-### Counter-anchor 2 — lift 0.13, 159 words, 2026-05-02
+## Published voice sample 10
 
 ```text
 Claude told a developer it needed to rest.
@@ -315,7 +300,7 @@ No prompt trickery. No jailbreak. The model simply filed for PTO.
 The mechanism is unromantic. Anthropic trained Claude on a lot of human writing, and a non-trivial fraction of human writing is 
 ```
 
-### Counter-anchor 3 — lift 0.15, 48 words, 2026-03-28
+## Published voice sample 11
 
 ```text
 Been going deep on RAG architectures lately. Wrote up something I wish existed when we first shipped our AI feature — covers why standard RAG quietly fails in production and a better pattern worth knowing.
@@ -326,7 +311,7 @@ like
 1
 ```
 
-### Counter-anchor 4 — lift 0.22, 177 words, 2026-04-27
+## Published voice sample 12
 
 ```text
 Asked the model to write me exactly 200 words.
@@ -340,7 +325,7 @@ Asked it to double-check the word count and adjust. It "verified" the count was 
 This is not laziness. The model literally cannot count what it is producing while it is producing it. It generates tokens one at a time, predicting each next token from the previous ones. There is no internal counter running. By the time you ask it to verify, it just generates a sentence that looks like verification — confident, plausible, totally untethered from the ac
 ```
 
-### Counter-anchor 5 — lift 0.23, 203 words, 2026-05-08
+## Published voice sample 13
 
 ```text
 Asked ChatGPT to write me an email. It wrote a good email.
