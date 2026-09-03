@@ -65,10 +65,41 @@ class EvalDashboardHtmlTests(unittest.TestCase):
             {
                 "checks": [
                     {"contract": "hook_strength", "category": "post_quality", "label": "hook strength", "status": "PASS", "reason": "hook-strength-5-of-5"}
-                ]
+                ],
+                "critic_scorecards": [
+                    {
+                        "cycle": 2,
+                        "candidate_id": "candidate-3",
+                        "status": "PASS",
+                        "total": 24,
+                        "threshold": 22,
+                        "axes": {
+                            "hook_strength": 5,
+                            "middle_escalation": 5,
+                            "earned_closer": 5,
+                            "specificity_and_source_quality": 5,
+                            "voice_fidelity": 4,
+                        },
+                        "failure_codes": ["package-recommendation-mismatch"],
+                    }
+                ],
             },
         )
-        for expected in ("Reddit", "YouTube", "timeout", "5 usable signal", "linkedin-prior", "gpt-test", "abc123", "Would the post itself clear the bar?", "hook-strength-5-of-5"):
+        for expected in (
+            "Reddit",
+            "YouTube",
+            "timeout",
+            "5 usable signal",
+            "linkedin-prior",
+            "gpt-test",
+            "abc123",
+            "Would the post itself clear the bar?",
+            "hook-strength-5-of-5",
+            "Every candidate, every cycle, every 1–5 axis",
+            "candidate-3",
+            "24/25",
+            "package-recommendation-mismatch",
+        ):
             self.assertIn(expected, rendered)
 
 
