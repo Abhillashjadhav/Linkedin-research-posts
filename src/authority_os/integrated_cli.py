@@ -14,29 +14,71 @@ from . import anti_slop, quality_cli, resonance, topic_value, workflow
 _original_qualifying = quality_cli._qualifying_candidates
 _original_feedback = quality_cli._quality_feedback
 _original_command_draft = quality_cli.command_draft
+_original_render_rejection = quality_cli._render_rejection
 
 _active_single_selector: dict[str, object] | None = None
 _active_single_topic_value: dict[str, object] | None = None
 _active_resonance_diagnostics: dict[str, dict[str, object]] = {}
+_active_acceptance_diagnostics: dict[str, list[str]] = {}
 
 
 def _qualifying_candidates(*args: Any, **kwargs: Any):
-    global _active_resonance_diagnostics
+    global _active_resonance_diagnostics, _active_acceptance_diagnostics
+    attempt = args[0] if args else kwargs.get("attempt")
     candidates = _original_qualifying(*args, **kwargs)
-    candidates = tuple(candidate for candidate in candidates if anti_slop.passes(candidate.text))
-    if _active_single_selector is None:
-        return candidates
+    accepted = []
+    _active_acceptance_diagnostics = {}
+    all_candidates = getattr(attempt, "candidates", ())
+    base_ids = {candidate.candidate_id for candidate in candidates}
+    for candidate in all_candidates:
+        if candidate.candidate_id not in base_ids:
+            _active_acceptance_diagnostics[candidate.candidate_id] = [
+                "pre-acceptance score, axis-floor, required-gate, or package-alignment check failed"
+            ]
     accepted = []
     for candidate in candidates:
-        assessment = resonance.invoke_post_critic(candidate.text, _active_single_selector)
-        _active_resonance_diagnostics[candidate.candidate_id] = assessment
-        if assessment.get("status") == "PASS":
+        reasons = [
+            f"anti-slop:{finding.code}:{finding.excerpt}"
+            for finding in anti_slop.audit(candidate.text)
+        ]
+        resonance_passed = True
+        if _active_single_selector is not None:
+            assessment = resonance.invoke_post_critic(candidate.text, _active_single_selector)
+            _active_resonance_diagnostics[candidate.candidate_id] = assessment
+            resonance_passed = assessment.get("status") == "PASS"
+            if not resonance_passed:
+                reasons.append(
+                    "resonance:"
+                    + str(assessment.get("diagnosis", "post resonance gate failed"))
+                )
+        if reasons:
+            _active_acceptance_diagnostics[candidate.candidate_id] = reasons
+        if not reasons and resonance_passed:
             accepted.append(candidate)
     return tuple(accepted)
 
 
+def _render_rejection(
+    attempt: quality_cli.AttemptResult, cycle: int, limit: int
+) -> None:
+    _original_render_rejection(attempt, cycle, limit)
+    best = max(
+        attempt.candidates,
+        key=lambda candidate: (
+            candidate.effective_total,
+            int(candidate.axes.get("hook_strength", 0)),
+            candidate.candidate_id,
+        ),
+    )
+    reasons = _active_acceptance_diagnostics.get(best.candidate_id, [])
+    if reasons:
+        print(
+            f"Rejection attribution: {best.candidate_id}: " + " | ".join(reasons)
+        )
+
+
 def _quality_feedback(attempt: quality_cli.AttemptResult, cycle: int) -> dict[str, object]:
-    global _active_resonance_diagnostics
+    global _active_resonance_diagnostics, _active_acceptance_diagnostics
     feedback = dict(_original_feedback(attempt, cycle))
     resonance_diagnostics = dict(_active_resonance_diagnostics)
     rejected = feedback.get("rejected_candidates")
@@ -57,6 +99,9 @@ def _quality_feedback(attempt: quality_cli.AttemptResult, cycle: int) -> dict[st
             )
             if candidate_id in resonance_diagnostics:
                 copied["resonance_diagnostic"] = resonance_diagnostics[candidate_id]
+            copied["acceptance_failures"] = list(
+                _active_acceptance_diagnostics.get(candidate_id, [])
+            )
             enriched.append(copied)
         feedback["rejected_candidates"] = enriched
     feedback["anti_slop_required"] = True
@@ -74,6 +119,7 @@ def _quality_feedback(attempt: quality_cli.AttemptResult, cycle: int) -> dict[st
     ).strip()
     if _active_single_selector is not None:
         _active_resonance_diagnostics = {}
+    _active_acceptance_diagnostics = {}
     return feedback
 
 
@@ -285,6 +331,7 @@ def _command_draft(args: object) -> int:
 
 quality_cli._qualifying_candidates = _qualifying_candidates  # type: ignore[assignment]
 quality_cli._quality_feedback = _quality_feedback  # type: ignore[assignment]
+quality_cli._render_rejection = _render_rejection  # type: ignore[assignment]
 quality_cli.command_draft = _command_draft  # type: ignore[assignment]
 
 
