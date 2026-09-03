@@ -66,6 +66,7 @@ class RepairState:
     """Keep the strongest grounded candidate across the bounded four-cycle search."""
 
     best: quality_cli.CandidateResult | None = None
+    best_attempt: quality_cli.AttemptResult | None = None
     cycle_best_scores: list[int] = field(default_factory=list)
 
     def observe(self, attempt: quality_cli.AttemptResult) -> quality_cli.CandidateResult:
@@ -75,6 +76,7 @@ class RepairState:
         self.cycle_best_scores.append(current.effective_total)
         if self.best is None or _candidate_rank(current) > _candidate_rank(self.best):
             self.best = current
+            self.best_attempt = attempt
         assert self.best is not None
         return self.best
 
@@ -359,7 +361,34 @@ def _command_draft(args: object) -> int:
     previous = _ACTIVE_STATE
     _ACTIVE_STATE = RepairState()
     try:
-        return _ORIGINAL_COMMAND_DRAFT(args)
+        try:
+            return _ORIGINAL_COMMAND_DRAFT(args)
+        except workflow.WorkflowError as exc:
+            state = _ACTIVE_STATE
+            if (
+                str(exc).startswith("No candidate cleared the locked ")
+                and state is not None
+                and state.best is not None
+                and state.best_attempt is not None
+                and candidate_is_acceptable(state.best)
+            ):
+                best = state.best
+                print(
+                    f"Quality search exhausted; best overall={best.candidate_id} "
+                    f"score={best.effective_total}/25; "
+                    f"hook={best.axes.get('hook_strength', 0)}/5; "
+                    "required_gates=pass."
+                )
+                print("Best overall candidate retained for human review:")
+                print(best.text)
+                for line in state.best_attempt.package_lines:
+                    print(line)
+                print(
+                    "Fallback review status: NEEDS_HUMAN_REVIEW; a downstream acceptance "
+                    "gate failed, so publishing remains disabled."
+                )
+                return 1
+            raise
     finally:
         _ACTIVE_STATE = previous
 

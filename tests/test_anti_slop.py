@@ -49,6 +49,12 @@ class IntegratedGateTests(unittest.TestCase):
             finally:
                 integrated_cli._original_qualifying = original
         self.assertEqual(accepted, (clean,))
+        self.assertTrue(
+            all(
+                reason.startswith("anti-slop:")
+                for reason in integrated_cli._active_acceptance_diagnostics["candidate-1"]
+            )
+        )
 
     def test_retry_feedback_contains_named_slop_findings(self) -> None:
         candidate = quality_cli.CandidateResult(
