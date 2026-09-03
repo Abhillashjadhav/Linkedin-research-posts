@@ -122,6 +122,17 @@ The command reports that voice guidance was loaded before it starts drafting.
 It also prints and stores an eval dashboard. Contracts from stages that were
 not reached are shown as `NOT_EVALUATED` instead of disappearing.
 
+The command prints one `Run ID` before discovery begins. That identity is
+inherited by the draft subprocess and written on every V1 decision, so Topic
+Value, Critic, reproducibility, and Resonance observations can be reconstructed
+as one end-to-end dashboard case without mixing decisions from adjacent runs.
+
+`export-monitoring` emits that run as one redacted `linkedin-run` case with all
+seven checks. Missing downstream checks remain explicit `NOT_EVALUATED` rows;
+they are never silently omitted. The export requires the printed run ID in the
+approved private monitoring context and refuses legacy decision rows that have
+no run identity.
+
 Every run also stores `run-dashboard.json`, which names the first failed stage
 and leaves downstream stages explicitly `NOT_EVALUATED`. Thesis search stores
 `thesis-evaluations.json` with every candidate from every cycle, its axis scores,
