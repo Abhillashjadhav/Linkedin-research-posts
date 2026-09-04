@@ -110,6 +110,67 @@ def cards() -> list[dict[str, object]]:
 
 
 class SpineCardTests(unittest.TestCase):
+    def test_topic_value_dashboard_observer_persists_both_labelled_stages(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            dir=workflow.DEFAULT_PRIVATE_DATA
+        ) as temporary:
+            folder = Path(temporary)
+            dashboard = daily_spine_cli.new_run_dashboard("observer-test")
+            observer = daily_spine_cli.TopicValueDashboardObserver(
+                dashboard,
+                folder,
+            )
+            pre_gate = value_candidates()
+            post_gate = value_candidates()
+            for item in post_gate:
+                item["v1_evals"] = {
+                    "atomic_value_novelty": {
+                        "contract": "atomic_value_novelty",
+                        "mode": "enforce",
+                        "status": "PASS",
+                        "reason": "materially-new-atomic-value",
+                    }
+                }
+
+            observer("pre-gate", pre_gate)
+            observer("post-gate", post_gate)
+
+            pre_path = folder / "topic-value-evaluations-pre-gate.json"
+            post_path = folder / "topic-value-evaluations-post-gate.json"
+            self.assertEqual(
+                json.loads(pre_path.read_text())["observation_stage"], "pre-gate"
+            )
+            self.assertEqual(
+                json.loads(post_path.read_text())["observation_stage"], "post-gate"
+            )
+            self.assertEqual(stat.S_IMODE(pre_path.stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(post_path.stat().st_mode), 0o600)
+            stages = [
+                item["details"]["observation_stage"]
+                for item in dashboard["decisions"]
+            ]
+            self.assertEqual(stages.count("pre-gate"), 3)
+            self.assertEqual(stages.count("post-gate"), 3)
+
+    def test_topic_value_observation_failure_is_non_blocking_and_explicit(self) -> None:
+        dashboard = daily_spine_cli.new_run_dashboard("observer-failure")
+        observer = daily_spine_cli.TopicValueDashboardObserver(
+            dashboard,
+            workflow.DEFAULT_PRIVATE_DATA,
+        )
+        with patch.object(
+            daily_spine_cli,
+            "record_topic_value_decisions",
+            side_effect=RuntimeError("dashboard disk unavailable"),
+        ):
+            topic_value._notify_observer(observer, "pre-gate", value_candidates())
+
+        failure = dashboard["decisions"][-1]
+        self.assertEqual(failure["decision"], "observability_failure")
+        self.assertEqual(failure["status"], "UNAVAILABLE")
+        self.assertIn("dashboard disk unavailable", failure["observed"])
+
     def test_failed_child_reason_reaches_drafting_dashboard_and_private_log(self) -> None:
         workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:

@@ -437,12 +437,19 @@ def record_evidence_decisions(
 def record_topic_value_decisions(
     dashboard: dict[str, object],
     folder: Path,
+    observation_stage: str,
     candidates: Sequence[Mapping[str, object]],
 ) -> Path:
+    if observation_stage not in {"pre-gate", "post-gate"}:
+        raise workflow.WorkflowError(
+            f"Topic Value observation stage {observation_stage!r} is invalid."
+        )
+    path = folder / f"topic-value-evaluations-{observation_stage}.json"
     path = base.write_private_json(
-        folder / "topic-value-evaluations.json",
+        path,
         {
-            "schema_version": 1,
+            "schema_version": 2,
+            "observation_stage": observation_stage,
             "thresholds": {
                 "reader_relevance": 4,
                 "reader_value": 4,
@@ -468,29 +475,83 @@ def record_topic_value_decisions(
     for item in candidates:
         scores = item.get("scores")
         observed_scores = dict(scores) if isinstance(scores, Mapping) else {}
-        status = "PASS" if item.get("status") == "PASS" else "REJECTED"
+        v1_evals = item.get("v1_evals")
+        safe_v1_evals = dict(v1_evals) if isinstance(v1_evals, Mapping) else {}
+        enforced_failures = [
+            decision
+            for decision in safe_v1_evals.values()
+            if isinstance(decision, Mapping)
+            and decision.get("mode") == "enforce"
+            and decision.get("status") == "FAIL"
+        ]
+        status = (
+            "PASS"
+            if item.get("status") == "PASS" and not enforced_failures
+            else "REJECTED"
+        )
+        reason = str(item.get("diagnosis", "No Topic Value diagnosis was recorded."))
+        if enforced_failures:
+            reason = "; ".join(
+                f"{decision.get('contract')}: {decision.get('reason')}"
+                for decision in enforced_failures
+            )
         record_run_decision(
             dashboard,
             stage="topic_value",
-            decision="candidate clears Topic Value",
+            decision=f"candidate snapshot ({observation_stage})",
             status=status,
             expected=expected,
             observed=(
                 f"scores={observed_scores}; total={item.get('total')}; "
                 f"brand_strip={item.get('brand_strip_pass')}; "
                 f"feed_value={item.get('feed_value_possible')}; "
-                f"authority_goal={item.get('supports_authority_goal')}"
+                f"authority_goal={item.get('supports_authority_goal')}; "
+                f"v1_evals={safe_v1_evals}"
             ),
-            reason=str(item.get("diagnosis", "No Topic Value diagnosis was recorded.")),
+            reason=reason,
             subject_id=str(item.get("id", "unknown-topic-value-candidate")),
             artifact=relative,
             details={
+                "observation_stage": observation_stage,
                 "scores": observed_scores,
                 "total": item.get("total"),
                 "normalization_warnings": item.get("normalization_warnings", []),
+                "v1_evals": safe_v1_evals,
             },
         )
     return path
+
+
+@dataclass(slots=True)
+class TopicValueDashboardObserver:
+    """Persist Topic Value snapshots without participating in selection."""
+
+    dashboard: dict[str, object]
+    folder: Path
+
+    def __call__(
+        self,
+        stage: str,
+        candidates: Sequence[Mapping[str, object]],
+    ) -> None:
+        record_topic_value_decisions(
+            self.dashboard,
+            self.folder,
+            stage,
+            candidates,
+        )
+
+    def record_observability_failure(self, stage: str, exc: Exception) -> None:
+        record_run_decision(
+            self.dashboard,
+            stage="topic_value",
+            decision="observability_failure",
+            status="UNAVAILABLE",
+            expected=f"{stage} Topic Value snapshot is recorded without affecting selection",
+            observed=f"{type(exc).__name__}: {exc}",
+            reason=str(exc),
+            subject_id=stage,
+        )
 
 
 def record_thesis_decisions(
@@ -1389,31 +1450,45 @@ def command(args: argparse.Namespace) -> int:
         signal_ids=[str(item["id"]) for item in raw_signals],
     )
 
-    topic_value_trace_path = folder / "topic-value-evaluations.json"
+    topic_value_pre_gate_path = folder / "topic-value-evaluations-pre-gate.json"
+    topic_value_post_gate_path = folder / "topic-value-evaluations-post-gate.json"
     try:
         topic_value_candidates = topic_value.invoke_discovery_selector(
             profile,
             raw_signals,
-            observer=lambda candidates: record_topic_value_decisions(
-                run_dashboard,
-                folder,
-                candidates,
-            ),
+            observer=TopicValueDashboardObserver(run_dashboard, folder),
         )
         signals = topic_value.project_discovery_signals(raw_signals, topic_value_candidates)
     except STAGE_EXCEPTIONS as exc:
+        gate_decision = getattr(exc, "decision", None)
+        structured_gate = (
+            dict(gate_decision) if isinstance(gate_decision, Mapping) else {}
+        )
+        failure_reason = (
+            f"{structured_gate.get('contract')}: {structured_gate.get('reason')}"
+            if structured_gate
+            else str(exc)
+        )
         mark_run_stage(
             run_dashboard,
             "topic_value",
             "FAIL",
-            str(exc),
+            failure_reason,
             expected="at least one grounded candidate clears every locked Topic Value rule",
-            observed=f"{type(exc).__name__}: {exc}",
+            observed=(
+                structured_gate
+                if structured_gate
+                else f"{type(exc).__name__}: {exc}"
+            ),
             exception_type=type(exc).__name__,
-            evaluation_artifact=(
-                topic_value_trace_path.relative_to(workflow.REPO_ROOT).as_posix()
-                if topic_value_trace_path.exists()
-                else ""
+            gate_decision=structured_gate,
+            evaluation_artifact=next(
+                (
+                    path.relative_to(workflow.REPO_ROOT).as_posix()
+                    for path in (topic_value_post_gate_path, topic_value_pre_gate_path)
+                    if path.exists()
+                ),
+                "",
             ),
         )
         persist_run_dashboard(folder, run_dashboard)
@@ -1436,7 +1511,14 @@ def command(args: argparse.Namespace) -> int:
             }
             for item in topic_value_candidates
         ],
-        evaluation_artifact=topic_value_trace_path.relative_to(workflow.REPO_ROOT).as_posix(),
+        evaluation_artifact=next(
+            (
+                path.relative_to(workflow.REPO_ROOT).as_posix()
+                for path in (topic_value_post_gate_path, topic_value_pre_gate_path)
+                if path.exists()
+            ),
+            "",
+        ),
     )
     topic_value_package = base.write_private_json(
         folder / "topic-value.json",

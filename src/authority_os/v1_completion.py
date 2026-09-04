@@ -21,10 +21,11 @@ import os
 import re
 import secrets
 import stat
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 from . import campaign, learning, performance, resonance, storage, v1_gates, workflow
 
@@ -45,6 +46,8 @@ _PROCESS_RUN_ID = ""
 # These are captured when this module is imported. The live launcher imports us only after
 # v1_gates.install(), so the captured Topic Value/Critic/Resonance functions already include
 # the first V1 layer.
+_BASE_LOAD_ATOMIC_VALUES = v1_gates.load_atomic_values
+_BASE_RECORD_ATOMIC_VALUE = v1_gates.record_atomic_value
 _BASE_TOPIC_EVALUATOR = v1_gates._evaluate_topic_candidates  # type: ignore[attr-defined]
 _BASE_VALIDATE_CRITIC = workflow.validate_critic_scorecards
 _BASE_POST_CRITIC = resonance.invoke_post_critic
@@ -358,6 +361,17 @@ def load_published_atomic_values(path: Path | None = None) -> list[str]:
     return [str(row["atomic_value"]) for row in load_published_atomic_records(path)]
 
 
+def _defer_atomic_value_recording(
+    value: str,
+    *,
+    source: str = "review-ready",
+    path: Path | None = None,
+) -> None:
+    """Keep review-ready values out of published novelty history."""
+
+    del value, source, path
+
+
 def _binding_rows(path: Path | None = None) -> list[dict[str, object]]:
     rows = _read_jsonl(path or _state_path(ATOMIC_BINDINGS_LEDGER_NAME))
     for row in rows:
@@ -507,9 +521,8 @@ def _promote_published_records(records: object) -> None:
             continue
 
 
-def _record_performance_many_v1(*args, **kwargs):
-    result = _BASE_RECORD_PERFORMANCE_MANY(*args, **kwargs)
-    records = args[1] if len(args) > 1 else kwargs.get("records")
+def _record_performance_many_v1(db_path, records, *, replace=False):
+    result = _BASE_RECORD_PERFORMANCE_MANY(db_path, records, replace=replace)
     _promote_published_records(records)
     return result
 
@@ -519,9 +532,8 @@ def _record_performance_many_v1(*args, **kwargs):
 # ---------------------------------------------------------------------------
 
 
-def _topic_evaluator_v1(candidates, evidence):
-    evaluated = _BASE_TOPIC_EVALUATOR(candidates, evidence)
-    for candidate in evaluated:
+def _record_topic_decisions(candidates) -> None:
+    for candidate in candidates:
         if not isinstance(candidate, Mapping):
             continue
         subject = str(candidate.get("id", ""))
@@ -532,7 +544,26 @@ def _topic_evaluator_v1(candidates, evidence):
             decision = evaluations.get(name)
             if isinstance(decision, Mapping):
                 record_decision(decision, stage="topic-value", subject_id=subject)
-    return evaluated
+
+
+def _topic_evaluator_v1(candidates, evidence, *, decision_observer=None):
+    def observe(evaluated) -> None:
+        try:
+            _record_topic_decisions(evaluated)
+        except Exception as exc:
+            print(
+                "OBSERVABILITY_FAILURE: V1 Topic Value decision ledger could not "
+                f"be written: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+        if decision_observer is not None:
+            decision_observer(evaluated)
+
+    return _BASE_TOPIC_EVALUATOR(
+        candidates,
+        evidence,
+        decision_observer=observe,
+    )
 
 
 def _critic_validator_v1(raw_scorecards, candidates):
@@ -653,13 +684,27 @@ def _record_reproducibility(first: object, second: object, *, runtime: str) -> N
     record_decision(decision, stage=f"critic-reproducibility-{runtime}")
 
 
-def _workflow_invoke_critic_v1(*args, **kwargs):
-    first = _BASE_WORKFLOW_INVOKE_CRITIC(*args, **kwargs)
+def _workflow_invoke_critic_v1(
+    candidates,
+    brief,
+    evidence,
+    *,
+    allow_model_egress=False,
+    proof=None,
+    timeout=300,
+):
+    arguments = (candidates, brief, evidence)
+    keywords = {
+        "allow_model_egress": allow_model_egress,
+        "proof": proof,
+        "timeout": timeout,
+    }
+    first = _BASE_WORKFLOW_INVOKE_CRITIC(*arguments, **keywords)
     settings = _repro_settings()
     if settings.get("mode") != "off" and not _REPRO_SAMPLED["legacy"]:
         _REPRO_SAMPLED["legacy"] = True
         try:
-            second = _BASE_WORKFLOW_INVOKE_CRITIC(*args, **kwargs)
+            second = _BASE_WORKFLOW_INVOKE_CRITIC(*arguments, **keywords)
         except workflow.WorkflowError:
             _record_reproducibility([], [], runtime="legacy-error")
         else:
@@ -667,17 +712,19 @@ def _workflow_invoke_critic_v1(*args, **kwargs):
     return first
 
 
-def _campaign_invoker_v1(stage, config, role_prompt, task_prompt, schema):
-    first = _BASE_CAMPAIGN_INVOKER(stage, config, role_prompt, task_prompt, schema)
+def _campaign_invoker_v1(_stage, config, role_prompt, task_prompt, schema):
+    first = _BASE_CAMPAIGN_INVOKER(_stage, config, role_prompt, task_prompt, schema)
     settings = _repro_settings()
     if (
-        stage == "critic"
+        _stage == "critic"
         and settings.get("mode") != "off"
         and not _REPRO_SAMPLED["campaign"]
     ):
         _REPRO_SAMPLED["campaign"] = True
         try:
-            second = _BASE_CAMPAIGN_INVOKER(stage, config, role_prompt, task_prompt, schema)
+            second = _BASE_CAMPAIGN_INVOKER(
+                _stage, config, role_prompt, task_prompt, schema
+            )
             left = first.get("scorecards") if isinstance(first, Mapping) else None
             right = second.get("scorecards") if isinstance(second, Mapping) else None
             _record_reproducibility(left, right, runtime="campaign")
@@ -757,11 +804,20 @@ def build_calibration_snapshot(
     }
 
 
-def _write_weekly_review_v1(rows, *, as_of, candidate_contexts):
+def _write_weekly_review_v1(
+    rows,
+    *,
+    as_of,
+    candidate_contexts=None,
+    output_root=learning.DEFAULT_REPORT_ROOT,
+    _allow_test_output_root=False,
+):
     generated = _BASE_WRITE_WEEKLY_REVIEW(
         rows,
         as_of=as_of,
         candidate_contexts=candidate_contexts,
+        output_root=output_root,
+        _allow_test_output_root=_allow_test_output_root,
     )
     safe_rows = [row for row in rows if isinstance(row, Mapping)]
     snapshot = build_calibration_snapshot(safe_rows, as_of=as_of)
@@ -777,6 +833,68 @@ def _write_weekly_review_v1(rows, *, as_of, candidate_contexts):
     return generated
 
 
+InstallPair = tuple[Callable[..., object], Callable[..., object], str]
+
+INSTALLED_PAIRS: tuple[InstallPair, ...] = (
+    (
+        _BASE_LOAD_ATOMIC_VALUES,
+        load_published_atomic_values,
+        "v1_gates.load_atomic_values",
+    ),
+    (
+        _BASE_RECORD_ATOMIC_VALUE,
+        _defer_atomic_value_recording,
+        "v1_gates.record_atomic_value",
+    ),
+    (
+        _BASE_TOPIC_EVALUATOR,
+        _topic_evaluator_v1,
+        "v1_gates._evaluate_topic_candidates",
+    ),
+    (
+        _BASE_VALIDATE_CRITIC,
+        _critic_validator_v1,
+        "workflow.validate_critic_scorecards",
+    ),
+    (_BASE_POST_CRITIC, _post_critic_v1, "resonance.invoke_post_critic"),
+    (
+        _BASE_WORKFLOW_INVOKE_CRITIC,
+        _workflow_invoke_critic_v1,
+        "workflow.invoke_critic",
+    ),
+    (
+        _BASE_CAMPAIGN_INVOKER,
+        _campaign_invoker_v1,
+        "campaign.default_stage_invoker",
+    ),
+    (
+        _BASE_RECORD_PERFORMANCE_MANY,
+        _record_performance_many_v1,
+        "storage.record_performance_many",
+    ),
+    (
+        _BASE_WRITE_WEEKLY_REVIEW,
+        _write_weekly_review_v1,
+        "learning.write_weekly_review",
+    ),
+)
+
+_INSTALL_TARGETS = {
+    "v1_gates": v1_gates,
+    "workflow": workflow,
+    "resonance": resonance,
+    "campaign": campaign,
+    "storage": storage,
+    "learning": learning,
+}
+
+
+def _install_pairs() -> None:
+    for _original, replacement, dotted_name in INSTALLED_PAIRS:
+        module_name, attribute = dotted_name.split(".", 1)
+        setattr(_INSTALL_TARGETS[module_name], attribute, replacement)
+
+
 def install() -> None:
     """Install V1 completion hooks after v1_gates.install()."""
 
@@ -788,15 +906,6 @@ def install() -> None:
     # The first V1 implementation recorded review-ready values directly in novelty history.
     # From this layer onward, novelty means *published* history. The old private file is left
     # untouched for reversibility/audit but is no longer consulted by live novelty checks.
-    v1_gates.load_atomic_values = load_published_atomic_values  # type: ignore[assignment]
-    v1_gates.record_atomic_value = lambda *args, **kwargs: None  # type: ignore[assignment]
-
-    v1_gates._evaluate_topic_candidates = _topic_evaluator_v1  # type: ignore[attr-defined,assignment]
-    workflow.validate_critic_scorecards = _critic_validator_v1  # type: ignore[assignment]
-    resonance.invoke_post_critic = _post_critic_v1  # type: ignore[assignment]
-    workflow.invoke_critic = _workflow_invoke_critic_v1  # type: ignore[assignment]
-    campaign.default_stage_invoker = _campaign_invoker_v1  # type: ignore[assignment]
-    storage.record_performance_many = _record_performance_many_v1  # type: ignore[assignment]
-    learning.write_weekly_review = _write_weekly_review_v1  # type: ignore[assignment]
+    _install_pairs()
 
     _INSTALLED = True

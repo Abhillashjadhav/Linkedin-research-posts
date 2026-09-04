@@ -181,18 +181,85 @@ class TopicValueRuntimeTests(unittest.TestCase):
             item["source_ids"] = [f"signal-{index}"]
             item["situation"] = f"A weak situation {index}."
             candidates.append(item)
-        observed: list[dict[str, object]] = []
+        observed: list[tuple[str, dict[str, object]]] = []
 
         with self.assertRaisesRegex(workflow.WorkflowError, "could not find"):
             topic_value.invoke_discovery_selector(
                 {"target_audience": "AI PMs", "authority_goal": "Practical AI systems"},
                 [{"id": f"signal-{index}"} for index in range(1, 4)],
                 invoker=lambda *_args, **_kwargs: {"candidates": candidates},
-                observer=lambda rows: observed.extend(dict(row) for row in rows),
+                observer=lambda stage, rows: observed.extend(
+                    (stage, dict(row)) for row in rows
+                ),
             )
 
-        self.assertEqual([item["id"] for item in observed], ["topic-1", "topic-2", "topic-3"])
-        self.assertTrue(all(item["status"] == "BLOCKED" for item in observed))
+        self.assertEqual(
+            [(stage, item["id"]) for stage, item in observed],
+            [
+                ("pre-gate", "topic-1"),
+                ("pre-gate", "topic-2"),
+                ("pre-gate", "topic-3"),
+            ],
+        )
+        self.assertTrue(all(item["status"] == "BLOCKED" for _, item in observed))
+
+    def test_observer_cannot_mutate_candidate_selection(self) -> None:
+        qualified = candidate()
+        weak = []
+        for index in (2, 3):
+            item = candidate(reader_relevance=3)
+            item["id"] = f"topic-{index}"
+            item["source_ids"] = [f"signal-{index}"]
+            item["situation"] = f"A weak situation {index}."
+            weak.append(item)
+
+        def mutate_snapshot(_stage, rows) -> None:
+            rows[0]["status"] = "BLOCKED"
+            rows[0]["total"] = 0
+
+        selected = topic_value.invoke_discovery_selector(
+            {"target_audience": "AI PMs", "authority_goal": "Practical AI systems"},
+            [{"id": f"signal-{index}"} for index in range(1, 4)],
+            invoker=lambda *_args, **_kwargs: {
+                "candidates": [qualified, *weak]
+            },
+            observer=mutate_snapshot,
+        )
+
+        self.assertEqual(selected[0]["status"], "PASS")
+        self.assertNotEqual(selected[0]["total"], 0)
+
+    def test_observer_exception_is_reported_without_stopping_selection(self) -> None:
+        class BrokenObserver:
+            def __init__(self) -> None:
+                self.failures: list[tuple[str, str]] = []
+
+            def __call__(self, _stage, _rows) -> None:
+                raise RuntimeError("dashboard disk unavailable")
+
+            def record_observability_failure(self, stage, exc) -> None:
+                self.failures.append((stage, str(exc)))
+
+        observer = BrokenObserver()
+        supplied = []
+        for index in range(1, 4):
+            item = candidate(reader_relevance=5 if index == 1 else 3)
+            item["id"] = f"topic-{index}"
+            item["source_ids"] = [f"signal-{index}"]
+            item["situation"] = f"Situation {index}."
+            supplied.append(item)
+        selected = topic_value.invoke_discovery_selector(
+            {"target_audience": "AI PMs", "authority_goal": "Practical AI systems"},
+            [{"id": f"signal-{index}"} for index in range(1, 4)],
+            invoker=lambda *_args, **_kwargs: {"candidates": supplied},
+            observer=observer,
+        )
+
+        self.assertEqual([item["id"] for item in selected], ["topic-1"])
+        self.assertEqual(
+            observer.failures,
+            [("pre-gate", "dashboard disk unavailable")],
+        )
 
 
 class TopicValueProjectionTests(unittest.TestCase):

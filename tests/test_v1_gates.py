@@ -213,6 +213,75 @@ class V1ContractTests(unittest.TestCase):
         self.assertIn("atomic_value", schema["properties"])
         self.assertIn("atomic_value", schema["required"])
 
+    def test_all_topic_candidates_are_observed_before_any_gate_is_enforced(self) -> None:
+        candidates = [
+            {
+                "id": f"topic-{index}",
+                "atomic_value": (
+                    f"Use checkpoint {index} to locate the first broken agent handoff."
+                ),
+            }
+            for index in range(1, 4)
+        ]
+        pass_decision = {
+            "contract": "atomic_value_novelty",
+            "mode": "enforce",
+            "status": "PASS",
+            "reason": "materially-new-atomic-value",
+        }
+
+        def research(candidate, _evidence):
+            failed = candidate["id"] == "topic-1"
+            return {
+                "contract": "research_trust",
+                "mode": "enforce",
+                "status": "FAIL" if failed else "PASS",
+                "reason": "missing-trust" if failed else "body-read-source-present",
+            }
+
+        observed: list[dict[str, object]] = []
+        with (
+            mock.patch.object(
+                v1_gates,
+                "evaluate_atomic_novelty",
+                return_value=pass_decision,
+            ) as novelty,
+            mock.patch.object(
+                v1_gates,
+                "evaluate_research_trust",
+                side_effect=research,
+            ) as trust,
+            mock.patch.object(
+                v1_gates,
+                "evaluate_claim_body_support",
+                return_value={
+                    "contract": "claim_body_support",
+                    "mode": "shadow",
+                    "status": "PASS",
+                    "reason": "claim-has-body-binding-signal",
+                },
+            ) as support,
+        ):
+            with self.assertRaises(v1_gates.V1ContractError) as raised:
+                v1_gates._evaluate_topic_candidates(
+                    candidates,
+                    [],
+                    decision_observer=lambda rows: observed.extend(
+                        dict(row) for row in rows
+                    ),
+                )
+
+        self.assertEqual(novelty.call_count, 3)
+        self.assertEqual(trust.call_count, 3)
+        self.assertEqual(support.call_count, 3)
+        self.assertEqual(
+            [item["id"] for item in observed],
+            ["topic-1", "topic-2", "topic-3"],
+        )
+        self.assertTrue(all("v1_evals" in item for item in observed))
+        self.assertEqual(raised.exception.decision["contract"], "research_trust")
+        self.assertEqual(raised.exception.decision["reason"], "missing-trust")
+
 
 if __name__ == "__main__":
     unittest.main()
