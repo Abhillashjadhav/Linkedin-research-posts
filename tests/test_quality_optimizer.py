@@ -392,6 +392,35 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(retained.text, "Keep this stronger repair seed.")
         self.assertEqual(state.cycle_best_scores, [18, 16])
 
+    def test_voice_four_seed_beats_higher_total_voice_three_seed(self) -> None:
+        state = quality_optimizer.RepairState()
+        voice_pass = candidate(
+            21,
+            {
+                "hook_strength": 5,
+                "middle_escalation": 4,
+                "earned_closer": 4,
+                "specificity_and_source_quality": 4,
+                "voice_fidelity": 4,
+            },
+            text="Keep the candidate that clears the values gate.",
+        )
+        voice_fail = candidate(
+            22,
+            {
+                "hook_strength": 5,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 4,
+                "voice_fidelity": 3,
+            },
+            text="Do not trade voice away for one more total point.",
+        )
+        state.observe(attempt(voice_pass))
+        retained = state.observe(attempt(voice_fail))
+        self.assertEqual(retained.text, "Keep the candidate that clears the values gate.")
+        self.assertEqual(retained.axes["voice_fidelity"], 4)
+
     def test_feedback_carries_full_best_text_scores_and_gate_failures(self) -> None:
         seed = candidate(
             18,
@@ -414,6 +443,25 @@ class RepairStateTests(unittest.TestCase):
             "Full candidate text must reach the next repair cycle.",
         )
         self.assertIn("unsupported-factual-marker", repair_seed["gate_reasons"])  # type: ignore[index]
+        self.assertEqual(repair_seed["weak_axes"], {"voice_fidelity": 3})  # type: ignore[index]
+        self.assertEqual(
+            repair_seed["passing_axes"],  # type: ignore[index]
+            {
+                "hook_strength": 5,
+                "middle_escalation": 4,
+                "earned_closer": 3,
+                "specificity_and_source_quality": 3,
+            },
+        )
+        self.assertEqual(
+            repair_seed["preserve_axes"],  # type: ignore[index]
+            [
+                "hook_strength",
+                "middle_escalation",
+                "earned_closer",
+                "specificity_and_source_quality",
+            ],
+        )
         self.assertEqual(feedback["quality_target"], 24)
         self.assertEqual(feedback["acceptable_floor"], 18)
         self.assertEqual(
@@ -425,6 +473,31 @@ class RepairStateTests(unittest.TestCase):
                 "specificity_and_source_quality": 3,
                 "voice_fidelity": 4,
             },
+        )
+
+    def test_feedback_attaches_exact_anti_slop_findings_to_retained_seed(self) -> None:
+        seed = candidate(
+            21,
+            {
+                "hook_strength": 4,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 4,
+                "voice_fidelity": 3,
+            },
+            text="What most people miss is the safety layer.",
+        )
+        with patch.object(quality_optimizer, "_ACTIVE_STATE", quality_optimizer.RepairState()):
+            feedback = quality_optimizer._quality_feedback(attempt(seed), 1)  # type: ignore[attr-defined]
+        repair_seed = feedback["repair_seed"]
+        self.assertEqual(  # type: ignore[index]
+            repair_seed["anti_slop_findings"],
+            [
+                {
+                    "code": "faux-insight",
+                    "excerpt": "What most people miss is the safety layer.",
+                }
+            ],
         )
 
 
@@ -444,10 +517,54 @@ class RepairPromptTests(unittest.TestCase):
         self.assertIn("QUALITY_REPAIR_CYCLE_CONTRACT", prompt)
         self.assertIn("not a fresh brainstorm", prompt)
         self.assertIn("Retain this grounded mechanism", prompt)
-        self.assertIn("Aim for 24-25/25", prompt)
+        self.assertIn("do not chase 5/5", prompt)
+        self.assertIn("Stop once the shared acceptance contract passes", prompt)
         self.assertIn("Never invent evidence", prompt)
         self.assertIn("Supported abstraction", prompt)
         self.assertIn("must not add severity, prevalence, causality, scope, materiality", prompt)
+
+    def test_voice_three_gets_targeted_human_voice_repair(self) -> None:
+        feedback = {
+            "repair_seed": {
+                "text": "Keep this grounded draft and repair its voice.",
+                "critic_axes": {
+                    "hook_strength": 4,
+                    "middle_escalation": 5,
+                    "earned_closer": 5,
+                    "specificity_and_source_quality": 4,
+                    "voice_fidelity": 3,
+                },
+                "gate_reasons": ["anti-slop:decorative-list"],
+                "anti_slop_findings": [
+                    {"code": "decorative-list", "excerpt": "First. Second. Third."}
+                ],
+            }
+        }
+        with patch.object(workflow, "build_writer_prompt", lambda *a, **k: "BASE"):
+            with quality_optimizer._writer_retry_prompt(feedback):  # type: ignore[attr-defined]
+                prompt = workflow.build_writer_prompt()
+        self.assertIn("VOICE_FIDELITY_REPAIR_REQUIRED", prompt)
+        self.assertIn("voice_fidelity=3/5", prompt)
+        self.assertIn("conversational product leader", prompt)
+        self.assertIn("consultant-memo language", prompt)
+        self.assertIn("Preserve its supported incident", prompt)
+        self.assertIn("smallest plain-language or cadence edit", prompt)
+        self.assertIn("question, conditional, proposed test, or recommendation", prompt)
+        self.assertIn("Do not invent a personal experience", prompt)
+        self.assertIn("ANTI_SLOP_REPAIR_REQUIRED", prompt)
+        self.assertIn("smallest excerpt", prompt)
+
+    def test_passing_voice_does_not_add_voice_repair_contract(self) -> None:
+        feedback = {
+            "repair_seed": {
+                "text": "This candidate already sounds human.",
+                "critic_axes": {"hook_strength": 4, "voice_fidelity": 4},
+            }
+        }
+        with patch.object(workflow, "build_writer_prompt", lambda *a, **k: "BASE"):
+            with quality_optimizer._writer_retry_prompt(feedback):  # type: ignore[attr-defined]
+                prompt = workflow.build_writer_prompt()
+        self.assertNotIn("VOICE_FIDELITY_REPAIR_REQUIRED", prompt)
 
     def test_integrated_dispatch_updates_the_real_command_table(self) -> None:
         def integrated_command(_args: object) -> int:

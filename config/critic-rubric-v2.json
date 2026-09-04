@@ -10,13 +10,13 @@
     "voice_fidelity": {
       "type": "values_gate",
       "floor": 4,
-      "note": "Rescaled. On the v1 scale the owner gave 2 to 17 of his own 30 published posts and 4-or-5 to only two, so a floor of 4 passed nothing. The v2 anchors move his working standard to 4, which is the same bar honestly labelled.",
+      "note": "Rescaled. On the v1 scale the owner gave 2 to 17 of his own 30 published posts and 4-or-5 to only two, so a floor of 4 passed nothing. The v2 anchors move a publishable, unmistakably human conversational-product-leader standard to 4. Exact imitation of the owner's speech is not required.",
       "detector": "Sentence-length variance separates his voice from AI cadence at kappa 0.48 - directional, not gate-grade. A model judge is required; the deterministic signal is a prior, not a verdict.",
       "1": "Uniform sentence rhythm, stacked adjectives, no contractions, tidy parallel structure. Reads as competent copy nobody wrote. His example: the 40-year-veteran-engineer post.",
-      "2": "Recognisably his subject matter but the cadence is even. Sentences cluster near one length; the connective tissue is smooth where he would be abrupt.",
-      "3": "Mostly his, with passages where the rhythm flattens into explanation. A reader who knows him would not flinch, but would not point at it either.",
-      "4": "WORKING STANDARD. Sentence lengths swing hard. Contractions. Plain vocabulary throughout, including line 2. His examples: 'Your first AI eval should be an Excel or a spreadsheet, not a platform.' / \"I think AI PM's should stop learning sooner.\"",
-      "5": "Unmistakably him and could not have been generated. Plain words only. His example: 'a friend who works at a frontier AI lab, making just short of a million dollars a year'. Industry terms like 'frontier AI lab' are his; literary words like 'shy of' are not.",
+      "2": "The subject is relevant, but the prose is formulaic. Sentences cluster near one length and the connective tissue sounds polished rather than spoken.",
+      "3": "Human-readable, but passages flatten into a consultant memo: legalistic qualifications, abstract noun stacks, tidy parallel requirements, or a summary-style ending. It still carries a visible AI fingerprint.",
+      "4": "WORKING STANDARD. Clearly human, conversational product-leader writing. Sentence lengths swing, contractions appear naturally, plain words carry the argument, judgment is direct, and line 2 does not slide into explanatory or consultant register. Exact imitation of the owner's speech is not required.",
+      "5": "Distinctive, memorable human writing. It is sharp without performance, technically credible without sounding like a specification, and confident without hiding uncertainty. Plain words do the work; industry vocabulary is used only where it helps.",
       "banned_register": {
         "rule": "He writes in plain words. A word that would not appear in his speech is AI smell, whatever else the line does.",
         "examples_of_words_he_does_not_use": [

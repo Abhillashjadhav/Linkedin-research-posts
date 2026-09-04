@@ -32,6 +32,14 @@ class AntiSlopAuditTests(unittest.TestCase):
                 self.assertTrue(findings)
                 self.assertTrue(all(finding.code and isinstance(finding.excerpt, str) for finding in findings))
 
+    def test_harness_is_allowed_as_a_technical_noun_but_not_as_hype(self) -> None:
+        self.assertEqual(
+            anti_slop.audit("A harness controls what the model can remember and do."),
+            (),
+        )
+        findings = anti_slop.audit("Harness the power of AI for your business.")
+        self.assertEqual([finding.code for finding in findings], ["hype-harness"])
+
 
 class IntegratedGateTests(unittest.TestCase):
     def candidate(self, text: str) -> SimpleNamespace:

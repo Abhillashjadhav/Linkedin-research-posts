@@ -54,6 +54,18 @@ class HumanReadabilityContractTests(unittest.TestCase):
         self.assertIn("Emotion must come from truthful consequence", task)
         self.assertIn("minimum technical mechanism", task)
 
+    def test_live_editor_task_targets_human_voice_without_invented_experience(self) -> None:
+        task = human_readability._task(  # type: ignore[attr-defined]
+            self.candidates,
+            self.brief,
+            self.evidence,
+            None,
+        )
+        self.assertIn("conversational product leader", task)
+        self.assertIn("consultant producing a release memo", task)
+        self.assertIn("question, conditional, proposed test, or recommendation", task)
+        self.assertIn("never turn it into a fact or personal experience", task)
+
     def test_narrative_schema_disallows_drop_in_single_topic_pass(self) -> None:
         schema = human_readability._narrative_schema()  # type: ignore[attr-defined]
         result_item = schema["properties"]["results"]["items"]  # type: ignore[index]
@@ -231,6 +243,9 @@ class HumanReadabilityAssetTests(unittest.TestCase):
         self.assertIn("compelling because it is relevant", role)
         self.assertIn("one primary human problem", role)
         self.assertIn("Translate every necessary technical mechanism", role)
+        self.assertIn("conversational product leader", role)
+        self.assertIn("consultant writing a", role)
+        self.assertIn("Exact imitation of the author's speech is not required", role)
 
     def test_launcher_and_comparison_wire_only_live_v1(self) -> None:
         root = Path(__file__).resolve().parents[1]
