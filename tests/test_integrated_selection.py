@@ -132,7 +132,12 @@ class SingleTopicSelectionTests(unittest.TestCase):
                     "diagnosis": "The useful part lives behind a click.",
                 },
             ):
-                accepted = integrated_cli._qualifying_candidates(object())
+                accepted = integrated_cli._qualifying_candidates(
+                    object(),
+                    rejected_openings=set(),
+                    package_requested=False,
+                    fixture_mode=True,
+                )
             self.assertEqual(accepted, ())
             self.assertEqual(
                 integrated_cli._active_resonance_diagnostics["candidate-1"]["feed_value"],

@@ -6,7 +6,7 @@ import io
 from collections.abc import Mapping
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Iterator
 
 from . import anti_slop, quality_cli, resonance, topic_value, v1_completion, workflow
 
@@ -92,10 +92,24 @@ def _pre_acceptance_failures(
     return reasons or ["pre-acceptance:unknown-contract-mismatch"]
 
 
-def _qualifying_candidates(*args: Any, **kwargs: Any):
+def _qualifying_candidates(
+    attempt: quality_cli.AttemptResult,
+    *,
+    rejected_openings: set[str],
+    package_requested: bool,
+    fixture_mode: bool,
+) -> tuple[quality_cli.CandidateResult, ...]:
     global _active_resonance_diagnostics, _active_acceptance_diagnostics
-    attempt = args[0] if args else kwargs.get("attempt")
-    candidates = _original_qualifying(*args, **kwargs)
+    candidates = _original_qualifying(
+        attempt,
+        rejected_openings=rejected_openings,
+        package_requested=package_requested,
+        fixture_mode=fixture_mode,
+    )
+    acceptance_context = {
+        "package_requested": package_requested,
+        "fixture_mode": fixture_mode,
+    }
     accepted = []
     _active_acceptance_diagnostics = {}
     all_candidates = getattr(attempt, "candidates", ())
@@ -113,7 +127,7 @@ def _qualifying_candidates(*args: Any, **kwargs: Any):
     for candidate in all_candidates:
         if candidate.candidate_id not in base_ids:
             _active_acceptance_diagnostics[candidate.candidate_id] = (
-                _pre_acceptance_failures(candidate, attempt, kwargs)
+                _pre_acceptance_failures(candidate, attempt, acceptance_context)
             )
     accepted = []
     for candidate in candidates:

@@ -96,7 +96,11 @@ class SocialMediaGatePolicyTests(unittest.TestCase):
             "_ORIGINAL_BUILD_WRITER_PROMPT",
             return_value="BASE WRITER PROMPT",
         ):
-            prompt = social_media_gate_policy._build_writer_prompt_social()  # type: ignore[attr-defined]
+            prompt = social_media_gate_policy._build_writer_prompt_social(  # type: ignore[attr-defined]
+                brief={},
+                evidence=(),
+                voice_guidance={},
+            )
         self.assertIn("XX%", prompt)
         self.assertIn("XXx", prompt)
         self.assertIn("human reviewer", prompt.casefold())

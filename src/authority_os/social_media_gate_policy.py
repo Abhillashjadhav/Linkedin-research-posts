@@ -8,7 +8,7 @@ so the human reviewer can replace them with a real internal metric before publis
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from . import quality_cli, workflow
 
@@ -33,8 +33,19 @@ END_SOCIAL_MEDIA_HUMAN_REVIEW_POLICY
 """.strip()
 
 
-def _build_writer_prompt_social(*args: object, **kwargs: object) -> str:
-    base = _ORIGINAL_BUILD_WRITER_PROMPT(*args, **kwargs)
+def _build_writer_prompt_social(
+    *,
+    brief: Mapping[str, object],
+    evidence: Sequence[Mapping[str, object]],
+    voice_guidance: Mapping[str, str],
+    proof: workflow.LoadedProof | None = None,
+) -> str:
+    base = _ORIGINAL_BUILD_WRITER_PROMPT(
+        brief=brief,
+        evidence=evidence,
+        voice_guidance=voice_guidance,
+        proof=proof,
+    )
     return f"{base}\n\n{_PLACEHOLDER_GUIDANCE}"
 
 
