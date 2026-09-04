@@ -191,6 +191,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=_nonblank,
         help="Evaluate one exact candidate ID; default is every frozen candidate.",
     )
+    eval_parser.add_argument(
+        "--repair",
+        action="store_true",
+        help=(
+            "Progressively edit one --candidate for at most four scored iterations; "
+            "accepted edits may not regress any axis or hard gate."
+        ),
+    )
 
     research = subparsers.add_parser("research", help="Import or validate research signals.")
     research.add_argument(
