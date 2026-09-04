@@ -7,13 +7,15 @@ All V1 runtime state is kept under ignored ``data/private/v1-evals``.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 from urllib.parse import urlsplit
 
 from . import resonance, topic_value, workflow
@@ -61,6 +63,7 @@ _ORIGINAL_CAMPAIGN_SELECTOR = topic_value.invoke_campaign_selector
 _ORIGINAL_PROJECT_SIGNALS = topic_value.project_discovery_signals
 
 _ORIGINAL_VALIDATE_CRITIC = workflow.validate_critic_scorecards
+_ORIGINAL_CRITIC_SYSTEM_PROMPT = workflow.critic_scoring_system_prompt
 _ORIGINAL_BUILD_CRITIC_PROMPT = workflow.build_critic_prompt
 
 _ORIGINAL_RESONANCE_LOAD_ROLE = resonance._load_role  # type: ignore[attr-defined]
@@ -124,11 +127,19 @@ def _decision(name: str, passed: bool | None, reason: str, **evidence: object) -
     return {"contract": name, "mode": mode, "status": status, "reason": reason, **evidence}
 
 
-def _enforce(decision: Mapping[str, object]) -> None:
-    if decision.get("mode") == "enforce" and decision.get("status") == "FAIL":
-        raise workflow.WorkflowError(
+class V1ContractError(workflow.WorkflowError):
+    """A blocking V1 decision with its structured diagnostic attached."""
+
+    def __init__(self, decision: Mapping[str, object]) -> None:
+        self.decision = dict(decision)
+        super().__init__(
             f"V1 contract {decision.get('contract')} failed: {decision.get('reason')}"
         )
+
+
+def _enforce(decision: Mapping[str, object]) -> None:
+    if decision.get("mode") == "enforce" and decision.get("status") == "FAIL":
+        raise V1ContractError(decision)
 
 
 def _state_path(name: str) -> Path:
@@ -382,7 +393,10 @@ def evaluate_claim_body_support(
 
 
 def _evaluate_topic_candidates(
-    candidates: Sequence[Mapping[str, object]], evidence: Sequence[Mapping[str, object]]
+    candidates: Sequence[Mapping[str, object]],
+    evidence: Sequence[Mapping[str, object]],
+    *,
+    decision_observer: Callable[[Sequence[Mapping[str, object]]], None] | None = None,
 ) -> list[dict[str, object]]:
     evaluated: list[dict[str, object]] = []
     for raw in candidates:
@@ -396,16 +410,54 @@ def _evaluate_topic_candidates(
             "research_trust": research,
             "claim_body_support": body,
         }
+        evaluated.append(candidate)
+
+    if decision_observer is not None:
+        try:
+            decision_observer(copy.deepcopy(evaluated))
+        except Exception as exc:
+            print(
+                "OBSERVABILITY_FAILURE: V1 Topic Value decisions could not be "
+                f"recorded: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+
+    for candidate in evaluated:
+        evaluations = candidate["v1_evals"]
+        assert isinstance(evaluations, Mapping)
+        novelty = evaluations["atomic_value_novelty"]
+        research = evaluations["research_trust"]
+        body = evaluations["claim_body_support"]
+        assert isinstance(novelty, Mapping)
+        assert isinstance(research, Mapping)
+        assert isinstance(body, Mapping)
         _enforce(novelty)
         _enforce(research)
         _enforce(body)
-        evaluated.append(candidate)
     return evaluated
 
 
-def _discovery_selector_v1(profile, signals, *, invoker=topic_value._default_invoker):  # type: ignore[attr-defined]
+def _discovery_selector_v1(
+    profile,
+    signals,
+    *,
+    invoker=topic_value._default_invoker,  # type: ignore[attr-defined]
+    observer=None,
+):
+    selected = _ORIGINAL_DISCOVERY_SELECTOR(
+        profile,
+        signals,
+        invoker=invoker,
+        observer=observer,
+    )
     return _evaluate_topic_candidates(
-        _ORIGINAL_DISCOVERY_SELECTOR(profile, signals, invoker=invoker), signals
+        selected,
+        signals,
+        decision_observer=lambda candidates: topic_value._notify_observer(  # type: ignore[attr-defined]
+            observer,
+            "post-gate",
+            candidates,
+        ),
     )
 
 
@@ -532,8 +584,21 @@ def _critic_system_prompt_v1() -> str:
     )
 
 
-def _build_critic_prompt_v1(*args, **kwargs) -> str:
-    return _ORIGINAL_BUILD_CRITIC_PROMPT(*args, **kwargs).replace(
+def _build_critic_prompt_v1(
+    candidates,
+    brief,
+    evidence,
+    *,
+    voice_guidance=None,
+    proof=None,
+) -> str:
+    return _ORIGINAL_BUILD_CRITIC_PROMPT(
+        candidates,
+        brief,
+        evidence,
+        voice_guidance=voice_guidance,
+        proof=proof,
+    ).replace(
         "Return one scorecards array whose items contain only candidate_id and those five integer axes.",
         "Return one scorecards array whose items contain candidate_id, those five integer axes, and required per-axis anchor evidence.",
     )
@@ -719,6 +784,73 @@ def _invoke_post_critic_v1(post_text, selector, *, invoker=resonance._default_in
     return assessment
 
 
+InstallPair = tuple[Callable[..., object], Callable[..., object], str]
+
+INSTALLED_PAIRS: tuple[InstallPair, ...] = (
+    (
+        _ORIGINAL_TOPIC_CANDIDATE_SCHEMA,
+        _topic_candidate_schema_v1,
+        "topic_value._candidate_schema",
+    ),
+    (_ORIGINAL_TOPIC_LOAD_ROLE, _topic_role_v1, "topic_value._load_role"),
+    (
+        _ORIGINAL_DISCOVERY_SELECTOR,
+        _discovery_selector_v1,
+        "topic_value.invoke_discovery_selector",
+    ),
+    (
+        _ORIGINAL_CAMPAIGN_SELECTOR,
+        _campaign_selector_v1,
+        "topic_value.invoke_campaign_selector",
+    ),
+    (
+        _ORIGINAL_PROJECT_SIGNALS,
+        _project_signals_v1,
+        "topic_value.project_discovery_signals",
+    ),
+    (_ORIGINAL_ENRICH_DAY, _enrich_day_v1, "resonance.enrich_day"),
+    (
+        _ORIGINAL_CRITIC_SYSTEM_PROMPT,
+        _critic_system_prompt_v1,
+        "workflow.critic_scoring_system_prompt",
+    ),
+    (
+        _ORIGINAL_BUILD_CRITIC_PROMPT,
+        _build_critic_prompt_v1,
+        "workflow.build_critic_prompt",
+    ),
+    (
+        _ORIGINAL_VALIDATE_CRITIC,
+        _validate_critic_scorecards_v1,
+        "workflow.validate_critic_scorecards",
+    ),
+    (_ORIGINAL_RESONANCE_LOAD_ROLE, _resonance_role_v1, "resonance._load_role"),
+    (
+        _ORIGINAL_INVOKE_POST_CRITIC,
+        _invoke_post_critic_v1,
+        "resonance.invoke_post_critic",
+    ),
+)
+
+_INSTALL_TARGETS = {
+    "topic_value": topic_value,
+    "resonance": resonance,
+    "workflow": workflow,
+}
+
+_TOPIC_PAIR_NAMES = frozenset(name for _, _, name in INSTALLED_PAIRS[:6])
+_CRITIC_PAIR_NAMES = frozenset(name for _, _, name in INSTALLED_PAIRS[6:9])
+_RESONANCE_PAIR_NAMES = frozenset(name for _, _, name in INSTALLED_PAIRS[9:])
+
+
+def _install_pairs(names: frozenset[str]) -> None:
+    for _original, replacement, dotted_name in INSTALLED_PAIRS:
+        if dotted_name not in names:
+            continue
+        module_name, attribute = dotted_name.split(".", 1)
+        setattr(_INSTALL_TARGETS[module_name], attribute, replacement)
+
+
 def install() -> None:
     """Install the additive live-run overlay once; V0 files and SQLite remain untouched."""
 
@@ -729,22 +861,14 @@ def install() -> None:
     load_critic_rubric()
 
     if any(contract_mode(name) != "off" for name in ("atomic_value_novelty", "research_trust", "claim_body_support")):
-        topic_value._candidate_schema = _topic_candidate_schema_v1  # type: ignore[attr-defined,assignment]
-        topic_value._load_role = _topic_role_v1  # type: ignore[attr-defined,assignment]
-        topic_value.invoke_discovery_selector = _discovery_selector_v1  # type: ignore[assignment]
-        topic_value.invoke_campaign_selector = _campaign_selector_v1  # type: ignore[assignment]
-        topic_value.project_discovery_signals = _project_signals_v1  # type: ignore[assignment]
-        resonance.enrich_day = _enrich_day_v1  # type: ignore[assignment]
+        _install_pairs(_TOPIC_PAIR_NAMES)
 
     if contract_mode("critic_anchor_integrity") != "off":
         workflow.CRITIC_SCORE_SCHEMA = critic_score_schema_v1()
-        workflow.critic_scoring_system_prompt = _critic_system_prompt_v1  # type: ignore[assignment]
-        workflow.build_critic_prompt = _build_critic_prompt_v1  # type: ignore[assignment]
-        workflow.validate_critic_scorecards = _validate_critic_scorecards_v1  # type: ignore[assignment]
+        _install_pairs(_CRITIC_PAIR_NAMES)
 
     if contract_mode("solution_plausibility") != "off" or contract_mode("reader_attention") != "off":
         resonance.POST_SCHEMA = resonance_post_schema_v1()
-        resonance._load_role = _resonance_role_v1  # type: ignore[attr-defined,assignment]
-        resonance.invoke_post_critic = _invoke_post_critic_v1  # type: ignore[assignment]
+        _install_pairs(_RESONANCE_PAIR_NAMES)
 
     _INSTALLED = True
