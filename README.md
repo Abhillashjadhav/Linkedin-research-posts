@@ -101,6 +101,15 @@ A live invocation no longer exposes the first completed draft batch. It runs up 
 
 Each cycle still contains exactly three candidates and at most one light revision. When a cycle fails, its prose remains hidden. Only bounded angle, opening, score, per-axis shortfalls, and gate diagnostics are added to the next Writer prompt. A hook below 4/5 or voice below 4/5 is a hard failure; neither can be traded against a high total.
 
+If the Resonance Selector's prose `PASS`/`BLOCKED` label disagrees with the
+status Python derives from its recorded scores and locked-thesis flag, an
+interactive run pauses once for the author's authority judgment. That guidance
+is sent through one bounded selector reevaluation and recorded with the result.
+Python still owns the computed status: human guidance cannot change evidence,
+the selected thesis, thresholds, proof availability, or any hard gate.
+Non-interactive runs fail closed with an instruction to rerun the draft in a
+terminal.
+
 After four unsuccessful live cycles, the command fails closed and returns no post. When `--package` is selected, rejected cycles may leave private `BLOCKED` audit packages; only a live `READY_FOR_HUMAN_REVIEW` package can clear the coordinator.
 
 ## Run a persisted five-day campaign

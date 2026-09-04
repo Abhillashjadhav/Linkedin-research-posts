@@ -69,6 +69,102 @@ def selector() -> dict[str, object]:
 
 
 class SingleTopicSelectionTests(unittest.TestCase):
+    def test_live_selection_prompts_once_and_continues_with_human_guidance(self) -> None:
+        raw_selector = {
+            "selected_candidate_id": "topic-1",
+            "two_line_packaging": (
+                "The eval had not run.\nThe release gate refused to give a verdict."
+            ),
+            "what_happened": "The gate withheld a release verdict until evidence existed.",
+            "why_interesting": "Missing evidence could not become false confidence.",
+            "supports_locked_thesis": True,
+            "proof_type": "EVIDENCE_SOURCE",
+            "proof_available": True,
+            "proof_instruction": "Show the supplied release-gate evidence.",
+            "scores": {
+                "recognition": 5,
+                "attention_trigger": 3,
+                "situation_specificity": 4,
+                "proof_value": 4,
+                "payoff": 4,
+            },
+            "status": "BLOCKED",
+            "diagnosis": "The model label did not match its scores.",
+        }
+        observed_briefs: list[dict[str, object]] = []
+
+        def original_writer_prompt(*args: object, **kwargs: object) -> str:
+            supplied = kwargs["brief"]
+            assert isinstance(supplied, dict)
+            observed_briefs.append(supplied)
+            return "writer prompt"
+
+        with (
+            patch.object(workflow, "build_writer_prompt", side_effect=original_writer_prompt),
+            patch.object(
+                integrated_cli.topic_value,
+                "invoke_campaign_selector",
+                return_value=topic_result(),
+            ),
+            patch.object(
+                integrated_cli.resonance,
+                "invoke_structured",
+                side_effect=[dict(raw_selector), dict(raw_selector)],
+            ) as invoke,
+            patch.object(integrated_cli.resonance, "_load_role", return_value="role"),
+            patch.object(integrated_cli.sys.stdin, "isatty", return_value=True),
+            patch(
+                "builtins.input",
+                return_value=(
+                    "Make the release contract unable to invent a verdict when the "
+                    "evaluation did not run."
+                ),
+            ) as human_input,
+        ):
+            with integrated_cli._single_topic_selection_prompt():
+                rendered = workflow.build_writer_prompt(
+                    brief=brief(),
+                    evidence=evidence(),
+                    voice_guidance={
+                        "provenance": "reconstructed-style-guidance",
+                        "voice": "x",
+                    },
+                    proof=None,
+                )
+
+        self.assertEqual(rendered, "writer prompt")
+        self.assertEqual(invoke.call_count, 2)
+        self.assertEqual(human_input.call_count, 1)
+        self.assertEqual(len(observed_briefs), 1)
+        second_prompt = invoke.call_args_list[1].kwargs["task_prompt"]
+        self.assertIn("HUMAN_AUTHORITY_GUIDANCE", second_prompt)
+        self.assertIn("unable to invent a verdict", second_prompt)
+
+    def test_noninteractive_status_conflict_fails_with_actionable_human_checkpoint(self) -> None:
+        conflict = integrated_cli.resonance.SelectorStatusConflict(
+            {"status": "BLOCKED"},
+            scores={
+                "recognition": 5,
+                "attention_trigger": 3,
+                "situation_specificity": 4,
+                "proof_value": 4,
+                "payoff": 4,
+            },
+            supports_locked_thesis=True,
+            computed_status="PASS",
+        )
+
+        with patch.object(integrated_cli.sys.stdin, "isatty", return_value=False):
+            with self.assertRaisesRegex(
+                workflow.WorkflowError,
+                "rerun this draft from an interactive terminal",
+            ):
+                integrated_cli._human_resonance_guidance(
+                    conflict,
+                    {"thesis": "Locked thesis"},
+                    {"situation": "Selected situation"},
+                )
+
     def test_selection_is_injected_before_writer_and_cached_across_quality_cycles(self) -> None:
         calls: list[dict[str, object]] = []
 

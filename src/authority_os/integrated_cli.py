@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import sys
 from collections.abc import Mapping
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
@@ -20,6 +21,50 @@ _active_single_selector: dict[str, object] | None = None
 _active_single_topic_value: dict[str, object] | None = None
 _active_resonance_diagnostics: dict[str, dict[str, object]] = {}
 _active_acceptance_diagnostics: dict[str, list[str]] = {}
+
+
+def _human_resonance_guidance(
+    conflict: resonance.SelectorStatusConflict,
+    day: Mapping[str, object],
+    selected_topic: Mapping[str, object],
+) -> str:
+    """Ask for author judgment without allowing a human to waive the gate."""
+
+    if not sys.stdin.isatty():
+        raise workflow.WorkflowError(
+            f"{conflict} Human authority guidance is required; rerun this draft "
+            "from an interactive terminal."
+        )
+    print("\nHUMAN INPUT REQUIRED — resonance and authority alignment")
+    print(f"Selected situation: {selected_topic.get('situation', '')}")
+    print(f"Locked thesis: {day.get('thesis', '')}")
+    print(
+        f"Model status: {conflict.model_status}; deterministic status: "
+        f"{conflict.computed_status}; total: {sum(conflict.scores.values())}/25"
+    )
+    print(
+        "Scores: "
+        + ", ".join(
+            f"{axis}={conflict.scores[axis]}" for axis in resonance.SELECTOR_AXES
+        )
+    )
+    print(
+        "This guidance may clarify the author's authority judgment and reader payoff. "
+        "It cannot change the selected evidence, thesis, scores, or hard gates."
+    )
+    try:
+        guidance = input(
+            "What authority judgment should the Writer preserve? "
+        ).strip()
+    except EOFError as exc:
+        raise workflow.WorkflowError(
+            "Resonance human guidance was not provided."
+        ) from exc
+    if not guidance:
+        raise workflow.WorkflowError(
+            "Resonance human guidance was blank; drafting remains blocked."
+        )
+    return guidance
 
 
 def _record_post_quality(candidate: object) -> None:
@@ -306,7 +351,11 @@ def _single_topic_selection_prompt() -> Iterator[None]:
         if not cached:
             day = _single_day(brief, evidence, proof)
             selected_topic = topic_value.invoke_campaign_selector(day)
-            selector = resonance.invoke_selector(day, selected_topic)
+            selector = resonance.invoke_selector(
+                day,
+                selected_topic,
+                human_guidance_provider=_human_resonance_guidance,
+            )
             if selector.get("status") != "PASS":
                 raise workflow.WorkflowError(
                     f"Resonance Selector blocked the single-topic draft: {selector.get('diagnosis', 'weak feed entry')}"
@@ -393,6 +442,7 @@ def _command_draft(args: object) -> int:
         Path(run_spec),
         output_root=output_root,
         only_day=getattr(args, "campaign_day", None),
+        human_guidance_provider=_human_resonance_guidance,
     )
     setattr(args, "run_spec", prepared_spec)
     captured = io.StringIO()
