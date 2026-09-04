@@ -8,8 +8,9 @@ The CLI now places a bounded coordinator around that cycle for live drafting.
 
 A candidate is returned only when:
 
-- its effective Critic score is 24 or 25;
-- its hook score is at least 4;
+- its effective Critic score is at least 18;
+- hook strength and voice fidelity are at least 4;
+- middle escalation, earned closer, and specificity/source quality are each at least 3;
 - every required authority, proof, honesty, citation, and relevance gate passes; and
 - its opening was not rejected in an earlier cycle.
 
@@ -25,6 +26,6 @@ The synthetic dry run remains one deterministic cycle and never invokes the Writ
 
 ## Exhaustion
 
-When four live cycles fail, the command returns no post. It reports the final best score and asks for stronger strategy or evidence. It does not lower the threshold, expose rejected prose, or manufacture a candidate.
+When four live cycles fail, the command returns no post. It reports the final best score and every axis shortfall, then asks for stronger strategy or evidence. It does not lower the threshold, expose rejected prose, or manufacture a candidate. A score of 24 remains the optimization target only.
 
 When `--package` is used, an unsuccessful cycle can create a private blocked audit package through the existing packaging boundary. Only a live `READY_FOR_HUMAN_REVIEW` package whose recommendation matches a qualifying candidate can clear the coordinator.

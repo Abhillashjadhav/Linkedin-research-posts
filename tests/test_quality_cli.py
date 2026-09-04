@@ -293,7 +293,6 @@ class QualitySearchTests(unittest.TestCase):
             return {}
 
         def fake_run_campaign(**kwargs):
-            self.assertEqual(campaign.MIN_HOOK, 4)
             invoker = kwargs["invoker"]
             with patch.object(campaign, "default_stage_invoker", fake_default):
                 invoker(
@@ -310,17 +309,19 @@ class QualitySearchTests(unittest.TestCase):
                     "This is a bounded regeneration.",
                     {},
                 )
-            return {"days": [{"status": "BLOCKED"}]}
+            return {
+                "days": [{"status": "READY_FOR_HUMAN_REVIEW"}],
+                "execution_outcomes": [{"day": "Monday", "status": "BLOCKED"}],
+            }
 
         output = io.StringIO()
         with (
-            patch.object(campaign, "MIN_HOOK", 4),
             patch.object(campaign, "run_campaign", side_effect=fake_run_campaign),
             redirect_stdout(output),
         ):
             result = quality_cli.command_draft(args)
 
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
         prompt = str(observed["task_prompt"])
         self.assertIn("HOOK_REGENERATION_CONTRACT", prompt)
         self.assertIn("previous hook was 3/5", prompt.casefold())

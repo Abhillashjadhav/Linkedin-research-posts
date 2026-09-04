@@ -236,10 +236,13 @@ def _qualifying_candidates(
     qualifying = tuple(
         candidate
         for candidate in attempt.candidates
-        if candidate.effective_total >= MIN_QUALITY_SCORE
-        and not acceptance_policy.axis_shortfalls(candidate.axes)
-        and acceptance_policy.hard_candidate_gates_pass(candidate.gates)
-        and candidate.passes_required_gates
+        if acceptance_policy.scorecard_is_acceptable(
+            {**candidate.axes, "effective_total": candidate.effective_total},
+            hard_gates_pass=(
+                acceptance_policy.hard_candidate_gates_pass(candidate.gates)
+                and candidate.passes_required_gates
+            ),
+        )
         and _normalise_opening(candidate.opening) not in rejected_openings
     )
     if not qualifying:
@@ -348,14 +351,20 @@ def _render_success(
         print(line)
     print(
         f"Quality search passed on cycle {cycle}/{limit}: "
-        f"{len(accepted)} candidate(s) cleared {MIN_QUALITY_SCORE}/25, hook "
-        f"{MIN_HOOK_SCORE}/5, and every required gate."
+        f"{len(accepted)} candidate(s) cleared the shared five-axis contract "
+        f"({MIN_QUALITY_SCORE}/25 total; hook/voice 4/5; middle/closer/"
+        "specificity 3/5) and every required gate."
     )
     for candidate in accepted:
         print(
             f"Accepted candidate: id={candidate.candidate_id}; "
             f"score={candidate.effective_total}/25; "
-            f"hook={candidate.axes.get('hook_strength', 0)}/5."
+            f"hook={candidate.axes.get('hook_strength', 0)}/5; axes="
+            + ",".join(
+                f"{axis}={candidate.axes.get(axis, 0)}/5"
+                for axis in workflow.CRITIC_AXES
+            )
+            + "."
         )
         print(candidate.text)
         gate_summary = ",".join(
@@ -380,7 +389,6 @@ def command_draft(args: object) -> int:
             raise workflow.WorkflowError(
                 "Campaign drafting requires --trace-output, --no-ai-slop-skill, and --no-ai-slop-eval."
             )
-        campaign.MIN_HOOK = MIN_HOOK_SCORE
         last_hook_failure: int | None = None
 
         def campaign_invoker(stage, config, role_prompt, task_prompt, schema):
@@ -421,11 +429,25 @@ def command_draft(args: object) -> int:
             invoker=campaign_invoker,
         )
         statuses = [str(item["status"]) for item in summary["days"]]
+        raw_execution = summary.get("execution_outcomes")
+        if not isinstance(raw_execution, list) or any(
+            not isinstance(item, Mapping)
+            or not isinstance(item.get("day"), str)
+            or not isinstance(item.get("status"), str)
+            for item in raw_execution
+        ):
+            raise workflow.WorkflowError("Campaign execution outcomes are invalid.")
+        execution_statuses = [str(item["status"]) for item in raw_execution]
         print(f"Campaign trace: {output}")
         print(f"Campaign outcomes: {','.join(statuses)}")
         print("Human approval status: NOT_APPROVED.")
         print("Publishing status: DISABLED. No LinkedIn action was taken.")
-        return 0
+        return (
+            0
+            if not execution_statuses
+            or all(status == "READY_FOR_HUMAN_REVIEW" for status in execution_statuses)
+            else 1
+        )
 
     fixture_mode = bool(getattr(args, "dry_run", False))
     package_requested = bool(getattr(args, "package", False))

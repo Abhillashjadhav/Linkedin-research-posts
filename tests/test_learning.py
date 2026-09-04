@@ -158,6 +158,34 @@ class WeeklyLearningTests(unittest.TestCase):
         winning = report["strongest_hook_by_goal"]["reach"]["references"]
         self.assertEqual([item["package_id"] for item in winning], ["2026-07-01-canonical"])
 
+    def test_valid_eighteen_point_snapshot_is_not_rejected_by_legacy_band(self) -> None:
+        published = datetime(2026, 7, 1, 12, tzinfo=UTC)
+        row = performance_row("boundary", published=published)
+        scores = {
+            "hook_strength": 5,
+            "middle_escalation": 3,
+            "earned_closer": 3,
+            "specificity_and_source_quality": 3,
+            "voice_fidelity": 4,
+        }
+        row.update(scores)
+        row.update(
+            {
+                "critic_raw_total": 18,
+                "critic_effective_total": 18,
+                "critic_hook_cap_applied": False,
+                "critic_band": "below-critic-bar",
+            }
+        )
+
+        report = learning.build_weekly_review(
+            [row],
+            as_of=self.as_of,
+            candidate_contexts=dict([candidate_context(row)]),
+        )
+
+        self.assertEqual(report["basis"]["canonical_posts"], 1)
+
     def test_goal_vectors_drive_hook_references_and_preserve_ties(self) -> None:
         published = datetime(2026, 7, 1, 12, tzinfo=UTC)
         rows = [

@@ -149,7 +149,7 @@ timeout-only retry. Other selector failures remain fail-closed and are not retri
 The existing draft workflow then owns:
 
 - three post candidates;
-- the 24/25 post threshold and 5/5 hook floor;
+- the shared 18/25 post floor, hook and voice floors of 4, and the other axis floors of 3;
 - deterministic authority, honesty, citation, relevance, and proof gates;
 - bounded regeneration;
 - optional private human-review package.

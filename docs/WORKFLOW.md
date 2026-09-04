@@ -14,7 +14,7 @@ files as documentation:
 3. invoke Narrative Editor on all three and validate `UNCHANGED`, `EDITED`, or `DROP`;
 4. invoke Critic on survivors and calculate totals and the hook cap locally;
 5. run authority, proof, honesty, citation, relevance, and integrated anti-slop gates;
-6. regenerate the complete candidate set with bounded diagnostics when nothing clears 24/25, hook 4/5, and every gate (maximum four cycles);
+6. regenerate the complete candidate set with bounded diagnostics when nothing clears 18/25, every named axis floor, and every gate (maximum four cycles);
 7. invoke the separate `Abhillashjadhav/no-ai-slop` `SKILL.md` plus `eval.md` and re-run Critic and deterministic gates after any change;
 8. write and score the first comment, then run deterministic evidence checks, integrated anti-slop, and the same separate artisanal edit;
 9. invoke Artifact Editor only after text is locked, render the plan as SVG, and invoke Visual QA with deterministic layout metadata;
@@ -108,11 +108,15 @@ After the Writer contract is validated, the Critic scores every candidate from 1
 
 The model returns only candidate IDs and those five integer scores. Python rejects missing, extra, duplicated, unknown, non-integer, or out-of-range values and calculates the totals locally. A `hook_strength` score of 3 or below caps the effective total at 18 even when the five-axis raw total is higher.
 
-The effective-total bands have narrow meanings:
+The effective-total bands are legacy descriptive optimization tiers, not acceptance decisions:
 
-- 24–25 means advance to the local safety gates. It does not mean approved, ready for approval, recommended, scheduled, or published.
+- 24–25 means the optimization target was met. It does not mean approved, ready for approval, recommended, scheduled, or published.
 - 22–23 permits one light revision of the current score leader. The Writer may be invoked once, the replacement candidate must still satisfy the full drafting contract, and the Critic may rescore it once. Revision does not recurse.
-- 21 or below is below the Critic bar for this run; major rewriting is outside this stage.
+- 21 or below misses the legacy optimization tiers but may still be review-eligible under the shared acceptance contract.
+
+The shared acceptance contract requires total at least 18, hook and voice at least 4, middle escalation, earned closer, and specificity/source quality at least 3, plus every hard gate. The package, campaign post route, performance recorder, and learner consume this same decision. Each shortfall is recorded separately.
+
+The first-comment reviewer uses five different axes. Its independently named total floor is also 18/25 by owner decision; evidence, anti-slop, and artisanal checks still pass separately.
 
 The runtime reports a deterministic **score leader**, not a winner or recommended candidate. Candidate order cannot change the result: ranking compares effective total descending, raw total descending, the five rubric axes descending in the order listed above, and finally candidate ID ascending. Scoring is intentionally separated from safety policy: the Critic prompt contains the recovered five-axis rubric but excludes the authority-conversion, proof, honesty, citation, and relevance gates. Those gates run locally afterward. Only the later package stage can combine the score band and gate result into a recommendation for human review.
 
@@ -130,7 +134,7 @@ Authority conversion requires material overlap with both the explicit authority 
 
 ### Explicit human-review package
 
-`draft --package` revalidates the final candidates, computed scorecards, deterministic ranking, revision metadata, and strategy/proof provenance, then recomputes all five gates locally. A candidate is eligible only when its final Critic band is `advance-to-gates` and `passes_required_gates` is true. The package walks the validated Critic ranking and recommends the first eligible live candidate. No eligible candidate produces a complete `BLOCKED` package with a null recommendation; it is not a command failure.
+`draft --package` revalidates the final candidates, computed scorecards, deterministic ranking, revision metadata, and strategy/proof provenance, then recomputes all five gates locally. A candidate is eligible only when it passes the shared five-axis acceptance contract and every required gate. The package walks the validated Critic ranking and recommends the first eligible live candidate. No eligible candidate produces a complete `BLOCKED` package with a null recommendation.
 
 Fixture provenance can never cross into a live package. Fixture packages expose mechanical eligible IDs for contract testing but set `recommended_candidate_id` to null and `review_status` to `FIXTURE_REVIEW_ONLY`. Live eligible packages use `READY_FOR_HUMAN_REVIEW`; live ineligible packages use `BLOCKED`. In all cases:
 

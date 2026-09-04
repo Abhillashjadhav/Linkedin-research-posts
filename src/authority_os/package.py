@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from . import workflow
+from . import acceptance_policy, workflow
 
 try:
     import fcntl
@@ -404,8 +404,15 @@ def _package_data(
     eligible_ids = [
         candidate_id
         for candidate_id in ranking
-        if scorecards_by_id[candidate_id]["band"] == "advance-to-gates"
-        and gates_by_id[candidate_id]["passes_required_gates"] is True
+        if acceptance_policy.scorecard_is_acceptable(
+            scorecards_by_id[candidate_id],
+            hard_gates_pass=(
+                gates_by_id[candidate_id]["passes_required_gates"] is True
+                and acceptance_policy.hard_candidate_gates_pass(
+                    gates_by_id[candidate_id]["gates"]
+                )
+            ),
+        )
     ]
     recommended_id = (
         eligible_ids[0] if eligible_ids and mode == "live" else None

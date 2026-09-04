@@ -110,6 +110,27 @@ def cards() -> list[dict[str, object]]:
 
 
 class SpineCardTests(unittest.TestCase):
+    def test_dashboard_versions_report_the_live_v2_critic_rubric(self) -> None:
+        versions = daily_spine_cli.evaluator_versions()
+        rubrics = versions["rubrics"]
+        self.assertIn("critic-rubric-v2.json", rubrics)
+        self.assertNotIn("critic-rubric-v1.json", rubrics)
+        self.assertEqual(
+            versions["acceptance"],
+            {
+                "contract_version": "five-axis-v2",
+                "floor": 18,
+                "quality_target": 24,
+                "axis_floors": {
+                    "hook_strength": 4,
+                    "middle_escalation": 3,
+                    "earned_closer": 3,
+                    "specificity_and_source_quality": 3,
+                    "voice_fidelity": 4,
+                },
+            },
+        )
+
     def test_topic_value_dashboard_observer_persists_both_labelled_stages(self) -> None:
         workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
