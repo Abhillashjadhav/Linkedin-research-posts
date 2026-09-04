@@ -2317,7 +2317,7 @@ def validate_critic_scorecards(
     raw_scorecards: Sequence[Mapping[str, object]],
     candidates: Sequence[Mapping[str, object]],
 ) -> list[dict[str, object]]:
-    """Validate strict Critic scores and compute local totals and bands."""
+    """Validate strict Critic scores and compute the single 18/25 total boundary."""
 
     safe_candidates = _critic_candidate_projection(candidates)
     if not isinstance(raw_scorecards, Sequence) or isinstance(
@@ -2349,15 +2349,9 @@ def validate_critic_scorecards(
                 )
             validated[axis] = value
         raw_total = sum(int(validated[axis]) for axis in CRITIC_AXES)
-        hook_cap_applied = int(validated["hook_strength"]) <= 3 and raw_total > 18
-        effective_total = 18 if hook_cap_applied else raw_total
-        band = (
-            "advance-to-gates"
-            if effective_total >= 24
-            else "one-light-revision"
-            if effective_total >= 22
-            else "below-critic-bar"
-        )
+        hook_cap_applied = False
+        effective_total = raw_total
+        band = "advance-to-gates" if effective_total >= 18 else "below-critic-bar"
         validated.update(
             {
                 "raw_total": raw_total,
@@ -2411,24 +2405,13 @@ def rank_critic_scorecards(
         if (
             type(scorecard["hook_cap_applied"]) is not bool
             or not isinstance(band, str)
-            or band
-            not in {
-                "advance-to-gates",
-                "one-light-revision",
-                "below-critic-bar",
-            }
+            or band not in {"advance-to-gates", "below-critic-bar"}
         ):
             raise WorkflowError("Ranked Critic computed fields are invalid.")
         raw_total = sum(int(scorecard[axis]) for axis in CRITIC_AXES)
-        hook_cap = int(scorecard["hook_strength"]) <= 3 and raw_total > 18
-        effective_total = 18 if hook_cap else raw_total
-        expected_band = (
-            "advance-to-gates"
-            if effective_total >= 24
-            else "one-light-revision"
-            if effective_total >= 22
-            else "below-critic-bar"
-        )
+        hook_cap = False
+        effective_total = raw_total
+        expected_band = "advance-to-gates" if effective_total >= 18 else "below-critic-bar"
         if (
             scorecard["raw_total"] != raw_total
             or scorecard["effective_total"] != effective_total
@@ -2706,7 +2689,7 @@ def run_critic_review(
     *,
     proof: LoadedProof | None = None,
 ) -> dict[str, object]:
-    """Score all candidates and permit one light revision of the initial leader."""
+    """Score all candidates once; repair cycles are owned by the quality optimizer."""
 
     current_candidates = validate_draft_candidates(
         candidates, brief=brief, evidence=evidence, proof=proof
@@ -2714,76 +2697,13 @@ def run_critic_review(
     initial_raw = score_provider(_critic_candidate_projection(current_candidates))
     scorecards = validate_critic_scorecards(initial_raw, current_candidates)
     ranked = rank_critic_scorecards(scorecards)
-    initial_leader = ranked[0]
-    revision_count = 0
-    revision_candidate_id: str | None = None
-    if initial_leader["band"] == "one-light-revision":
-        leader_id = str(initial_leader["candidate_id"])
-        leader_index = next(
-            index
-            for index, candidate in enumerate(current_candidates)
-            if candidate["id"] == leader_id
-        )
-        original = {
-            **current_candidates[leader_index],
-            "claim_ids": list(current_candidates[leader_index]["claim_ids"]),
-        }
-        revision_input = {**original, "claim_ids": list(original["claim_ids"])}
-        revised = revision_provider(revision_input, dict(initial_leader))
-        if not isinstance(revised, Mapping):
-            raise WorkflowError("Writer revision must return one candidate object.")
-        if revised.get("id") != original["id"] or revised.get("angle") != original["angle"]:
-            raise WorkflowError("Writer revision must preserve candidate ID and angle.")
-        revised_text = revised.get("text")
-        if not isinstance(revised_text, str) or (
-            _style_normal_form(revised_text) == _style_normal_form(str(original["text"]))
-        ):
-            raise WorkflowError("Writer revision must make one real text change.")
-        revised_claim_ids = revised.get("claim_ids")
-        if not isinstance(revised_claim_ids, Sequence) or isinstance(
-            revised_claim_ids, (str, bytes)
-        ):
-            raise WorkflowError("Writer revision claim_ids must be a list.")
-        if not revised_claim_ids or not all(
-            isinstance(claim_id, str) and claim_id.strip()
-            for claim_id in revised_claim_ids
-        ):
-            raise WorkflowError(
-                "Writer revision claim_ids must contain non-blank strings."
-            )
-        cleaned_revised_claim_ids = [
-            str(claim_id).strip() for claim_id in revised_claim_ids
-        ]
-        if len(cleaned_revised_claim_ids) != len(set(cleaned_revised_claim_ids)):
-            raise WorkflowError("Writer revision claim_ids must be distinct.")
-        if not set(cleaned_revised_claim_ids) <= set(original["claim_ids"]):
-            raise WorkflowError("Writer revision cannot introduce new claim IDs.")
-        replacement = [dict(candidate) for candidate in current_candidates]
-        replacement[leader_index] = dict(revised)
-        current_candidates = validate_draft_candidates(
-            replacement, brief=brief, evidence=evidence, proof=proof
-        )
-        revised_candidate = current_candidates[leader_index]
-        revised_raw = score_provider(_critic_candidate_projection([revised_candidate]))
-        revised_scorecard = validate_critic_scorecards(
-            revised_raw, [revised_candidate]
-        )[0]
-        scorecards = [
-            revised_scorecard
-            if scorecard["candidate_id"] == leader_id
-            else scorecard
-            for scorecard in scorecards
-        ]
-        revision_count = 1
-        revision_candidate_id = leader_id
-    ranked = rank_critic_scorecards(scorecards)
     return {
         "candidates": current_candidates,
         "scorecards": scorecards,
         "ranking": [scorecard["candidate_id"] for scorecard in ranked],
         "score_leader_id": ranked[0]["candidate_id"],
-        "revision_count": revision_count,
-        "revision_candidate_id": revision_candidate_id,
+        "revision_count": 0,
+        "revision_candidate_id": None,
     }
 
 

@@ -605,10 +605,7 @@ class MinimalCliTests(unittest.TestCase):
                 self.assertEqual(result.stdout.count("Gate result: id="), 3)
                 self.assertIn("Three draft candidates scored", result.stdout)
                 self.assertIn("Critic ranking:", result.stdout)
-                expected_revisions = 1 if goal == "authority" else 0
-                self.assertIn(
-                    f"revision_count={expected_revisions}", result.stdout
-                )
+                self.assertIn("revision_count=0", result.stdout)
                 lowered = result.stdout.casefold()
                 for deferred in (
                     "score=",

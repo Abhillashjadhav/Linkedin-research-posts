@@ -21,6 +21,7 @@ class ProductionBoundaryTests(unittest.TestCase):
             "privacy-check",
             "research",
             "draft",
+            "eval-package",
             "record-performance",
             "weekly-review",
         }

@@ -63,8 +63,8 @@ class AcceptancePolicyTests(unittest.TestCase):
             decision["axis_shortfalls"]["voice_fidelity"]["shortfall"], 1
         )
 
-    def test_twenty_four_is_target_not_eligibility_floor(self) -> None:
-        self.assertEqual(acceptance_policy.QUALITY_TARGET, 24)
+    def test_eighteen_is_the_only_total_boundary(self) -> None:
+        self.assertFalse(hasattr(acceptance_policy, "QUALITY_TARGET"))
         decision = acceptance_policy.acceptance_decision(
             scorecard(5, 3, 3, 3, 4), hard_gates_pass=True
         )

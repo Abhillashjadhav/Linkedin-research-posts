@@ -308,7 +308,6 @@ def evaluator_versions() -> dict[str, object]:
         "acceptance": {
             "contract_version": acceptance_policy.ACCEPTANCE_CONTRACT_VERSION,
             "floor": acceptance_policy.ACCEPTABLE_QUALITY_FLOOR,
-            "quality_target": acceptance_policy.QUALITY_TARGET,
             "axis_floors": dict(acceptance_policy.AXIS_FLOORS),
         },
     }

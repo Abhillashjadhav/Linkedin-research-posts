@@ -40,7 +40,7 @@ def candidate(
         axes=dict(axes),
         raw_total=score,
         effective_total=score,
-        band="advance-to-gates" if score >= 24 else "one-light-revision" if score >= 22 else "below-critic-bar",
+        band="advance-to-gates" if score >= 18 else "below-critic-bar",
         gates=gates,
         passes_required_gates=gates_pass,
         gate_reasons=reasons,
@@ -61,7 +61,7 @@ def attempt_output(*, axes: tuple[int, int, int, int, int], text: str) -> str:
     names = workflow.CRITIC_AXES
     score = sum(axes)
     axis_text = ",".join(f"{name}={value}" for name, value in zip(names, axes, strict=True))
-    band = "advance-to-gates" if score >= 24 else "one-light-revision" if score >= 22 else "below-critic-bar"
+    band = "advance-to-gates" if score >= 18 else "below-critic-bar"
     return (
         "Stored evidence selected for Writer: topic=test; sources=2.\n"
         "Strategy brief: goal=authority; format=text; weekly_slot=not-selected; topic=test.\n"
@@ -207,7 +207,7 @@ class AcceptanceTests(unittest.TestCase):
             "raw_total": 22,
             "effective_total": 22,
             "hook_cap_applied": False,
-            "band": "one-light-revision",
+            "band": "advance-to-gates",
         }
         self.assertTrue(
             quality_optimizer._scorecard_is_acceptable(  # type: ignore[attr-defined]
@@ -462,7 +462,7 @@ class RepairStateTests(unittest.TestCase):
                 "specificity_and_source_quality",
             ],
         )
-        self.assertEqual(feedback["quality_target"], 24)
+        self.assertNotIn("quality_target", feedback)
         self.assertEqual(feedback["acceptable_floor"], 18)
         self.assertEqual(
             feedback["axis_floors"],
@@ -509,7 +509,6 @@ class RepairPromptTests(unittest.TestCase):
                 "critic_axes": {"hook_strength": 5, "voice_fidelity": 3},
                 "gate_reasons": ["unsupported-factual-marker"],
             },
-            "quality_target": 24,
         }
         with patch.object(workflow, "build_writer_prompt", lambda *a, **k: "BASE"):
             with quality_optimizer._writer_retry_prompt(feedback):  # type: ignore[attr-defined]

@@ -120,7 +120,6 @@ class SpineCardTests(unittest.TestCase):
             {
                 "contract_version": "five-axis-v2",
                 "floor": 18,
-                "quality_target": 24,
                 "axis_floors": {
                     "hook_strength": 4,
                     "middle_escalation": 3,

@@ -10,15 +10,15 @@
     "voice_fidelity": {
       "type": "values_gate",
       "floor": 4,
-      "note": "Rescaled. On the v1 scale the owner gave 2 to 17 of his own 30 published posts and 4-or-5 to only two, so a floor of 4 passed nothing. The v2 anchors move a publishable, unmistakably human conversational-product-leader standard to 4. Exact imitation of the owner's speech is not required.",
+      "note": "Rescaled. On the v1 scale the owner gave 2 to 17 of his own 30 published posts and 4-or-5 to only two, so a floor of 4 passed nothing. The v2 anchors move a publishable, unmistakably human conversational-product-leader standard to 4. The target is a broad human voice, not imitation of the owner or any other person.",
       "detector": "Sentence-length variance separates his voice from AI cadence at kappa 0.48 - directional, not gate-grade. A model judge is required; the deterministic signal is a prior, not a verdict.",
-      "1": "Uniform sentence rhythm, stacked adjectives, no contractions, tidy parallel structure. Reads as competent copy nobody wrote. His example: the 40-year-veteran-engineer post.",
-      "2": "The subject is relevant, but the prose is formulaic. Sentences cluster near one length and the connective tissue sounds polished rather than spoken.",
-      "3": "Human-readable, but passages flatten into a consultant memo: legalistic qualifications, abstract noun stacks, tidy parallel requirements, or a summary-style ending. It still carries a visible AI fingerprint.",
-      "4": "WORKING STANDARD. Clearly human, conversational product-leader writing. Sentence lengths swing, contractions appear naturally, plain words carry the argument, judgment is direct, and line 2 does not slide into explanatory or consultant register. Exact imitation of the owner's speech is not required.",
-      "5": "Distinctive, memorable human writing. It is sharp without performance, technically credible without sounding like a specification, and confident without hiding uncertainty. Plain words do the work; industry vocabulary is used only where it helps.",
+      "1": "Uniform sentence rhythm, stacked adjectives, no contractions, tidy parallel structure, or invented emotion and first-person experience. It reads as competent copy nobody actually said.",
+      "2": "The subject is relevant, but the prose is formulaic or presentation-driven. It uses polished connective tissue, high-flown words, forced wit, or generic declarations of empathy instead of sounding emotionally observant and spoken.",
+      "3": "Human-readable, but passages flatten into a consultant memo or presentation: legalistic qualifications, abstract noun stacks, tidy parallel requirements, executive-summary language, or a summary-style ending. It still carries a visible AI fingerprint.",
+      "4": "WORKING STANDARD. Clearly human, conversational product-leader writing, not an imitation of the owner. Sentence lengths swing, contractions appear naturally, plain words carry the argument, and judgment is direct. When the evidence supports it, the writing notices the real human feeling or consequence - frustration, empathy, uncertainty, helplessness, wasted effort, or relief - without inventing emotion or experience. It avoids consultant, presentation, and explanatory register, including in line 2.",
+      "5": "Distinctive, memorable human writing. It is exceptionally sharp and may be witty, but wit is never required or forced. It is emotionally perceptive where the truth supports that reading, technically credible without sounding like a specification, and confident without hiding uncertainty. Plain words do the work; industry vocabulary is used only where it helps, and no feeling or lived experience is fabricated.",
       "banned_register": {
-        "rule": "He writes in plain words. A word that would not appear in his speech is AI smell, whatever else the line does.",
+        "rule": "Use plain, spoken words. Consultant language, presentation language, high-flown wording, and abstract noun stacks are AI smell even when technically correct.",
         "examples_of_words_he_does_not_use": [
           "shy of",
           "delve",
@@ -42,18 +42,18 @@
           "token"
         ]
       },
-      "line_two_rule": "The hook is two lines and line 2 is where AI smell appears. Line 1 is usually his because he writes it deliberately; the second line is where explanatory register creeps in. Score the hook on both lines, never on line 1 alone."
+      "line_two_rule": "Score the first two lines together. Line 2 must remain human and conversational rather than sliding into explanatory, consultant, or presentation register."
     },
     "hook_strength": {
       "type": "outcome_gate",
       "floor": 4,
-      "note": "Distinct from reader_stake, which is the binary subject test at kappa 0.80. This axis scores craft once the subject already qualifies.",
+      "note": "Distinct from reader_stake, which is the binary subject test at kappa 0.80. This axis scores the first two lines together once the subject already qualifies. The topic-value brand-strip test asks whether the underlying idea survives without a brand; it does not tell the Writer to avoid a supported recognizable name in the hook.",
       "1": "No concrete situation. Abstract claim or throat-clearing.",
-      "2": "A real situation, but the subject is his own project and the reader has nothing at stake. His examples: 'Spent last weekend wiring a second agent', 'Been going deep on RAG architectures lately.'",
-      "3": "Concrete and external, but the stake arrives late or the opening spends its first clause on setup. His example: 'Why does it think I'm based in Belgium?'",
-      "4": "WORKING STANDARD. Line 1 names a problem the target reader recognises, or a claim about the group they belong to, and the payoff is visible immediately. His examples: 'An AI agent forgetting what you said is a context problem', 'I think AI PMs should stop learning sooner.'",
-      "5": "A named external party, a hard number, and a consequence, inside the first two lines. His example: 'A Meta AI safety director - reportedly paid $100M+ to keep AI aligned - could not stop her own agent from deleting her inbox. She typed STOP. It ignored her.'",
-      "line_two_rule": "The hook is two lines and line 2 is where AI smell appears. Line 1 is usually his because he writes it deliberately; the second line is where explanatory register creeps in. Score the hook on both lines, never on line 1 alone."
+      "2": "Names a real event, company, or situation, but gives the reader no immediate reason to care.",
+      "3": "Concrete and relevant, but the reader stake arrives after the first two lines or remains generic; the opening may also spend its strongest position on setup.",
+      "4": "WORKING STANDARD. Across the first two lines, line 1 leads with the strongest supported recognizable name or company and supported number, loss, scale, or incident available; line 2 immediately states the consequence, risk, opportunity, challenge, problem, or decision for the reader. If no name or number is available, use the strongest supported concrete fact without inventing one.",
+      "5": "Across the first two lines, line 1 uses the strongest supported recognizable name or company plus the most material supported number, loss, scale, or incident available, and line 2 connects it to a sharp, surprising reader consequence. Bigger claims earn this score only when the evidence supports them; never inflate or invent either line.",
+      "line_two_rule": "The hook is the first two lines scored together: line 1 earns attention with the strongest supported recognizable name, number, loss, scale, or incident available; line 2 establishes the reader's immediate stake. Never score line 1 alone."
     },
     "specificity_and_source_quality": {
       "type": "outcome_gate",
@@ -99,9 +99,6 @@
       "specificity_and_source_quality",
       "voice_fidelity"
     ],
-    "bonus": {
-      "big_name_present": 2
-    },
     "note": "All five axes are scored and remain in acceptance. Total must reach 18/25. Voice is refused below 4 whatever the rest of the post scores. That is a values decision, not an outcome one."
   }
 }

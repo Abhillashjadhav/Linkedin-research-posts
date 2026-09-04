@@ -7,7 +7,6 @@ from typing import Mapping
 
 
 ACCEPTABLE_QUALITY_FLOOR = 18
-QUALITY_TARGET = 24
 MIN_HOOK_SCORE = 4
 MIN_MIDDLE_ESCALATION_SCORE = 3
 MIN_EARNED_CLOSER_SCORE = 3
@@ -67,7 +66,6 @@ def acceptance_decision(
 ) -> dict[str, object]:
     """Evaluate the shared five-axis contract and record every shortfall.
 
-    The 24/25 value is an optimization target, not an eligibility boundary.
     Callers remain responsible for deterministic checks that are specific to
     their artifact (for example anti-slop or privacy-at-write enforcement).
     """
