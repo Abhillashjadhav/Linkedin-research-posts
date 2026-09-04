@@ -67,6 +67,8 @@ Reader utility is mandatory, but do not force one template on every post. Practi
 
 Do not require numbers. Situation specificity may be behavioral, visual, numeric, or artifact-based. Technical detail the target reader cannot interpret does not increase stop power, comprehension, or shareability.
 
+Do not reward incidental precision. Faithful abstraction may omit counts, dates, labels, or specialist details and may map an instance to its true parent category when that makes the underlying claim easier to understand. Proof supports the underlying claim, not a word-for-word reproduction. It does not support added severity, prevalence, causality, scope, materiality, or certainty.
+
 Emotional resonance must come from **truthful stakes** already present in the situation: uncertainty, wasted work, trust, release risk, decision quality, time, customer impact, or another supported consequence. Never reward manufactured urgency, fear, drama, clickbait, or invented feelings.
 
 Social engagement can demonstrate momentum, not factual truth. Vendor announcements, newsletters, reposts, and community chatter must not be rewarded as independent factual corroboration.

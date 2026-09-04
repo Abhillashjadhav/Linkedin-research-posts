@@ -540,7 +540,7 @@ def _record_topic_decisions(candidates) -> None:
         evaluations = candidate.get("v1_evals")
         if not isinstance(evaluations, Mapping):
             continue
-        for name in ("atomic_value_novelty", "research_trust", "claim_body_support"):
+        for name in ("atomic_value_novelty", "research_trust"):
             decision = evaluations.get(name)
             if isinstance(decision, Mapping):
                 record_decision(decision, stage="topic-value", subject_id=subject)

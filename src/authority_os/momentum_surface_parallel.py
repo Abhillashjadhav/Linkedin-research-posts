@@ -6,6 +6,7 @@ import json
 import os
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from datetime import timedelta
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -127,7 +128,9 @@ def _surface_schema(allowed_platforms: Sequence[str]) -> dict[str, object]:
             "url": {"type": "string"},
             "source": {"type": "string"},
             "published_at": {"type": "string"},
-            "freshness_hours": {"type": "number", "minimum": 0},
+            "freshness_hours": {
+                "anyOf": [{"type": "number", "minimum": 0}, {"type": "null"}]
+            },
             "engagement_units": {
                 "anyOf": [{"type": "number", "minimum": 0}, {"type": "null"}]
             },
@@ -194,6 +197,8 @@ def _validate_surface_result(
     raw: object,
     *,
     surface: Mapping[str, object],
+    days: int | None = None,
+    as_of: str | None = None,
 ) -> dict[str, object]:
     if not isinstance(raw, Mapping) or set(raw) != {"status", "signals", "caveat"}:
         raise workflow.WorkflowError("Surface Scout returned an invalid result.")
@@ -235,8 +240,27 @@ def _validate_surface_result(
             continue
         seen_urls.add(url)
         freshness = item["freshness_hours"]
-        if isinstance(freshness, bool) or not isinstance(freshness, (int, float)) or freshness < 0:
-            raise workflow.WorkflowError("Surface Scout freshness must be non-negative.")
+        if freshness is not None and (
+            isinstance(freshness, bool)
+            or not isinstance(freshness, (int, float))
+            or freshness < 0
+        ):
+            raise workflow.WorkflowError("Surface Scout freshness must be non-negative or null.")
+        try:
+            earliest, latest, precision = workflow.source_publication_bounds(
+                str(item["published_at"])
+            )
+            if days is not None and as_of is not None:
+                window_end = workflow.parse_published_at(as_of)
+                window_start = window_end - timedelta(days=days)
+                if latest < window_start or earliest > window_end:
+                    raise workflow.WorkflowError(
+                        "Surface Scout signal is outside the requested time window."
+                    )
+        except ValueError as exc:
+            raise workflow.WorkflowError("Surface Scout publication date is invalid.") from exc
+        if precision == "month":
+            freshness = None
         for metric in ("engagement_units", "acceleration_percent"):
             value = item[metric]
             if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0):
@@ -252,7 +276,9 @@ def _validate_surface_result(
                 "url": url,
                 "source": str(item["source"]).strip(),
                 "published_at": str(item["published_at"]).strip(),
-                "freshness_hours": float(freshness),
+                "publication_date_precision": precision,
+                "publication_date_uncertain": precision == "month",
+                "freshness_hours": None if freshness is None else float(freshness),
                 "engagement_units": item["engagement_units"],
                 "acceleration_percent": item["acceleration_percent"],
             }
@@ -262,7 +288,8 @@ def _validate_surface_result(
             item["engagement_units"] is not None,
             float(item["engagement_units"] or 0),
             float(item["acceleration_percent"] or 0),
-            -float(item["freshness_hours"]),
+            not bool(item["publication_date_uncertain"]),
+            -float(item["freshness_hours"] or 0),
         ),
         reverse=True,
     )
@@ -310,7 +337,9 @@ Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings
                 web_search=True,
                 stage_label=f"Surface Scout {label}",
             )
-            validated = _validate_surface_result(result, surface=surface)
+            validated = _validate_surface_result(
+                result, surface=surface, days=days, as_of=as_of
+            )
         except workflow.WorkflowError as exc:
             validated = {"status": "UNAVAILABLE", "signals": [], "caveat": str(exc)}
         if validated["status"] != "UNAVAILABLE" or attempt == MAX_SURFACE_ATTEMPTS:
@@ -431,7 +460,12 @@ def _project_candidates(
         sources = {str(item["source"]).casefold() for item in selected}
         engagements = [float(item["engagement_units"]) for item in selected if item["engagement_units"] is not None]
         accelerations = [float(item["acceleration_percent"]) for item in selected if item["acceleration_percent"] is not None]
-        freshness = min(float(item["freshness_hours"]) for item in selected)
+        exact_freshness = [
+            float(item["freshness_hours"])
+            for item in selected
+            if item["freshness_hours"] is not None
+        ]
+        freshness = min(exact_freshness) if exact_freshness else None
         caveats: list[str] = []
         if len(platforms) < 2:
             caveats.append("Only one public surface contributed to this cluster.")
@@ -468,9 +502,13 @@ def _project_candidates(
                     f"Observed on {len(platforms)} distinct public surface(s).",
                 ),
                 "freshness": _observation(
-                    "OBSERVED",
+                    "OBSERVED" if freshness is not None else "UNKNOWN",
                     freshness,
-                    f"Newest supplied substantive signal is {freshness:g} hour(s) old.",
+                    (
+                        f"Newest exactly dated substantive signal is {freshness:g} hour(s) old."
+                        if freshness is not None
+                        else "Supplied publication timing is month-only; exact freshness is unknown."
+                    ),
                 ),
             }
         )

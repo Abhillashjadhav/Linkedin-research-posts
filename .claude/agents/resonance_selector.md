@@ -64,6 +64,8 @@ The attention trigger can be contradiction, pain, immediate utility, or a meanin
 
 A number is useful only when the target reader understands why it matters. Technical detail that requires decoding does not increase specificity.
 
+Prefer supported abstraction when exact detail makes the situation narrower or harder to enter. Omit incidental counts, dates, labels, and implementation detail, or replace an instance with its true parent category. For example, two failure modes that are central findings may be packaged as `key failure modes`. Do not add severity, prevalence, causality, scope, materiality, or certainty: `major failures`, `production failures`, and `customer-impacting failures` require evidence for those added meanings.
+
 Proof planning happens before drafting. Select only proof that already exists or is honestly available from the supplied source/artifact policy. `NONE` is preferable to fabricated collateral.
 
 For practical posts, identify a path to reader utility: 2–3 actions and a reusable artifact are preferred when genuinely supported. For insight/incident posts, one strong decision rule or question may be better than padded actions. Utility is mandatory; the shape may vary.

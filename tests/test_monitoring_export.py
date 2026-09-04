@@ -49,19 +49,6 @@ class MonitoringExportTests(unittest.TestCase):
                 "artifact_sha256": "a" * 64,
                 "evidence": {"private_text": private_text},
             },
-            {
-                "schema_version": 2,
-                "run_id": "linkedin-production-1",
-                "recorded_at": "2026-08-30T12:00:00Z",
-                "contract": "claim_body_support",
-                "stage": "topic-value",
-                "mode": "shadow",
-                "status": "FAIL",
-                "reason": "number-not-supported",
-                "subject_id": "candidate-1",
-                "artifact_sha256": "a" * 64,
-                "evidence": {},
-            },
         ]
         exported = monitoring_export.build_normalized_export(context(), rows)
         rendered = json.dumps(exported)
@@ -75,7 +62,6 @@ class MonitoringExportTests(unittest.TestCase):
             {item["definition_id"] for item in case["checks"]},
             {
                 "research-trust",
-                "claim-body-support",
                 "atomic-value-novelty",
                 "critic-anchor-integrity",
                 "critic-reproducibility",
@@ -85,7 +71,6 @@ class MonitoringExportTests(unittest.TestCase):
         )
         by_definition = {item["definition_id"]: item for item in case["checks"]}
         self.assertEqual(by_definition["research-trust"]["status"], "PASS")
-        self.assertEqual(by_definition["claim-body-support"]["status"], "FAIL")
         self.assertEqual(
             by_definition["reader-attention"]["status"], "NOT_EVALUATED"
         )

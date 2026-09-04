@@ -858,6 +858,19 @@ class WriterPromptAndInvocationTests(unittest.TestCase):
         self.assertIn("direct practitioner voice sentinel", folded)
         self.assertIn(str(self.brief["product_decision"]), prompt)
 
+    def test_prompt_allows_supported_abstraction_without_factual_escalation(self) -> None:
+        prompt = workflow.build_writer_prompt(
+            brief=self.brief,
+            evidence=self.evidence,
+            voice_guidance=self.voice,
+        ).casefold()
+        self.assertIn("supported abstraction", prompt)
+        self.assertIn("true parent category", prompt)
+        for boundary in ("severity", "prevalence", "causality", "scope", "materiality", "certainty"):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, prompt)
+        self.assertNotIn("use evidence and public proof claims only as written", prompt)
+
     def test_prompt_rejects_voice_material_without_reconstructed_provenance(self) -> None:
         invalid = dict(self.voice, provenance="claimed-original")
         with self.assertRaisesRegex(workflow.WorkflowError, "provenance"):

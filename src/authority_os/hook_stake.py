@@ -47,7 +47,27 @@ HOOK_LINES = 2
 # plain-word idiom that frequency alone cannot see.
 _PROFILE_PATH = Path(__file__).resolve().parents[2] / "data" / "voice" / "voice-profile.json"
 _profile: dict | None = None
-_OFF_REGISTER_PHRASES = ("shy of",)
+_OFF_REGISTER_PHRASES = (
+    "shy of",
+    "delve",
+    "myriad",
+    "testament",
+    "underscore",
+    "paradigm",
+    "nuanced",
+    "albeit",
+)
+
+
+def prohibited_register_terms(text: str) -> list[str]:
+    """Explicitly disallowed voice terms; unlike corpus gaps, these are verdicts."""
+
+    normalized = " ".join(text.casefold().split())
+    return [
+        phrase
+        for phrase in _OFF_REGISTER_PHRASES
+        if re.search(rf"(?<![a-z]){re.escape(phrase)}(?![a-z])", normalized)
+    ]
 
 
 def _load() -> dict:
@@ -100,10 +120,7 @@ def off_register_words(text: str) -> list[str]:
     if not known:
         return []
     found: list[str] = []
-    normalized = " ".join(text.casefold().split())
-    for phrase in _OFF_REGISTER_PHRASES:
-        if re.search(rf"(?<![a-z]){re.escape(phrase)}(?![a-z])", normalized):
-            found.append(phrase)
+    found.extend(prohibited_register_terms(text))
     for token in re.findall(r"\b[A-Za-z][A-Za-z']{2,}\b", text):
         if token[0].isupper() or any(c.isupper() for c in token[1:]):
             continue

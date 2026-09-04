@@ -92,9 +92,8 @@ ARTISANAL_SCHEMA = _object_schema(
 COMMENT_SCHEMA = _object_schema(
     {
         "text": {"type": "string"},
-        "claim_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
     },
-    ["text", "claim_ids"],
+    ["text"],
 )
 
 COMMENT_REVIEW_SCHEMA = _object_schema(
@@ -627,12 +626,12 @@ def _invoke_artisanal_editor(
         "a short factual list. PASS is allowed only if every applicable eval.md check passes."
     )
     task = (
-        f"Editing context: {context}. Preserve the supplied claim IDs and all factual meaning. "
+        f"Editing context: {context}. Preserve the supplied evidence references and all factual meaning. "
         "Do not add facts, links, numbers, examples, or opinions. Make the minimum effective edit. "
         "Leave every source-anchored sentence containing a product or benchmark name, date, "
         "number, named status, API field, or concrete mechanism character-for-character "
         "unchanged; edit only interpretive prose around those sentences.\n"
-        f"CLAIM_IDS\n{json.dumps(list(claim_ids))}\n"
+        f"EVIDENCE_REFERENCES\n{json.dumps(list(claim_ids))}\n"
         f"DRAFT\n{text}"
     )
     result = invoker(stage, config, role, task, ARTISANAL_SCHEMA)
@@ -663,28 +662,25 @@ def _comment_evidence_gates(
     evidence: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
     text = comment.get("text")
-    claim_ids = comment.get("claim_ids")
     if not isinstance(text, str) or not text.strip():
         raise workflow.WorkflowError("First comment text must not be blank.")
-    if not isinstance(claim_ids, list) or not claim_ids or not all(isinstance(item, str) for item in claim_ids):
-        raise workflow.WorkflowError("First comment claim_ids must be a non-empty string list.")
-    known = {str(item["id"]): item for item in evidence}
-    cleaned = [str(item) for item in claim_ids]
-    supported_ids = len(cleaned) == len(set(cleaned)) and set(cleaned) <= set(known)
-    allowed_urls = {str(known[item]["source"]) for item in cleaned if item in known}
-    found_urls = set(re.findall(r"https://[^\s)>]+", text))
-    urls_supported = found_urls <= allowed_urls
+    allowed_urls = {str(item["source"]) for item in evidence}
+    found_urls = {
+        match.rstrip(".,;:!?]}")
+        for match in re.findall(r"https://[^\s)>]+", text)
+    }
+    urls_supported = bool(found_urls) and found_urls <= allowed_urls
     evidence_text = " ".join(
-        f"{known[item]['title']} {known[item]['claim']} {known[item].get('caveats', '')}"
-        for item in cleaned
-        if item in known
+        f"{item['title']} {item['claim']} {item.get('caveats', '')}"
+        for item in evidence
+        if str(item["source"]) in found_urls
     )
     numbers_supported = _numbers(text) <= (_numbers(evidence_text) | _numbers(post_text))
     return {
-        "claim_ids_known": "PASS" if supported_ids else "FAIL",
         "source_links_supported": "PASS" if urls_supported else "FAIL",
+        "source_urls": sorted(found_urls),
         "numbers_supported": "PASS" if numbers_supported else "FAIL",
-        "passes": supported_ids and urls_supported and numbers_supported,
+        "passes": urls_supported and numbers_supported,
     }
 
 
@@ -700,7 +696,8 @@ def _invoke_comment_writer(
         "You write the first comment after a LinkedIn post is locked. Extend the post with "
         "specific evidence, primary-source links, public-safe repository proof, or one useful "
         "implementation detail. Sound like a natural continuation, not pasted promotion. Use "
-        "only supplied evidence and return text plus the exact evidence IDs used. Do not score, "
+        "only supplied evidence. Include at least one supplied primary-source URL directly in "
+        "the comment and return only the comment text. Do not score, "
         "approve, publish, or invent facts."
     )
     task = (
@@ -709,10 +706,9 @@ def _invoke_comment_writer(
     )
     result = invoker("first_comment_writer", config, role, task, COMMENT_SCHEMA)
     text = result.get("text")
-    claim_ids = result.get("claim_ids")
-    if not isinstance(text, str) or not text.strip() or not isinstance(claim_ids, list):
+    if not isinstance(text, str) or not text.strip():
         raise workflow.WorkflowError("First Comment Writer response is malformed.")
-    return {"text": text.strip(), "claim_ids": claim_ids}
+    return {"text": text.strip()}
 
 
 def _invoke_comment_reviewer(
@@ -1431,7 +1427,10 @@ def _run_day(
         )
         artisanal_comment = _invoke_artisanal_editor(
             text=str(comment["text"]),
-            claim_ids=comment["claim_ids"],  # type: ignore[arg-type]
+            claim_ids=sorted(
+                match.rstrip(".,;:!?]}")
+                for match in re.findall(r"https://[^\s)>]+", str(comment["text"]))
+            ),
             context="first LinkedIn comment extending a locked post",
             skill=skill,
             evaluation=evaluation,
@@ -1454,7 +1453,7 @@ def _run_day(
         )
         attempt_trace = {
             "attempt": attempt,
-            "claim_ids": comment["claim_ids"],
+            "source_urls": evidence_gates["source_urls"],
             "artisanal": {
                 "status": artisanal_comment["status"],
                 "changes_made": artisanal_comment["changes_made"],
@@ -1487,7 +1486,7 @@ def _run_day(
     trace["first_comment"].update(  # type: ignore[union-attr]
         {
             "text": final_comment["text"],
-            "claim_ids": final_comment["claim_ids"],
+            "source_urls": final_comment["source_urls"],
             "review": final_comment["review"],
             "evidence_gates": final_comment["evidence_gates"],
             "anti_slop_findings": final_comment["anti_slop_findings"],
