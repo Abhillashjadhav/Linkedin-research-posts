@@ -155,6 +155,99 @@ class CampaignTests(unittest.TestCase):
             ],
         )
 
+    def test_post_route_uses_shared_eighteen_point_acceptance_floor(self) -> None:
+        class BoundaryInvoker(FakeInvoker):
+            def __call__(self, stage, config, role, task, schema):
+                if stage == "critic":
+                    self.calls.append(stage)
+                    return {
+                        "scorecards": [
+                            {
+                                "candidate_id": item["id"],
+                                "hook_strength": 5,
+                                "middle_escalation": 3,
+                                "earned_closer": 3,
+                                "specificity_and_source_quality": 3,
+                                "voice_fidelity": 4,
+                            }
+                            for item in self.drafts
+                        ]
+                    }
+                if stage == "first_comment_reviewer":
+                    self.calls.append(stage)
+                    return {
+                        "scores": {
+                            "continuity_with_post": 4,
+                            "additional_value": 4,
+                            "authority_and_proof": 4,
+                            "natural_non_promotional_fit": 3,
+                            "voice_fidelity": 3,
+                        }
+                    }
+                return super().__call__(stage, config, role, task, schema)
+
+        invoker = BoundaryInvoker()
+        with tempfile.TemporaryDirectory(dir=workflow.REPO_ROOT) as temporary:
+            trace = campaign._run_day(
+                self.day(),
+                directory=Path(temporary),
+                models=campaign.StageModels.preferred(),
+                invoker=invoker,
+                skill="name: no-ai-slop\nMinimum edit.",
+                evaluation="# No AI slop eval\nPass or fail.",
+                editor_provenance={
+                    "repository": "test",
+                    "skill_sha256": "a",
+                    "eval_sha256": "b",
+                },
+                researched_at="2026-08-09T00:00:00Z",
+            )
+        self.assertEqual(trace["final"]["status"], "READY_FOR_HUMAN_REVIEW")
+        self.assertEqual(trace["post_edit_recritic"]["score"]["effective_total"], 18)
+        self.assertEqual(trace["first_comment"]["review"]["total"], 18)
+        self.assertIn("no_ai_slop_artisanal", invoker.calls)
+
+    def test_post_route_never_trades_away_voice_floor(self) -> None:
+        class LowVoiceInvoker(FakeInvoker):
+            def __call__(self, stage, config, role, task, schema):
+                if stage == "critic":
+                    self.calls.append(stage)
+                    return {
+                        "scorecards": [
+                            {
+                                "candidate_id": item["id"],
+                                "hook_strength": 5,
+                                "middle_escalation": 5,
+                                "earned_closer": 5,
+                                "specificity_and_source_quality": 5,
+                                "voice_fidelity": 3,
+                            }
+                            for item in self.drafts
+                        ]
+                    }
+                return super().__call__(stage, config, role, task, schema)
+
+        invoker = LowVoiceInvoker()
+        with tempfile.TemporaryDirectory(dir=workflow.REPO_ROOT) as temporary:
+            trace = campaign._run_day(
+                self.day(),
+                directory=Path(temporary),
+                models=campaign.StageModels.preferred(),
+                invoker=invoker,
+                skill="name: no-ai-slop\nMinimum edit.",
+                evaluation="# No AI slop eval\nPass or fail.",
+                editor_provenance={
+                    "repository": "test",
+                    "skill_sha256": "a",
+                    "eval_sha256": "b",
+                },
+                researched_at="2026-08-09T00:00:00Z",
+            )
+        self.assertEqual(trace["final"]["status"], "BLOCKED")
+        self.assertNotIn("no_ai_slop_artisanal", invoker.calls)
+        diagnostics = trace["writer"]["cycles"]
+        self.assertEqual(len(diagnostics), campaign.MAX_CANDIDATE_CYCLES)
+
     def test_spec_requires_exact_monday_to_friday_set(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "spec.json"

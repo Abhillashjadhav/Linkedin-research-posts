@@ -273,6 +273,25 @@ class PerformancePackageTests(unittest.TestCase):
             override["learning_context_fingerprint"],
         )
 
+    def test_valid_eighteen_point_package_survives_performance_revalidation(self) -> None:
+        manifest, evaluation = package_documents()
+        boundary = scorecard("candidate-3", (5, 3, 3, 3, 4))
+        evaluation["scorecards"][2] = boundary  # type: ignore[index]
+        evaluation["gate_results"][2] = gate_result("candidate-3", passes=True)  # type: ignore[index]
+        evaluation["eligible_candidate_ids"] = [
+            "candidate-1",
+            "candidate-2",
+            "candidate-3",
+        ]
+        manifest["eligible_candidate_ids"] = list(evaluation["eligible_candidate_ids"])  # type: ignore[arg-type]
+        write_package(self.root, manifest=manifest, evaluation=evaluation)
+
+        loaded = self.load("candidate-3")
+
+        self.assertEqual(loaded["critic_effective_total"], 18)
+        self.assertEqual(loaded["critic_band"], "below-critic-bar")
+        self.assertIs(loaded["is_recommended"], False)
+
     def test_learning_context_returns_only_exact_bounded_hook_and_structure(self) -> None:
         context = self.load_learning("candidate-1")
 

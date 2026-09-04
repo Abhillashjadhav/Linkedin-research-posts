@@ -209,20 +209,21 @@ class MomentumRuntimeTests(unittest.TestCase):
 
     @patch("authority_os.daily_cli.invoke_structured")
     def test_source_scout_is_constrained_to_momentum_topics(self, invoke: object) -> None:
-        invoke.return_value = {"items": []}  # type: ignore[attr-defined]
+        invoke.return_value = {"items": [{}, {}, {}]}  # type: ignore[attr-defined]
         prepared = [
             {
-                "id": "research-1",
-                "title": "Verified source",
-                "body": "Body-read evidence",
+                "id": f"research-{index}",
+                "title": f"Verified source {index}",
+                "body": f"Body-read evidence {index}",
                 "source": "Research lab",
                 "author": "Research lab",
                 "published_at": "2026-08-18T00:00:00Z",
                 "source_quality": "primary",
-                "canonical_url": "https://example.com/source",
-                "content_hash": "abc",
+                "canonical_url": f"https://example.com/source-{index}",
+                "content_hash": f"hash-{index}",
             }
-        ] * 3
+            for index in range(1, 4)
+        ]
         with patch.object(daily_spine_cli.base, "_role", return_value="Scout role"), patch.object(
             workflow, "prepare_research_items", return_value=prepared
         ):

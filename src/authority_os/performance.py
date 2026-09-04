@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from . import package as approval_package, storage, workflow
+from . import acceptance_policy, package as approval_package, storage, workflow
 
 
 MAX_PACKAGE_FILE_BYTES = 1_000_000
@@ -451,8 +451,10 @@ def _validate_package_context(
     computed_eligible = [
         ranked_id
         for ranked_id in ranking
-        if scorecards_by_id[ranked_id]["band"] == "advance-to-gates"
-        and gates_by_id[ranked_id]
+        if acceptance_policy.scorecard_is_acceptable(
+            scorecards_by_id[ranked_id],
+            hard_gates_pass=gates_by_id[ranked_id],
+        )
     ]
     if eligible != computed_eligible:
         raise workflow.WorkflowError("The performance package eligibility is invalid.")

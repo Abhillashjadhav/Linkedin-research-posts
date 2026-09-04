@@ -18,7 +18,7 @@ from . import acceptance_policy, best_effort
 from . import package as approval_package
 from . import quality_cli, v1_completion, workflow
 
-TARGET_QUALITY_SCORE = 24
+TARGET_QUALITY_SCORE = acceptance_policy.QUALITY_TARGET
 ACCEPTABLE_QUALITY_FLOOR = acceptance_policy.ACCEPTABLE_QUALITY_FLOOR
 MIN_HOOK_SCORE = acceptance_policy.MIN_HOOK_SCORE
 MIN_MIDDLE_ESCALATION_SCORE = acceptance_policy.MIN_MIDDLE_ESCALATION_SCORE
@@ -61,11 +61,12 @@ def _candidate_rank(
 def candidate_is_acceptable(candidate: quality_cli.CandidateResult) -> bool:
     """Return the explicit V1 human-review floor without weakening hard gates."""
 
-    return (
-        candidate.effective_total >= ACCEPTABLE_QUALITY_FLOOR
-        and not acceptance_policy.axis_shortfalls(candidate.axes)
-        and acceptance_policy.hard_candidate_gates_pass(candidate.gates)
-        and candidate.passes_required_gates
+    return acceptance_policy.scorecard_is_acceptable(
+        {**candidate.axes, "effective_total": candidate.effective_total},
+        hard_gates_pass=(
+            acceptance_policy.hard_candidate_gates_pass(candidate.gates)
+            and candidate.passes_required_gates
+        ),
     )
 
 
@@ -137,6 +138,10 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
                 "score": candidate.effective_total,
                 "effective_total": candidate.effective_total,
                 "threshold": ACCEPTABLE_QUALITY_FLOOR,
+                "quality_target": TARGET_QUALITY_SCORE,
+                "acceptance_contract_version": (
+                    acceptance_policy.ACCEPTANCE_CONTRACT_VERSION
+                ),
                 "axes": dict(candidate.axes),
                 "axis_shortfalls": acceptance_policy.axis_shortfalls(candidate.axes),
                 "cycle": cycle,
@@ -338,15 +343,15 @@ def _qualifying_candidates(
 def _scorecard_is_acceptable(
     scorecard: Mapping[str, object], gate_result: Mapping[str, object]
 ) -> bool:
-    if gate_result.get("passes_required_gates") is not True:
-        return False
-    effective = scorecard.get("effective_total")
-    if type(effective) is not int or int(effective) < ACCEPTABLE_QUALITY_FLOOR:
-        return False
-    if acceptance_policy.axis_shortfalls(scorecard):
-        return False
     raw_gates = gate_result.get("gates")
-    return isinstance(raw_gates, Mapping) and acceptance_policy.hard_candidate_gates_pass(raw_gates)
+    return acceptance_policy.scorecard_is_acceptable(
+        scorecard,
+        hard_gates_pass=(
+            gate_result.get("passes_required_gates") is True
+            and isinstance(raw_gates, Mapping)
+            and acceptance_policy.hard_candidate_gates_pass(raw_gates)
+        ),
+    )
 
 
 def _package_data(

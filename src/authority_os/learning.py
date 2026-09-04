@@ -19,7 +19,7 @@ from itertools import combinations
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
-from . import storage, workflow
+from . import acceptance_policy, storage, workflow
 
 
 REPORT_SCHEMA_VERSION = 1
@@ -107,8 +107,17 @@ def _validate_rows(rows: Iterable[Mapping[str, object]]) -> list[dict[str, objec
         )
         validated["recorded_at"] = recorded_at
         validated["updated_at"] = updated_at
-        if validated["critic_band"] != "advance-to-gates":
-            raise ValueError("weekly learning accepts only gate-eligible Critic snapshots")
+        # Performance rows can only originate from an approved package. Recheck
+        # its five-axis score contract here; the legacy Critic band is descriptive
+        # and must not silently restore the former 24/25 eligibility threshold.
+        if not acceptance_policy.scorecard_is_acceptable(
+            {
+                **{axis: validated[axis] for axis in workflow.CRITIC_AXES},
+                "effective_total": validated["critic_effective_total"],
+            },
+            hard_gates_pass=True,
+        ):
+            raise ValueError("weekly learning accepts only eligible Critic snapshots")
         if bool(validated["was_revised"]) and int(validated["revision_count"]) != 1:
             raise ValueError("weekly learning revision provenance is inconsistent")
         if str(validated["package_id"])[:10] != str(validated["package_created_at"])[:10]:

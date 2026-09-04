@@ -20,13 +20,14 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 from urllib.parse import urlsplit
 
-from . import anti_slop, workflow
+from . import acceptance_policy, anti_slop, workflow
 from .model_runtime import ModelConfig, invoke_structured
 
 
 MAX_CANDIDATE_CYCLES = 4
-MIN_SCORE = 24
-MIN_HOOK = 4
+# First comments use a different five-axis rubric. The owner set the same total
+# acceptance floor while leaving per-axis comment calibration for later.
+MIN_COMMENT_SCORE = acceptance_policy.ACCEPTABLE_QUALITY_FLOOR
 EXPECTED_DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
 COMMENT_AXES = (
     "continuity_with_post",
@@ -575,6 +576,19 @@ def _candidate_diagnostics(
         candidate_id = str(item["id"])
         score = by_score.get(candidate_id)
         gate = gates.get(candidate_id)
+        acceptance = (
+            acceptance_policy.acceptance_decision(
+                score,
+                hard_gates_pass=(
+                    bool(gate)
+                    and acceptance_policy.hard_candidate_gates_pass(gate)
+                    and all(value["status"] != "FAIL" for value in gate.values())
+                ),
+                additional_checks_pass=not slop.get(candidate_id, ()),
+            )
+            if score
+            else None
+        )
         diagnostics.append(
             {
                 "candidate_id": candidate_id,
@@ -584,6 +598,7 @@ def _candidate_diagnostics(
                     {axis: score[axis] for axis in workflow.CRITIC_AXES} if score else None
                 ),
                 "effective_total": score.get("effective_total") if score else None,
+                "acceptance": acceptance,
                 "gate_failures": (
                     [name for name, value in gate.items() if value["status"] == "FAIL"]
                     if gate
@@ -1292,10 +1307,19 @@ def _run_day(
         eligible = [
             item
             for item in scores
-            if int(item["effective_total"]) >= MIN_SCORE
-            and int(item["hook_strength"]) >= MIN_HOOK
-            and all(value["status"] != "FAIL" for value in gate_by_id[str(item["candidate_id"])].values())
-            and not slop_by_id[str(item["candidate_id"])]
+            if acceptance_policy.scorecard_is_acceptable(
+                item,
+                hard_gates_pass=(
+                    acceptance_policy.hard_candidate_gates_pass(
+                        gate_by_id[str(item["candidate_id"])]
+                    )
+                    and all(
+                        value["status"] != "FAIL"
+                        for value in gate_by_id[str(item["candidate_id"])].values()
+                    )
+                ),
+                additional_checks_pass=not slop_by_id[str(item["candidate_id"])],
+            )
         ]
         if not eligible:
             diagnostics = _candidate_diagnostics(narrative_trace, scores, gate_by_id, slop_by_id)
@@ -1353,6 +1377,14 @@ def _run_day(
             rescored = selected_score
         regated_raw = _gate_candidate(selected, brief=brief, evidence=evidence)
         regated = _gate_trace(regated_raw)
+        post_edit_acceptance = acceptance_policy.acceptance_decision(
+            rescored,
+            hard_gates_pass=(
+                acceptance_policy.hard_candidate_gates_pass(regated)
+                and all(value["status"] != "FAIL" for value in regated.values())
+            ),
+            additional_checks_pass=not post_slop,
+        )
         trace["post_edit_recritic"].update(  # type: ignore[union-attr]
             {
                 "executed": changed,
@@ -1360,14 +1392,16 @@ def _run_day(
                 "score": _score_trace(rescored),
                 "gates": regated,
                 "anti_slop_findings": post_slop,
+                "acceptance": post_edit_acceptance,
             }
         )
-        if (
-            int(rescored["effective_total"]) < MIN_SCORE
-            or int(rescored["hook_strength"]) < MIN_HOOK
-            or any(value["status"] == "FAIL" for value in regated.values())
-        ):
-            diagnostics = [{"candidate_id": selected["id"], "post_edit_score": int(rescored["effective_total"]), "post_edit_gates": regated}]
+        if post_edit_acceptance["status"] != "PASS":
+            diagnostics = [{
+                "candidate_id": selected["id"],
+                "post_edit_score": int(rescored["effective_total"]),
+                "post_edit_gates": regated,
+                "acceptance": post_edit_acceptance,
+            }]
             trace["regeneration_count"] = cycle
             continue
         final_post = selected
@@ -1431,7 +1465,7 @@ def _run_day(
         }
         comment_attempts.append(attempt_trace)
         if (
-            int(review["total"]) >= MIN_SCORE
+            int(review["total"]) >= MIN_COMMENT_SCORE
             and evidence_gates["passes"] is True
             and not findings
             and artisanal_comment["status"] == "PASS"
@@ -1442,7 +1476,10 @@ def _run_day(
     if final_comment is None:
         trace["final"] = {
             "status": "BLOCKED",
-            "reason": "First comment did not clear 24/25 and all evidence/slop gates.",
+            "reason": (
+                f"First comment did not clear its separate {MIN_COMMENT_SCORE}/25 "
+                "review contract and all evidence/slop gates."
+            ),
             "human_approval_status": "NOT_APPROVED",
             "publishing_status": "DISABLED",
         }
@@ -1550,6 +1587,7 @@ def run_campaign(
     if only_day in preserve_days:
         raise workflow.WorkflowError("Selected campaign day is preserved and cannot be rerun.")
     results: list[dict[str, object]] = []
+    execution_outcomes: list[dict[str, str]] = []
     for raw_day in spec["days"]:  # type: ignore[index]
         if not isinstance(raw_day, dict):
             raise workflow.WorkflowError("Campaign day must be an object.")
@@ -1594,6 +1632,12 @@ def run_campaign(
                 }
             _promote_artifacts(staging, directory, trace)
         _persist_day(directory, trace)
+        final = trace.get("final")
+        if not isinstance(final, Mapping) or not isinstance(final.get("status"), str):
+            raise workflow.WorkflowError("Executed campaign day has no final status.")
+        execution_outcomes.append(
+            {"day": str(day["day"]), "status": str(final["status"])}
+        )
         results.append(trace)
 
     if only_day is not None:
@@ -1612,6 +1656,7 @@ def run_campaign(
             _summary_entry(item, reporting_statuses=reporting_statuses, models=active_models)
             for item in results
         ],
+        "execution_outcomes": execution_outcomes,
         "human_approval_status": "NOT_APPROVED",
         "publishing_status": "DISABLED",
     }

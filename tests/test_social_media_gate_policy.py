@@ -22,7 +22,7 @@ class SocialMediaGatePolicyTests(unittest.TestCase):
         )
         self.assertEqual(softened["gates"]["honesty"], "HUMAN_REVIEW")  # type: ignore[index]
         self.assertEqual(softened["gates"]["citation"], "HUMAN_REVIEW")  # type: ignore[index]
-        self.assertIs(softened["passes_required_gates"], True)
+        self.assertIs(softened["passes_required_gates"], False)
 
     def test_package_gate_result_preserves_a_real_hard_failure(self) -> None:
         softened = social_media_gate_policy.soften_gate_result(
@@ -62,7 +62,7 @@ class SocialMediaGatePolicyTests(unittest.TestCase):
         softened = social_media_gate_policy._soften_candidate(candidate)  # type: ignore[attr-defined]
         self.assertEqual(softened.gates["honesty"], "HUMAN_REVIEW")
         self.assertEqual(softened.gates["citation"], "HUMAN_REVIEW")
-        self.assertTrue(softened.passes_required_gates)
+        self.assertFalse(softened.passes_required_gates)
         self.assertEqual(softened.gate_reasons, candidate.gate_reasons)
 
     def test_other_hard_gate_failures_still_block(self) -> None:

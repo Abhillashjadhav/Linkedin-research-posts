@@ -220,7 +220,7 @@ def build_normalized_export(
             "config_digest": _file_digest(workflow.REPO_ROOT / "config/eval-v1-calibration.json"),
             "production_data_digest": _digest(selected_bytes),
             "golden_dataset_digest": _ledger_digest(v1_completion.STATE_ROOT / v1_completion.PUBLISHED_ATOMIC_LEDGER_NAME),
-            "prompt_digest": _file_digest(workflow.REPO_ROOT / "config/critic-rubric-v1.json"),
+            "prompt_digest": _file_digest(workflow.REPO_ROOT / "config/critic-rubric-v2.json"),
             "toolset_digest": _file_digest(workflow.REPO_ROOT / "bin/linkedin-os"),
         },
         "cases": cases,

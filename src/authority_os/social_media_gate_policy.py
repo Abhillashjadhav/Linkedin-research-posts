@@ -1,7 +1,7 @@
 """V1 social-media release policy overlay.
 
 This overlay keeps deterministic factual diagnostics available for human review while
-preventing honesty/citation diagnostics from blocking the live social-post draft loop.
+preserving honesty and citation as hard acceptance gates.
 It also permits explicit quantitative placeholders such as ``XX%`` or ``XXx`` in hooks
 so the human reviewer can replace them with a real internal metric before publishing.
 """
@@ -22,8 +22,8 @@ ADVISORY_GATES = frozenset({"honesty", "citation"})
 _PLACEHOLDER_GUIDANCE = """
 SOCIAL_MEDIA_HUMAN_REVIEW_POLICY
 This output is for a human-reviewed social-media draft, not automatic publication.
-Strong qualitative and rhetorical emphasis is allowed. Honesty and citation diagnostics
-are advisory for this V1 path rather than hard blockers; preserve them for human review.
+Strong qualitative and rhetorical emphasis is allowed. Preserve honesty and citation
+diagnostics for human review, but never treat a HUMAN_REVIEW label as a gate pass.
 Do not invent a precise numeric result. When a quantitative hook would materially improve
 attention but the supplied evidence does not contain the exact number, use an explicit
 placeholder such as `XX%`, `XXx`, `XX minutes`, or `XX days` instead. The human reviewer
@@ -60,7 +60,6 @@ def _soften_candidate(candidate: quality_cli.CandidateResult) -> quality_cli.Can
     if not softened:
         return candidate
 
-    hard_failures = any(status == "FAIL" for status in gates.values())
     return quality_cli.CandidateResult(
         candidate_id=candidate.candidate_id,
         angle=candidate.angle,
@@ -70,7 +69,7 @@ def _soften_candidate(candidate: quality_cli.CandidateResult) -> quality_cli.Can
         effective_total=candidate.effective_total,
         band=candidate.band,
         gates=gates,
-        passes_required_gates=not hard_failures,
+        passes_required_gates=False,
         gate_reasons=candidate.gate_reasons,
     )
 
@@ -93,8 +92,8 @@ def soften_gate_result(gate_result: Mapping[str, object]) -> dict[str, object]:
         if gates.get(name) == "FAIL":
             gates[name] = "HUMAN_REVIEW"
     softened["gates"] = gates
-    softened["passes_required_gates"] = not any(
-        status == "FAIL" for status in gates.values()
+    softened["passes_required_gates"] = all(
+        status in {"PASS", "NOT_REQUIRED"} for status in gates.values()
     )
     return softened
 

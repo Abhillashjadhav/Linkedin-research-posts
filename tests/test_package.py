@@ -234,7 +234,7 @@ class HumanApprovalPackageTests(unittest.TestCase):
         self.assertEqual(evaluation["eligible_candidate_ids"], ["authority-2"])
         self.assertEqual(evaluation["recommended_candidate_id"], "authority-2")
 
-    def test_gate_pass_below_critic_bar_produces_blocked_package(self) -> None:
+    def test_legacy_below_bar_at_20_is_eligible_under_shared_contract(self) -> None:
         context = fixture_context(mode="live")
         candidates = deepcopy(context["review"]["candidates"])  # type: ignore[index]
         raw_scores = [
@@ -248,10 +248,30 @@ class HumanApprovalPackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             result = write_context(context, self.output_root(temporary))
         manifest = result["manifest"]
-        self.assertEqual(manifest["review_status"], "BLOCKED")
-        self.assertEqual(manifest["eligible_candidate_ids"], [])
-        self.assertIsNone(manifest["recommended_candidate_id"])
+        self.assertEqual(manifest["review_status"], "READY_FOR_HUMAN_REVIEW")
+        self.assertEqual(len(manifest["eligible_candidate_ids"]), 1)
+        self.assertIsNotNone(manifest["recommended_candidate_id"])
         self.assertEqual(manifest["human_approval_status"], "NOT_APPROVED")
+
+    def test_voice_below_four_blocks_despite_a_passing_total(self) -> None:
+        context = fixture_context(mode="live")
+        candidates = deepcopy(context["review"]["candidates"])  # type: ignore[index]
+        raw_scores = [
+            {
+                "candidate_id": candidate["id"],
+                "hook_strength": 5,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 5,
+                "voice_fidelity": 3,
+            }
+            for candidate in candidates
+        ]
+        context["review"] = rescored_review(candidates, raw_scores)
+        with tempfile.TemporaryDirectory() as temporary:
+            result = write_context(context, self.output_root(temporary))
+        self.assertEqual(result["manifest"]["review_status"], "BLOCKED")
+        self.assertEqual(result["manifest"]["eligible_candidate_ids"], [])
 
     def test_review_ranking_and_computed_scores_are_revalidated_before_writes(self) -> None:
         for mutation in ("ranking", "score"):
