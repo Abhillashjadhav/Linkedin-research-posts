@@ -102,8 +102,17 @@ class SingleTopicCodexRuntimeTests(unittest.TestCase):
             calls.append(kwargs)
             return {"candidate": revised}
 
+        feedback = {
+            "axis_shortfalls": {
+                "voice_fidelity": {"observed": 3, "required": 4, "shortfall": 1}
+            }
+        }
         with (
-            patch.object(workflow, "_build_writer_revision_prompt", return_value="revision-task"),
+            patch.object(
+                workflow,
+                "_build_writer_revision_prompt",
+                return_value="revision-task",
+            ) as prompt,
             patch.object(workflow, "_writer_revision_system_prompt", return_value="revision-role"),
             patch("authority_os.single_topic_codex.model_runtime.invoke_structured", side_effect=fake_invoke),
         ):
@@ -114,12 +123,14 @@ class SingleTopicCodexRuntimeTests(unittest.TestCase):
                 scorecard={},
                 allow_model_egress=True,
                 voice_guidance={"provenance": "reconstructed-style-guidance", "voice": "plain"},
+                repair_feedback=feedback,
             )
 
         self.assertEqual(result, revised)
         self.assertIs(calls[0]["schema"], workflow.WRITER_REVISION_SCHEMA)
         self.assertEqual(calls[0]["config"].runtime, "codex")  # type: ignore[union-attr]
         self.assertIs(calls[0]["web_search"], False)
+        self.assertEqual(prompt.call_args.kwargs["repair_feedback"], feedback)
 
     def test_install_replaces_all_three_legacy_single_topic_model_functions(self) -> None:
         with (

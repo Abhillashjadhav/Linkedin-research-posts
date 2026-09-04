@@ -2,7 +2,7 @@
   "metadata": {
     "contract_id": "linkedin-post-contract",
     "schema_version": 1,
-    "version": "1.0.0",
+    "version": "1.1.0",
     "status": "APPROVED",
     "purpose": "One product and runtime contract for discovery, evidence, selection, drafting, evaluation, repair, packaging, and release.",
     "hash_algorithm": "sha256",
@@ -375,8 +375,13 @@
   },
   "repair": {
     "maximum_quality_cycles": 4,
+    "scored_iteration_definition": "The frozen candidate is iteration 1. At most three subsequent edits may be scored, for four scored iterations total.",
     "candidates_per_cycle": 3,
     "retain_best_grounded_candidate": true,
+    "progressive_editor_candidate_count": 1,
+    "progressive_editor_identity_rule": "Every edit keeps the selected candidate ID, angle, and claim IDs exactly.",
+    "progressive_editor_monotonic_rule": "An edit becomes the next seed only when total score and every individual axis are no lower than the current seed, no passing hard gate regresses, no new deterministic finding appears, and at least one failed axis, gate, or finding measurably improves.",
+    "first_iteration_pass_rule": "If the frozen candidate passes on iteration 1, stop without invoking the editor.",
     "repair_only_failed_axes_and_gates": true,
     "preserve_passing_axes": true,
     "never_lower_a_floor_during_a_run": true,
@@ -500,6 +505,13 @@
       "resolution": "Yes only for a short frozen list of objective structural or phrase violations. Human quality and consultant register stay inside the voice score.",
       "decision_status": "RESOLVED",
       "why": "This catches deterministic defects without creating a second subjective voice judge."
+    },
+    {
+      "id": "OD-7",
+      "question": "How should a failed frozen candidate improve across the four-iteration editorial loop?",
+      "resolution": "Keep one candidate lineage. Score the frozen candidate first, then edit that exact candidate at most three times. Accept an edit as the next seed only when no axis, total, passing hard gate, or deterministic check regresses and at least one failed measure improves.",
+      "decision_status": "RESOLVED",
+      "why": "The editor should compound verified progress instead of replacing strong material with unrelated variants or allowing one quality dimension to fall while another rises."
     }
   ]
 }

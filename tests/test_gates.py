@@ -820,6 +820,39 @@ class GateEvaluationTests(unittest.TestCase):
                 )
                 self.assertEqual(result["gates"]["citation"]["status"], "FAIL")
 
+    def test_factual_support_diagnostics_name_the_exact_offending_clause(self) -> None:
+        unsupported = "OpenAI reported 95% reliability."
+        item = candidate(text=f"{candidate()['text']} {unsupported}")
+
+        findings = workflow.candidate_factual_support_diagnostics(
+            item,
+            [evidence(claim="A different company reported a different result.")],
+        )
+
+        self.assertTrue(findings)
+        marker = next(
+            finding
+            for finding in findings
+            if finding["code"] == "unsupported-factual-marker"
+        )
+        self.assertEqual(marker["excerpt"], unsupported)
+        self.assertIn("openai", marker["markers"])
+        self.assertIn("95%", marker["markers"])
+
+    def test_structural_source_label_is_not_misclassified_as_a_factual_number(self) -> None:
+        item = candidate(text=f"{candidate()['text']} [source-1]")
+
+        result = workflow.evaluate_candidate_gates(
+            item, brief=brief(), evidence=[evidence()]
+        )
+        diagnostics = workflow.candidate_factual_support_diagnostics(
+            item, [evidence()]
+        )
+
+        self.assertEqual(result["gates"]["honesty"]["status"], "PASS")
+        self.assertEqual(result["gates"]["citation"]["status"], "PASS")
+        self.assertEqual(diagnostics, [])
+
     def test_signed_and_range_numbers_are_checked_individually(self) -> None:
         cases = [
             (

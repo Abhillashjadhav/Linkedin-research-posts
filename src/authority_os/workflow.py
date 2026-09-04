@@ -2528,6 +2528,7 @@ def _build_writer_revision_prompt(
     evidence: Sequence[Mapping[str, object]],
     voice_guidance: Mapping[str, str],
     proof: LoadedProof | None = None,
+    repair_feedback: Mapping[str, object] | None = None,
 ) -> str:
     safe_candidate = _critic_candidate_projection([candidate])[0]
     safe_brief = _writer_brief_projection(brief)
@@ -2550,12 +2551,23 @@ def _build_writer_revision_prompt(
         if type(value) is not int or not 1 <= value <= 5:
             raise WorkflowError("Writer revision needs a validated Critic scorecard.")
         safe_scores[axis] = value
+    if repair_feedback is not None and not isinstance(repair_feedback, Mapping):
+        raise WorkflowError("Writer revision repair feedback must be an object.")
+    try:
+        repair_feedback_json = json.dumps(
+            dict(repair_feedback or {}), indent=2, sort_keys=True
+        )
+    except (TypeError, ValueError) as exc:
+        raise WorkflowError("Writer revision repair feedback is malformed.") from exc
     return f"""
-Make one light revision of this single candidate, improving its weaker recovered-rubric axes.
-Preserve its id and angle exactly. claim_ids must be a non-empty subset of the current claim_ids.
+Make one bounded editorial revision of this single candidate, improving only the failed axes,
+gates, and deterministic findings named in the repair feedback.
+Preserve its id, angle, and claim_ids exactly.
 Return one candidate in the required structured envelope; that candidate contains only id, angle,
 text, and claim_ids. Do not create a new angle, invent evidence, score,
-rank, gate, approve, package, or publish. This is the only revision permitted.
+rank, gate, approve, package, or publish. This invocation returns exactly one revision. The
+orchestrator, not the Writer, decides whether a
+later bounded iteration is needed.
 You may remove incidental precision or map a supported instance to its true parent category when
 that improves audience comprehension. Do not add severity, prevalence, causality, scope,
 materiality, or certainty.
@@ -2580,11 +2592,14 @@ END_CRITIC_AXIS_SCORES_DATA
 RECONSTRUCTED_VOICE_GUIDANCE_NON_CITABLE
 {json.dumps(anchors, indent=2, sort_keys=True)}
 END_RECONSTRUCTED_VOICE_GUIDANCE_NON_CITABLE
+UNTRUSTED_REPAIR_FEEDBACK_DATA
+{repair_feedback_json}
+END_UNTRUSTED_REPAIR_FEEDBACK_DATA
 """.strip()
 
 
 def _writer_revision_system_prompt() -> str:
-    """Return the narrow Writer role used only for the one permitted revision."""
+    """Return the narrow Writer role used for one stateless editorial invocation."""
 
     return (
         "You are the Writer in one-revision mode. Revise exactly one supplied candidate "
@@ -2607,9 +2622,10 @@ def invoke_writer_revision(
     allow_model_egress: bool = False,
     voice_guidance: Mapping[str, str] | None = None,
     proof: LoadedProof | None = None,
+    repair_feedback: Mapping[str, object] | None = None,
     timeout: int = 300,
 ) -> dict[str, object]:
-    """Invoke the Writer once for the Critic's light-revision band."""
+    """Invoke the Writer once for one orchestrator-controlled editorial iteration."""
 
     if type(allow_model_egress) is not bool or not allow_model_egress:
         raise WorkflowError("Writer revision model egress requires explicit consent.")
@@ -2628,6 +2644,7 @@ def invoke_writer_revision(
         evidence=evidence,
         voice_guidance=guidance,
         proof=proof,
+        repair_feedback=repair_feedback,
     )
     command = [
         executable,
@@ -3501,6 +3518,14 @@ def _personal_or_ownership_sentence(sentence: str) -> bool:
 def _factual_markers(sentence: str) -> tuple[str, ...]:
     markers: list[str] = []
     search_text = unicodedata.normalize("NFKC", sentence)
+    # Writer claim IDs are structural provenance, not factual numbers. They are
+    # rejected separately when they leak into publishable prose.
+    search_text = re.sub(
+        r"\[(?:source|claim)-[A-Za-z0-9._-]+\]",
+        "",
+        search_text,
+        flags=re.IGNORECASE,
+    )
     leading_subject = _leading_named_subject(search_text)
     if leading_subject is not None:
         markers.append(_factual_marker_normal_form(leading_subject))
@@ -3680,10 +3705,12 @@ def _candidate_references(text: str) -> tuple[list[tuple[str, bool]], bool]:
     return list(dict.fromkeys(references)), unsafe_markdown_target
 
 
-def _factual_support_status(
+def _factual_support_diagnostics(
     text: str,
     support_records: Sequence[tuple[str, bool]],
-) -> tuple[bool, bool]:
+) -> list[dict[str, object]]:
+    """Return exact public-text clauses that exceed the supplied evidence boundary."""
+
     normalized_records = [
         (
             _style_normal_form(contextual_clause),
@@ -3705,8 +3732,15 @@ def _factual_support_status(
         for record, eligible in support_records
         for record_sentence in _candidate_sentences(record)
     ]
-    unsupported_marker = _has_unbalanced_direct_quotes(text)
-    unsupported_incident = False
+    findings: list[dict[str, object]] = []
+    if _has_unbalanced_direct_quotes(text):
+        findings.append(
+            {
+                "code": "unsupported-factual-marker",
+                "excerpt": "unbalanced direct quotation",
+                "markers": ["direct-quotation"],
+            }
+        )
 
     def record_contains(record: str, marker: str) -> bool:
         return bool(
@@ -3757,15 +3791,72 @@ def _factual_support_status(
                     eligible,
                 ) in normalized_records
             ):
-                unsupported_marker = True
+                findings.append(
+                    {
+                        "code": "unsupported-factual-marker",
+                        "excerpt": contextual_clause[:300],
+                        "markers": list(markers),
+                    }
+                )
         if _concrete_incident_requires_support(sentence):
             normalized_sentence = _style_normal_form(sentence)
             if not any(
                 eligible and normalized_sentence in style_record
                 for style_record, eligible in normalized_full_records
             ):
-                unsupported_incident = True
-    return unsupported_marker, unsupported_incident
+                findings.append(
+                    {
+                        "code": "untraceable-incident",
+                        "excerpt": sentence[:300],
+                        "markers": [],
+                    }
+                )
+    unique: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for finding in findings:
+        key = (str(finding["code"]), str(finding["excerpt"]))
+        if key not in seen:
+            seen.add(key)
+            unique.append(finding)
+    return unique
+
+
+def _factual_support_status(
+    text: str,
+    support_records: Sequence[tuple[str, bool]],
+) -> tuple[bool, bool]:
+    findings = _factual_support_diagnostics(text, support_records)
+    codes = {str(finding["code"]) for finding in findings}
+    return "unsupported-factual-marker" in codes, "untraceable-incident" in codes
+
+
+def candidate_factual_support_diagnostics(
+    candidate: Mapping[str, object],
+    evidence: Sequence[Mapping[str, object]],
+    *,
+    proof: LoadedProof | None = None,
+) -> list[dict[str, object]]:
+    """Explain factual-support failures using only candidate-visible text and markers."""
+
+    safe_candidate = _critic_candidate_projection([candidate])[0]
+    safe_evidence = _gate_evidence_projection(evidence)
+    safe_proof = _public_proof_projection(proof)
+    evidence_by_id = {str(item["id"]): item for item in safe_evidence}
+    claim_ids = [str(value) for value in safe_candidate["claim_ids"]]
+    support_records = [
+        (
+            str(evidence_by_id[claim_id]["claim"]),
+            not _community_hostname(
+                str(urlsplit(str(evidence_by_id[claim_id]["source"])).hostname or "")
+            ),
+        )
+        for claim_id in claim_ids
+        if claim_id in evidence_by_id
+        and evidence_by_id[claim_id]["body_read"] is True
+    ]
+    if safe_proof is not None and str(safe_proof["proof_id"]) in claim_ids:
+        support_records.append((str(safe_proof["public_claim"]), True))
+    return _factual_support_diagnostics(str(safe_candidate["text"]), support_records)
 
 
 def _candidate_urls_supported(

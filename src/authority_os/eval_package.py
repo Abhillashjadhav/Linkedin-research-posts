@@ -351,7 +351,12 @@ def _acceptance_identity() -> dict[str, object]:
         raise workflow.WorkflowError("Approved LinkedIn post contract is malformed.")
     metadata = payload.get("metadata")
     critic = payload.get("critic")
-    if not isinstance(metadata, Mapping) or not isinstance(critic, Mapping):
+    repair = payload.get("repair")
+    if (
+        not isinstance(metadata, Mapping)
+        or not isinstance(critic, Mapping)
+        or not isinstance(repair, Mapping)
+    ):
         raise workflow.WorkflowError("Approved LinkedIn post contract is malformed.")
     if metadata.get("status") != "APPROVED":
         raise workflow.WorkflowError("LinkedIn post contract is not approved.")
@@ -359,6 +364,7 @@ def _acceptance_identity() -> dict[str, object]:
         critic.get("minimum_total") != acceptance_policy.ACCEPTABLE_QUALITY_FLOOR
         or critic.get("axis_floors") != dict(acceptance_policy.AXIS_FLOORS)
         or critic.get("axis_order") != list(workflow.CRITIC_AXES)
+        or repair.get("maximum_quality_cycles") != 4
     ):
         raise workflow.WorkflowError(
             "Approved LinkedIn post contract does not match the runtime Critic acceptance policy."
@@ -370,6 +376,7 @@ def _acceptance_identity() -> dict[str, object]:
         "status": "APPROVED",
         "minimum_total": acceptance_policy.ACCEPTABLE_QUALITY_FLOOR,
         "axis_floors": dict(acceptance_policy.AXIS_FLOORS),
+        "maximum_quality_cycles": repair.get("maximum_quality_cycles"),
         "sha256": hashlib.sha256(raw).hexdigest(),
     }
 
@@ -381,6 +388,7 @@ def _persist_dashboards(
     rubric: Mapping[str, str],
     acceptance_contract: Mapping[str, object],
     results: Sequence[Mapping[str, object]],
+    repair_history: Sequence[Mapping[str, object]] = (),
 ) -> tuple[Path, Path, Path, bool]:
     run_id = (
         "eval-package-"
@@ -393,6 +401,19 @@ def _persist_dashboards(
     from . import daily_cli
 
     legacy_cli._ensure_owner_only_directory(folder)  # type: ignore[attr-defined]
+    candidate_artifacts: dict[str, str] = {}
+    for item in results:
+        candidate = item.get("candidate")
+        if not isinstance(candidate, Mapping):
+            continue
+        candidate_id = str(candidate.get("id", "candidate"))
+        candidate_path = daily_cli.write_private_text(
+            folder / f"evaluated-{candidate_id}.md",
+            str(candidate.get("text", "")).strip() + "\n",
+        )
+        candidate_artifacts[candidate_id] = candidate_path.relative_to(
+            workflow.REPO_ROOT
+        ).as_posix()
     accepted = [str(item["candidate_id"]) for item in results if item["acceptance"]["status"] == "PASS"]  # type: ignore[index]
     checks = [
         {
@@ -404,26 +425,58 @@ def _persist_dashboards(
             "reason": (
                 "candidate cleared Critic, hard gates, and anti-slop"
                 if item["acceptance"]["status"] == "PASS"  # type: ignore[index]
-                else ", ".join(str(value) for value in item["acceptance"]["reasons"])  # type: ignore[index]
+                else (
+                    ", ".join(
+                        str(value) for value in item["acceptance"]["reasons"]  # type: ignore[index]
+                    )
+                    + " | "
+                    + " | ".join(
+                        f"{finding.get('code')}: {finding.get('excerpt')}"
+                        for finding in item.get("factual_support_diagnostics", [])
+                        if isinstance(finding, Mapping)
+                    )
+                ).rstrip(" |")
             ),
         }
         for item in results
     ]
-    critic_scorecards = [
-        {
-            "cycle": 1,
-            "candidate_id": item["candidate_id"],
-            "axes": {
-                axis: item["scorecard"][axis]  # type: ignore[index]
-                for axis in workflow.CRITIC_AXES
-            },
-            "total": item["scorecard"]["effective_total"],  # type: ignore[index]
-            "threshold": acceptance_policy.ACCEPTABLE_QUALITY_FLOOR,
-            "status": item["acceptance"]["status"],  # type: ignore[index]
-            "failure_codes": list(item["acceptance"]["reasons"]),  # type: ignore[index]
-        }
-        for item in results
-    ]
+    if repair_history:
+        critic_scorecards = [
+            {
+                "cycle": item["iteration"],
+                "candidate_id": item["candidate_id"],
+                "axes": {
+                    axis: item["scorecard"][axis]  # type: ignore[index]
+                    for axis in workflow.CRITIC_AXES
+                },
+                "total": item["scorecard"]["effective_total"],  # type: ignore[index]
+                "threshold": acceptance_policy.ACCEPTABLE_QUALITY_FLOOR,
+                "status": (
+                    item["acceptance"]["status"]  # type: ignore[index]
+                    if item["accepted_as_next_seed"]
+                    else "REJECTED"
+                ),
+                "failure_codes": list(item["acceptance"]["reasons"])  # type: ignore[index]
+                + list(item["editorial_decision_reasons"]),  # type: ignore[arg-type]
+            }
+            for item in repair_history
+        ]
+    else:
+        critic_scorecards = [
+            {
+                "cycle": 1,
+                "candidate_id": item["candidate_id"],
+                "axes": {
+                    axis: item["scorecard"][axis]  # type: ignore[index]
+                    for axis in workflow.CRITIC_AXES
+                },
+                "total": item["scorecard"]["effective_total"],  # type: ignore[index]
+                "threshold": acceptance_policy.ACCEPTABLE_QUALITY_FLOOR,
+                "status": item["acceptance"]["status"],  # type: ignore[index]
+                "failure_codes": list(item["acceptance"]["reasons"]),  # type: ignore[index]
+            }
+            for item in results
+        ]
     eval_dashboard = {
         "schema_version": 1,
         "run_id": run_id,
@@ -433,6 +486,8 @@ def _persist_dashboards(
         "rubric": dict(rubric),
         "acceptance_contract": dict(acceptance_contract),
         "results": list(results),
+        "repair_history": list(repair_history),
+        "candidate_artifacts": candidate_artifacts,
         "accepted_candidate_ids": accepted,
         "checks": checks,
         "critic_scorecards": critic_scorecards,
@@ -446,11 +501,14 @@ def _persist_dashboards(
         "evaluated_candidate_ids": [str(item["candidate_id"]) for item in results],
         "accepted_candidate_ids": accepted,
         "writer_invoked": False,
-        "revision_invoked": False,
+        "revision_invoked": bool(len(repair_history) > 1),
+        "editor_invocation_count": max(0, len(repair_history) - 1),
         "discovery_invoked": False,
         "thesis_selection_invoked": False,
         "rubric_sha256": rubric["sha256"],
         "acceptance_contract_sha256": acceptance_contract["sha256"],
+        "repair_history": list(repair_history),
+        "candidate_artifacts": candidate_artifacts,
         "checks": [
             {
                 "stage": "final_evals",
@@ -482,50 +540,38 @@ def _persist_dashboards(
     return eval_path, run_path, html_path, opened
 
 
-def command(
-    args: object,
+def _evaluate_candidates(
+    candidates: Sequence[Mapping[str, object]],
     *,
-    persist: Callable[..., tuple[Path, Path, Path, bool]] = _persist_dashboards,
-) -> int:
-    """Run Critic plus deterministic final evaluation on immutable candidates."""
-
-    if not bool(getattr(args, "allow_model_egress", False)):
-        raise workflow.WorkflowError(
-            "Eval package requires --allow-model-egress before frozen content reaches the Critic."
-        )
-    context = _load_context(args)
-    candidates = context["selected_candidates"]
-    brief = context["brief"]
-    evidence = context["evidence"]
-    if not isinstance(candidates, list) or not isinstance(brief, Mapping) or not isinstance(evidence, list):
-        raise workflow.WorkflowError("Eval package context is malformed.")
-    rubric = _rubric_identity()
-    acceptance_contract = _acceptance_identity()
-    raw_scores = workflow.invoke_critic(
+    all_candidates: Sequence[Mapping[str, object]],
+    brief: Mapping[str, object],
+    evidence: Sequence[Mapping[str, object]],
+    proof: workflow.LoadedProof | None,
+    score_provider: Callable[..., Sequence[Mapping[str, object]]],
+) -> list[dict[str, object]]:
+    raw_scores = score_provider(
         candidates,
         brief,
         evidence,
         allow_model_egress=True,
-        proof=context["proof"],  # type: ignore[arg-type]
+        proof=proof,
     )
     scorecards = workflow.validate_critic_scorecards(raw_scores, candidates)
     ranked = workflow.rank_critic_scorecards(scorecards)
-    all_candidates = context["all_candidates"]
-    if not isinstance(all_candidates, list):
-        raise workflow.WorkflowError("Eval package candidates are malformed.")
     gate_results = workflow.evaluate_candidate_set_gates(
         all_candidates,
         brief=brief,
         evidence=evidence,
-        proof=context["proof"],  # type: ignore[arg-type]
+        proof=proof,
     )
     gates_by_id = {str(item["candidate_id"]): item for item in gate_results}
     candidates_by_id = {str(item["id"]): item for item in all_candidates}
     results: list[dict[str, object]] = []
     for scorecard in ranked:
         candidate_id = str(scorecard["candidate_id"])
+        candidate = candidates_by_id[candidate_id]
         gate = gates_by_id[candidate_id]
-        findings = anti_slop.audit(str(candidates_by_id[candidate_id]["text"]))
+        findings = anti_slop.audit(str(candidate["text"]))
         hard_gates_pass = (
             gate["passes_required_gates"] is True
             and acceptance_policy.hard_candidate_gates_pass(gate["gates"])  # type: ignore[arg-type]
@@ -538,8 +584,14 @@ def command(
         results.append(
             {
                 "candidate_id": candidate_id,
+                "candidate": dict(candidate),
                 "scorecard": dict(scorecard),
                 "gates": gate,
+                "factual_support_diagnostics": (
+                    workflow.candidate_factual_support_diagnostics(
+                        candidate, evidence, proof=proof
+                    )
+                ),
                 "anti_slop_findings": [
                     {"code": finding.code, "excerpt": finding.excerpt}
                     for finding in findings
@@ -547,13 +599,327 @@ def command(
                 "acceptance": decision,
             }
         )
+    return results
+
+
+def _failed_gate_details(result: Mapping[str, object]) -> dict[str, object]:
+    raw_gate_result = result.get("gates")
+    if not isinstance(raw_gate_result, Mapping):
+        raise workflow.WorkflowError("Progressive editor gate result is malformed.")
+    raw_gates = raw_gate_result.get("gates")
+    if not isinstance(raw_gates, Mapping):
+        raise workflow.WorkflowError("Progressive editor gate map is malformed.")
+    return {
+        str(name): dict(gate)
+        for name, gate in raw_gates.items()
+        if isinstance(gate, Mapping)
+        and str(gate.get("status")) not in {"PASS", "NOT_REQUIRED"}
+    }
+
+
+def _repair_feedback(iteration: int, result: Mapping[str, object]) -> dict[str, object]:
+    scorecard = result.get("scorecard")
+    acceptance = result.get("acceptance")
+    if not isinstance(scorecard, Mapping) or not isinstance(acceptance, Mapping):
+        raise workflow.WorkflowError("Progressive editor score result is malformed.")
+    passing_axes = {
+        axis: int(scorecard[axis])
+        for axis in workflow.CRITIC_AXES
+        if int(scorecard[axis]) >= acceptance_policy.AXIS_FLOORS[axis]
+    }
+    return {
+        "next_scored_iteration": iteration,
+        "same_candidate_required": True,
+        "current_scores": {
+            axis: int(scorecard[axis]) for axis in workflow.CRITIC_AXES
+        },
+        "current_total": int(scorecard["effective_total"]),
+        "axis_shortfalls": dict(acceptance.get("axis_shortfalls", {})),
+        "passing_axes_to_preserve": passing_axes,
+        "failed_gates": _failed_gate_details(result),
+        "factual_support_diagnostics": list(
+            result.get("factual_support_diagnostics", [])  # type: ignore[arg-type]
+        ),
+        "anti_slop_findings": list(
+            result.get("anti_slop_findings", [])  # type: ignore[arg-type]
+        ),
+        "editor_contract": (
+            "Edit only the named failures. Keep the candidate ID, angle, claim IDs, "
+            "selected thesis, evidence boundary, and passing material. Do not invent facts, "
+            "experience, emotion, sources, scale, causality, or impact. The next revision is "
+            "eligible to become the new seed only if no axis, total, passing hard gate, or "
+            "deterministic check regresses and at least one failed measure improves."
+        ),
+    }
+
+
+def _finding_keys(raw: object) -> set[tuple[str, str]]:
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        return set()
+    return {
+        (str(item.get("code", "")), str(item.get("excerpt", "")))
+        for item in raw
+        if isinstance(item, Mapping)
+    }
+
+
+def _monotonic_edit_decision(
+    previous: Mapping[str, object], proposed: Mapping[str, object]
+) -> tuple[bool, list[str]]:
+    previous_score = previous.get("scorecard")
+    proposed_score = proposed.get("scorecard")
+    if not isinstance(previous_score, Mapping) or not isinstance(proposed_score, Mapping):
+        raise workflow.WorkflowError("Progressive editor score comparison is malformed.")
+    regressions: list[str] = []
+    for axis in workflow.CRITIC_AXES:
+        before = int(previous_score[axis])
+        after = int(proposed_score[axis])
+        if after < before:
+            regressions.append(f"{axis}-regressed-{before}-to-{after}")
+    previous_total = int(previous_score["effective_total"])
+    proposed_total = int(proposed_score["effective_total"])
+    if proposed_total < previous_total:
+        regressions.append(f"total-regressed-{previous_total}-to-{proposed_total}")
+
+    previous_gate_result = previous.get("gates")
+    proposed_gate_result = proposed.get("gates")
+    if not isinstance(previous_gate_result, Mapping) or not isinstance(
+        proposed_gate_result, Mapping
+    ):
+        raise workflow.WorkflowError("Progressive editor gate comparison is malformed.")
+    previous_gates = previous_gate_result.get("gates")
+    proposed_gates = proposed_gate_result.get("gates")
+    if not isinstance(previous_gates, Mapping) or not isinstance(proposed_gates, Mapping):
+        raise workflow.WorkflowError("Progressive editor gate comparison is incomplete.")
+    for name, raw_before in previous_gates.items():
+        raw_after = proposed_gates.get(name)
+        if not isinstance(raw_before, Mapping) or not isinstance(raw_after, Mapping):
+            raise workflow.WorkflowError("Progressive editor gate entry is malformed.")
+        before = str(raw_before.get("status"))
+        after = str(raw_after.get("status"))
+        if before in {"PASS", "NOT_REQUIRED"} and after not in {
+            "PASS",
+            "NOT_REQUIRED",
+        }:
+            regressions.append(f"gate-{name}-regressed-{before}-to-{after}")
+
+    previous_slop = _finding_keys(previous.get("anti_slop_findings"))
+    proposed_slop = _finding_keys(proposed.get("anti_slop_findings"))
+    if not proposed_slop <= previous_slop:
+        regressions.append("new-anti-slop-finding")
+    if regressions:
+        return False, regressions
+
+    previous_failed = len(_failed_gate_details(previous))
+    proposed_failed = len(_failed_gate_details(proposed))
+    previous_factual = len(
+        _finding_keys(previous.get("factual_support_diagnostics"))
+    )
+    proposed_factual = len(
+        _finding_keys(proposed.get("factual_support_diagnostics"))
+    )
+    improved = (
+        any(
+            int(proposed_score[axis]) > int(previous_score[axis])
+            for axis in workflow.CRITIC_AXES
+        )
+        or proposed_failed < previous_failed
+        or len(proposed_slop) < len(previous_slop)
+        or proposed_factual < previous_factual
+    )
+    return improved, [] if improved else ["no-measurable-improvement"]
+
+
+def _replace_candidate(
+    candidates: Sequence[Mapping[str, object]],
+    revised: Mapping[str, object],
+    *,
+    original: Mapping[str, object],
+    brief: Mapping[str, object],
+    evidence: Sequence[Mapping[str, object]],
+    proof: workflow.LoadedProof | None,
+) -> list[dict[str, object]]:
+    if (
+        revised.get("id") != original.get("id")
+        or revised.get("angle") != original.get("angle")
+        or revised.get("claim_ids") != original.get("claim_ids")
+    ):
+        raise workflow.WorkflowError(
+            "Progressive editor must preserve candidate ID, angle, and claim IDs exactly."
+        )
+    replaced = [
+        dict(revised) if item.get("id") == original.get("id") else dict(item)
+        for item in candidates
+    ]
+    return workflow.validate_draft_candidates(
+        replaced, brief=brief, evidence=evidence, proof=proof
+    )
+
+
+def _history_entry(
+    iteration: int,
+    result: Mapping[str, object],
+    *,
+    accepted_as_seed: bool,
+    decision_reasons: Sequence[str],
+) -> dict[str, object]:
+    return {
+        "iteration": iteration,
+        "candidate_id": result["candidate_id"],
+        "scorecard": dict(result["scorecard"]),  # type: ignore[arg-type]
+        "acceptance": dict(result["acceptance"]),  # type: ignore[arg-type]
+        "failed_gates": _failed_gate_details(result),
+        "factual_support_diagnostics": list(
+            result.get("factual_support_diagnostics", [])  # type: ignore[arg-type]
+        ),
+        "anti_slop_findings": list(
+            result.get("anti_slop_findings", [])  # type: ignore[arg-type]
+        ),
+        "accepted_as_next_seed": accepted_as_seed,
+        "editorial_decision_reasons": list(decision_reasons),
+    }
+
+
+def command(
+    args: object,
+    *,
+    persist: Callable[..., tuple[Path, Path, Path, bool]] = _persist_dashboards,
+    score_provider: Callable[..., Sequence[Mapping[str, object]]] | None = None,
+    editor: Callable[..., Mapping[str, object]] | None = None,
+) -> int:
+    """Evaluate frozen candidates, optionally editing one candidate monotonically."""
+
+    if not bool(getattr(args, "allow_model_egress", False)):
+        raise workflow.WorkflowError(
+            "Eval package requires --allow-model-egress before frozen content reaches the Critic."
+        )
+    repair_requested = bool(getattr(args, "repair", False))
+    if repair_requested and getattr(args, "candidate", None) is None:
+        raise workflow.WorkflowError("Progressive repair requires one explicit --candidate.")
+    context = _load_context(args)
+    candidates = context["selected_candidates"]
+    brief = context["brief"]
+    evidence = context["evidence"]
+    all_candidates = context["all_candidates"]
+    proof = context["proof"]
+    if (
+        not isinstance(candidates, list)
+        or not isinstance(all_candidates, list)
+        or not isinstance(brief, Mapping)
+        or not isinstance(evidence, list)
+    ):
+        raise workflow.WorkflowError("Eval package context is malformed.")
+    rubric = _rubric_identity()
+    acceptance_contract = _acceptance_identity()
+    scorer = workflow.invoke_critic if score_provider is None else score_provider
+    results = _evaluate_candidates(
+        candidates,
+        all_candidates=all_candidates,
+        brief=brief,
+        evidence=evidence,
+        proof=proof,  # type: ignore[arg-type]
+        score_provider=scorer,
+    )
+    repair_history: list[dict[str, object]] = []
+
+    if repair_requested:
+        if len(results) != 1 or len(candidates) != 1:
+            raise workflow.WorkflowError("Progressive repair requires exactly one candidate.")
+        current_result = results[0]
+        current_candidate = dict(candidates[0])
+        current_all_candidates = [dict(candidate) for candidate in all_candidates]
+        repair_history.append(
+            _history_entry(
+                1,
+                current_result,
+                accepted_as_seed=True,
+                decision_reasons=["frozen-baseline"],
+            )
+        )
+        raw_limit = acceptance_contract.get("maximum_quality_cycles")
+        if type(raw_limit) is not int or raw_limit != 4:
+            raise workflow.WorkflowError(
+                "Approved contract must define exactly four progressive scored iterations."
+            )
+        edit = workflow.invoke_writer_revision if editor is None else editor
+        for iteration in range(2, raw_limit + 1):
+            if current_result["acceptance"]["status"] == "PASS":  # type: ignore[index]
+                break
+            feedback = _repair_feedback(iteration, current_result)
+            revised = edit(
+                current_candidate,
+                brief,
+                evidence,
+                scorecard=current_result["scorecard"],
+                allow_model_egress=True,
+                proof=proof,
+                repair_feedback=feedback,
+            )
+            if not isinstance(revised, Mapping):
+                raise workflow.WorkflowError("Progressive editor returned a malformed candidate.")
+            proposed_all_candidates = _replace_candidate(
+                current_all_candidates,
+                revised,
+                original=current_candidate,
+                brief=brief,
+                evidence=evidence,
+                proof=proof,  # type: ignore[arg-type]
+            )
+            proposed_candidate = next(
+                candidate
+                for candidate in proposed_all_candidates
+                if candidate["id"] == current_candidate["id"]
+            )
+            proposed_result = _evaluate_candidates(
+                [proposed_candidate],
+                all_candidates=proposed_all_candidates,
+                brief=brief,
+                evidence=evidence,
+                proof=proof,  # type: ignore[arg-type]
+                score_provider=scorer,
+            )[0]
+            accepted_as_seed, reasons = _monotonic_edit_decision(
+                current_result, proposed_result
+            )
+            repair_history.append(
+                _history_entry(
+                    iteration,
+                    proposed_result,
+                    accepted_as_seed=accepted_as_seed,
+                    decision_reasons=(
+                        ["monotonic-improvement"] if accepted_as_seed else reasons
+                    ),
+                )
+            )
+            if accepted_as_seed:
+                current_candidate = dict(proposed_candidate)
+                current_all_candidates = proposed_all_candidates
+                current_result = proposed_result
+        results = [current_result]
+
     eval_path, run_path, html_path, opened = persist(
         package_path=context["package_path"],  # type: ignore[arg-type]
         manifest=context["manifest"],  # type: ignore[arg-type]
         rubric=rubric,
         acceptance_contract=acceptance_contract,
         results=results,
+        repair_history=repair_history,
     )
+    if repair_history:
+        for item in repair_history:
+            scorecard = item["scorecard"]
+            print(
+                f"Progressive iteration {item['iteration']}/4: "
+                f"score={scorecard['effective_total']}/25; "  # type: ignore[index]
+                + ",".join(
+                    f"{axis}={scorecard[axis]}/5"  # type: ignore[index]
+                    for axis in workflow.CRITIC_AXES
+                )
+                + f"; accepted_as_next_seed={'yes' if item['accepted_as_next_seed'] else 'no'}; "
+                + "reasons="
+                + ",".join(str(value) for value in item["editorial_decision_reasons"])
+                + "."
+            )
     for result in results:
         scorecard = result["scorecard"]
         if not isinstance(scorecard, Mapping):
@@ -564,6 +930,9 @@ def command(
             f"raw_total={scorecard['raw_total']}; effective_total={scorecard['effective_total']}; "
             f"acceptance={result['acceptance']['status']}."  # type: ignore[index]
         )
+        artifact = eval_path.parent / f"evaluated-{result['candidate_id']}.md"
+        if artifact.is_file():
+            print(f"Evaluated candidate: {artifact.relative_to(workflow.REPO_ROOT)}.")
     print("Eval ranking: " + ",".join(str(item["candidate_id"]) for item in results) + ".")
     print(f"Active Critic rubric: {rubric['rubric_id']} ({rubric['sha256'][:12]}).")
     print(
@@ -576,5 +945,12 @@ def command(
         f"Eval dashboard UI: {html_path.as_uri()}"
         + (" (opened in your browser)." if opened else ".")
     )
-    print("Frozen candidates were not drafted, revised, selected as a thesis, or published.")
+    if repair_requested:
+        print(
+            "Discovery, research, thesis selection, and the original Writer were not run; "
+            f"the bounded editor was invoked {max(0, len(repair_history) - 1)} time(s)."
+        )
+    else:
+        print("Frozen candidates were not drafted, revised, selected as a thesis, or published.")
+    print("No LinkedIn publishing action was taken.")
     return 0 if any(item["acceptance"]["status"] == "PASS" for item in results) else 1  # type: ignore[index]

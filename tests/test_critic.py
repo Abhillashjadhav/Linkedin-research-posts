@@ -766,6 +766,35 @@ class WriterRevisionInvocationTests(unittest.TestCase):
         self.assertTrue(run.call_args.kwargs["text"])
         self.assertFalse(run.call_args.kwargs["check"])
 
+    def test_revision_prompt_receives_exact_bounded_repair_feedback(self) -> None:
+        feedback = {
+            "axis_shortfalls": {
+                "hook_strength": {"observed": 3, "required": 4, "shortfall": 1}
+            },
+            "passing_axes_to_preserve": {"earned_closer": 5},
+            "factual_support_diagnostics": [
+                {
+                    "code": "unsupported-factual-marker",
+                    "excerpt": "OpenAI reported 95% reliability.",
+                    "markers": ["openai", "95%"],
+                }
+            ],
+        }
+
+        prompt = workflow._build_writer_revision_prompt(
+            candidate=self.candidate,
+            scorecard=scorecard("candidate-1", (3, 4, 5, 4, 3)),
+            brief=self.brief,
+            evidence=self.evidence,
+            voice_guidance=self.voice,
+            repair_feedback=feedback,
+        )
+
+        self.assertIn("UNTRUSTED_REPAIR_FEEDBACK_DATA", prompt)
+        self.assertIn("OpenAI reported 95% reliability.", prompt)
+        self.assertIn("passing_axes_to_preserve", prompt)
+        self.assertIn("improving only the failed axes", prompt)
+
     @patch("authority_os.workflow.subprocess.run")
     @patch("authority_os.workflow.shutil.which", return_value="/opt/claude")
     def test_revision_writer_failures_do_not_leak_stderr_or_os_paths(

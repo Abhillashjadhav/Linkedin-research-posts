@@ -113,9 +113,10 @@ def _invoke_writer_revision_codex(
     allow_model_egress: bool = False,
     voice_guidance: Mapping[str, str] | None = None,
     proof: workflow.LoadedProof | None = None,
+    repair_feedback: Mapping[str, object] | None = None,
     timeout: int = 300,
 ) -> dict[str, object]:
-    """Run the existing one-light Writer revision through Codex."""
+    """Run one orchestrator-controlled Writer revision through Codex."""
 
     _require_egress(allow_model_egress, stage="Writer revision")
     _require_timeout(timeout, stage="Writer revision")
@@ -127,6 +128,7 @@ def _invoke_writer_revision_codex(
         evidence=evidence,
         voice_guidance=guidance,
         proof=proof,
+        repair_feedback=repair_feedback,
     )
     result = model_runtime.invoke_structured(
         config=campaign.StageModels.preferred().writer,

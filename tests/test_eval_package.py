@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from authority_os import __main__ as cli
 from authority_os import acceptance_policy, eval_package, workflow
@@ -38,6 +38,55 @@ def _gate(candidate_id: str) -> dict[str, object]:
     }
 
 
+def _repair_context() -> dict[str, object]:
+    candidates = [_candidate(index) for index in range(1, 4)]
+    brief = {
+        "goal": "authority",
+        "topic_slug": "topic",
+        "goal_purpose": "purpose",
+        "narrative_route": ["incident", "decision"],
+        "target_reader": "product leaders",
+        "reader_problem": "unclear ownership",
+        "core_hypothesis": "ownership changes reliability",
+        "product_decision": "name the owner",
+        "authority_statement": "clear ownership matters",
+        "strategy_input_origin": "explicit-input",
+        "analysis": {
+            "why_now": "now",
+            "dominant_take": "common take",
+            "missing_angle": "missing decision",
+        },
+    }
+    evidence = [
+        {
+            "id": "source-1",
+            "title": "Source",
+            "claim": "Grounded claim",
+            "source": "https://example.com/source",
+            "source_quality": "primary",
+            "body_read": True,
+        }
+    ]
+    return {
+        "package_path": workflow.REPO_ROOT / "outputs" / "2026-09-04" / "topic",
+        "manifest": {"package_id": "2026-09-04-topic"},
+        "brief": brief,
+        "evidence": evidence,
+        "proof": None,
+        "all_candidates": candidates,
+        "selected_candidates": [candidates[1]],
+    }
+
+
+def _raw_score(values: tuple[int, int, int, int, int]) -> list[dict[str, object]]:
+    return [
+        {
+            "candidate_id": "candidate-2",
+            **dict(zip(workflow.CRITIC_AXES, values, strict=True)),
+        }
+    ]
+
+
 class EvalPackageTests(unittest.TestCase):
     def test_parser_exposes_required_eval_only_inputs(self) -> None:
         args = cli.build_parser().parse_args(
@@ -58,6 +107,29 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(args.command, "eval-package")
         self.assertIsNone(args.candidate)
         self.assertTrue(args.allow_model_egress)
+        self.assertFalse(args.repair)
+
+    def test_parser_exposes_explicit_progressive_repair(self) -> None:
+        args = cli.build_parser().parse_args(
+            [
+                "eval-package",
+                "--package",
+                "outputs/2026-09-04/topic",
+                "--strategy-input",
+                "strategy.json",
+                "--evidence-manifest",
+                "data/private/evidence.json",
+                "--db",
+                "data/private/authority.sqlite",
+                "--allow-model-egress",
+                "--candidate",
+                "candidate-2",
+                "--repair",
+            ]
+        )
+
+        self.assertTrue(args.repair)
+        self.assertEqual(args.candidate, "candidate-2")
 
     def test_command_calls_critic_once_and_never_calls_writer_or_revision(self) -> None:
         candidates = [_candidate(index) for index in range(1, 4)]
@@ -152,6 +224,152 @@ class EvalPackageTests(unittest.TestCase):
             results[0]["acceptance"]["contract_version"],
             acceptance_policy.ACCEPTANCE_CONTRACT_VERSION,
         )
+
+    def test_progressive_repair_stops_before_editor_when_baseline_passes(self) -> None:
+        context = _repair_context()
+        captured: dict[str, object] = {}
+
+        def persist(**kwargs: object) -> tuple[Path, Path, Path, bool]:
+            captured.update(kwargs)
+            return (
+                workflow.REPO_ROOT / "eval.json",
+                workflow.REPO_ROOT / "run.json",
+                workflow.REPO_ROOT / "eval.html",
+                False,
+            )
+
+        args = SimpleNamespace(
+            allow_model_egress=True, repair=True, candidate="candidate-2"
+        )
+        editor = Mock(side_effect=AssertionError("editor called"))
+        with (
+            patch.object(eval_package, "_load_context", return_value=context),
+            patch.object(
+                eval_package,
+                "_rubric_identity",
+                return_value={
+                    "path": "config/current.json",
+                    "rubric_id": "current",
+                    "sha256": "a" * 64,
+                },
+            ),
+            patch.object(
+                workflow,
+                "evaluate_candidate_set_gates",
+                return_value=[
+                    _gate(str(candidate["id"]))
+                    for candidate in context["all_candidates"]
+                ],
+            ),
+            patch.object(
+                workflow, "candidate_factual_support_diagnostics", return_value=[]
+            ),
+        ):
+            result = eval_package.command(
+                args,
+                persist=persist,
+                score_provider=lambda *_args, **_kwargs: _raw_score((4, 4, 4, 3, 4)),
+                editor=editor,
+            )
+
+        self.assertEqual(result, 0)
+        editor.assert_not_called()
+        self.assertEqual(len(captured["repair_history"]), 1)
+
+    def test_progressive_repair_keeps_one_monotonic_candidate_lineage(self) -> None:
+        context = _repair_context()
+        scores = iter(
+            (
+                _raw_score((3, 4, 5, 4, 3)),
+                _raw_score((4, 3, 5, 4, 3)),
+                _raw_score((4, 4, 5, 4, 3)),
+                _raw_score((4, 4, 5, 4, 4)),
+            )
+        )
+        editor_inputs: list[str] = []
+        edit_number = 0
+        captured: dict[str, object] = {}
+
+        def score_provider(*_args: object, **_kwargs: object):
+            return next(scores)
+
+        def editor(candidate: object, *_args: object, **_kwargs: object):
+            nonlocal edit_number
+            self.assertIsInstance(candidate, dict)
+            editor_inputs.append(str(candidate["text"]))
+            edit_number += 1
+            return {
+                **candidate,
+                "text": f"progressive revision {edit_number}",
+            }
+
+        def persist(**kwargs: object) -> tuple[Path, Path, Path, bool]:
+            captured.update(kwargs)
+            return (
+                workflow.REPO_ROOT / "eval.json",
+                workflow.REPO_ROOT / "run.json",
+                workflow.REPO_ROOT / "eval.html",
+                False,
+            )
+
+        args = SimpleNamespace(
+            allow_model_egress=True, repair=True, candidate="candidate-2"
+        )
+        with (
+            patch.object(eval_package, "_load_context", return_value=context),
+            patch.object(
+                eval_package,
+                "_rubric_identity",
+                return_value={
+                    "path": "config/current.json",
+                    "rubric_id": "current",
+                    "sha256": "a" * 64,
+                },
+            ),
+            patch.object(
+                workflow,
+                "evaluate_candidate_set_gates",
+                return_value=[
+                    _gate(str(candidate["id"]))
+                    for candidate in context["all_candidates"]
+                ],
+            ),
+            patch.object(
+                workflow, "candidate_factual_support_diagnostics", return_value=[]
+            ),
+            patch.object(
+                workflow,
+                "validate_draft_candidates",
+                side_effect=lambda candidates, **_kwargs: [
+                    dict(candidate) for candidate in candidates
+                ],
+            ),
+        ):
+            result = eval_package.command(
+                args,
+                persist=persist,
+                score_provider=score_provider,
+                editor=editor,
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(len(editor_inputs), 3)
+        self.assertEqual(editor_inputs[0], _candidate(2)["text"])
+        self.assertEqual(editor_inputs[1], _candidate(2)["text"])
+        self.assertEqual(editor_inputs[2], "progressive revision 2")
+        history = captured["repair_history"]
+        self.assertEqual(len(history), 4)
+        self.assertFalse(history[1]["accepted_as_next_seed"])
+        self.assertIn(
+            "middle_escalation-regressed-4-to-3",
+            history[1]["editorial_decision_reasons"],
+        )
+        self.assertTrue(history[2]["accepted_as_next_seed"])
+        self.assertTrue(history[3]["accepted_as_next_seed"])
+        final = captured["results"][0]
+        self.assertEqual(final["candidate_id"], "candidate-2")
+        self.assertEqual(final["scorecard"]["effective_total"], 21)
+        self.assertEqual(final["acceptance"]["status"], "PASS")
 
     def test_rubric_identity_hashes_the_current_loaded_rubric(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

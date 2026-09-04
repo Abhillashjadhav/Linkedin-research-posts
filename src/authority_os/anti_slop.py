@@ -40,6 +40,10 @@ BANNED_WORDS = (
 
 _PATTERN_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
+        "citation-placeholder",
+        re.compile(r"(?i)\[(?:source|claim)-[a-z0-9._-]+\]"),
+    ),
+    (
         "binary-contrast",
         re.compile(
             r"(?i)\b(?:this|it|the question)\s+(?:is|isn't|is not)\s+not?\b.*?\b(?:it is|it's|is)\b"

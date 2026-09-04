@@ -26,7 +26,7 @@ class LinkedInPostContractTests(unittest.TestCase):
     def test_contract_is_approved_v1(self) -> None:
         metadata = self.contract["metadata"]
         self.assertEqual(metadata["status"], "APPROVED")
-        self.assertEqual(metadata["version"], "1.0.0")
+        self.assertEqual(metadata["version"], "1.1.0")
 
     def test_critic_matches_executable_acceptance_policy(self) -> None:
         critic = self.contract["critic"]
@@ -108,6 +108,25 @@ class LinkedInPostContractTests(unittest.TestCase):
             writing["personal_experience"]["invented_emotion"], "prohibited"
         )
         self.assertTrue(writing["plain_language"]["prohibited_register_examples"])
+
+    def test_progressive_editor_contract_is_monotonic_and_bounded(self) -> None:
+        repair = self.contract["repair"]
+
+        self.assertEqual(repair["maximum_quality_cycles"], 4)
+        self.assertEqual(repair["progressive_editor_candidate_count"], 1)
+        self.assertIn(
+            "ID, angle, and claim IDs exactly",
+            repair["progressive_editor_identity_rule"],
+        )
+        monotonic = repair["progressive_editor_monotonic_rule"]
+        for requirement in (
+            "total score",
+            "every individual axis",
+            "hard gate",
+            "improves",
+        ):
+            with self.subTest(requirement=requirement):
+                self.assertIn(requirement, monotonic)
 
     def test_every_recorded_decision_is_resolved_and_none_are_open(self) -> None:
         decisions = self.contract["resolved_decisions"]
