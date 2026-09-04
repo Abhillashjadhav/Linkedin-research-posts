@@ -62,7 +62,7 @@ class SurfaceScoutRuntimeTuningTests(unittest.TestCase):
             surface, "_write_surface_file"
         ), patch.object(surface, "_trace_event"):
             result = tuning._run_surface(
-                lane,
+                surface=lane,
                 topic=None,
                 days=7,
                 as_of="2026-08-29T03:00:00Z",
