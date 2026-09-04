@@ -40,6 +40,17 @@ class AntiSlopAuditTests(unittest.TestCase):
         findings = anti_slop.audit("Harness the power of AI for your business.")
         self.assertEqual([finding.code for finding in findings], ["hype-harness"])
 
+    def test_structural_source_label_is_a_precise_publishable_prose_finding(self) -> None:
+        findings = anti_slop.audit(
+            "OpenAI, Anthropic and xAI had overlapping service problems. [source-1]"
+        )
+
+        self.assertEqual([finding.code for finding in findings], ["citation-placeholder"])
+        self.assertEqual(
+            findings[0].excerpt,
+            "OpenAI, Anthropic and xAI had overlapping service problems. [source-1]",
+        )
+
 
 class IntegratedGateTests(unittest.TestCase):
     def candidate(self, text: str) -> SimpleNamespace:
