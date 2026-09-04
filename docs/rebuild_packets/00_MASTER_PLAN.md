@@ -5,7 +5,7 @@
 | Track | Purpose | Branch/workspace | Remote policy |
 | --- | --- | --- | --- |
 | 1 — repair | Restore the existing workflow after the evidence Scout timeout | `fix/evidence-scout-timeout-recovery` in a separate worktree | May be offered as a runnable repair after verification; no merge without approval |
-| 2 — rebuild | Build a contract-first replacement locally, component by component | `rebuild/contract-first-workflow` | Local only; no push, PR, or merge |
+| 2 — rebuild | Build a contract-first replacement component by component | `rebuild/contract-first-workflow` | WIP branch may be pushed for visibility; no merge until runnable and release-verified |
 
 Track 2 never imports uncommitted Track 1 code. A repair may be deliberately
 ported only after its contract and tests pass against the clean architecture.
