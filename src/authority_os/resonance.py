@@ -30,6 +30,13 @@ POST_AXES = (
 )
 SELECTOR_MIN_TOTAL = 20
 POST_MIN_TOTAL = 20
+SELECTOR_FLOORS = {
+    "recognition": 4,
+    "attention_trigger": 3,
+    "situation_specificity": 4,
+    "proof_value": 4,
+    "payoff": 4,
+}
 
 PROOF_TYPES = (
     "EVIDENCE_SOURCE",
@@ -65,7 +72,6 @@ SELECTOR_SCHEMA = _object_schema(
             {axis: {"type": "integer", "minimum": 1, "maximum": 5} for axis in SELECTOR_AXES},
             SELECTOR_AXES,
         ),
-        "status": {"type": "string", "enum": ["PASS", "BLOCKED"]},
         "diagnosis": {"type": "string"},
     },
     (
@@ -78,7 +84,6 @@ SELECTOR_SCHEMA = _object_schema(
         "proof_available",
         "proof_instruction",
         "scores",
-        "status",
         "diagnosis",
     ),
 )
@@ -108,37 +113,6 @@ POST_SCHEMA = _object_schema(
 )
 
 StageInvoker = Callable[[str, ModelConfig, str, str, Mapping[str, object]], dict[str, object]]
-HumanGuidanceProvider = Callable[
-    ["SelectorStatusConflict", Mapping[str, object], Mapping[str, object]], str
-]
-
-
-class SelectorStatusConflict(workflow.WorkflowError):
-    """Carry the complete disagreement into a bounded human-review checkpoint."""
-
-    def __init__(
-        self,
-        result: Mapping[str, object],
-        *,
-        scores: Mapping[str, int],
-        supports_locked_thesis: bool,
-        computed_status: str,
-    ) -> None:
-        self.result = dict(result)
-        self.scores = dict(scores)
-        self.supports_locked_thesis = supports_locked_thesis
-        self.model_status = str(result.get("status", ""))
-        self.computed_status = computed_status
-        total = sum(scores.values())
-        rendered_scores = ", ".join(
-            f"{axis}={scores[axis]}" for axis in SELECTOR_AXES
-        )
-        super().__init__(
-            "Resonance Selector status conflicts with the deterministic ranking: "
-            f"model_status={self.model_status}; computed_status={computed_status}; "
-            f"supports_locked_thesis={supports_locked_thesis}; total={total}/25; "
-            f"scores=({rendered_scores})."
-        )
 
 
 def _default_invoker(
@@ -189,13 +163,51 @@ def selector_passes(scores: Mapping[str, int], *, supports_locked_thesis: bool) 
 
     return (
         supports_locked_thesis
-        and scores.get("recognition", 0) >= 4
-        and scores.get("attention_trigger", 0) >= 3
-        and scores.get("situation_specificity", 0) >= 4
-        and scores.get("proof_value", 0) >= 4
-        and scores.get("payoff", 0) >= 4
+        and all(
+            scores.get(axis, 0) >= floor
+            for axis, floor in SELECTOR_FLOORS.items()
+        )
         and sum(scores.get(axis, 0) for axis in SELECTOR_AXES) >= SELECTOR_MIN_TOTAL
     )
+
+
+def selector_shortfalls(
+    scores: Mapping[str, int],
+    *,
+    supports_locked_thesis: bool,
+) -> list[str]:
+    """Name every deterministic reason the selected situation cannot advance."""
+
+    failures: list[str] = []
+    if not supports_locked_thesis:
+        failures.append("supports_locked_thesis=false")
+    for axis, floor in SELECTOR_FLOORS.items():
+        observed = int(scores.get(axis, 0))
+        if observed < floor:
+            failures.append(
+                f"{axis}={observed}/5 below {floor}/5 by {floor - observed}"
+            )
+    total = sum(int(scores.get(axis, 0)) for axis in SELECTOR_AXES)
+    if total < SELECTOR_MIN_TOTAL:
+        failures.append(
+            f"total={total}/25 below {SELECTOR_MIN_TOTAL}/25 by "
+            f"{SELECTOR_MIN_TOTAL - total}"
+        )
+    return failures
+
+
+def selector_failure_summary(selector: Mapping[str, object]) -> str:
+    raw_scores = selector.get("scores")
+    scores = (
+        {axis: int(raw_scores.get(axis, 0)) for axis in SELECTOR_AXES}
+        if isinstance(raw_scores, Mapping)
+        else {axis: 0 for axis in SELECTOR_AXES}
+    )
+    failures = selector_shortfalls(
+        scores,
+        supports_locked_thesis=selector.get("supports_locked_thesis") is True,
+    )
+    return "; ".join(failures) or "no deterministic shortfall was recorded"
 
 
 def post_passes(
@@ -222,8 +234,6 @@ def invoke_selector(
     selected_topic_value: Mapping[str, object],
     *,
     invoker: StageInvoker = _default_invoker,
-    human_guidance_provider: HumanGuidanceProvider | None = None,
-    human_guidance: str | None = None,
 ) -> dict[str, object]:
     if selected_topic_value.get("status") != "PASS":
         raise workflow.WorkflowError("Blocked Topic Value material cannot enter Resonance.")
@@ -231,16 +241,6 @@ def invoke_selector(
     if not selected_id:
         raise workflow.WorkflowError("Resonance requires an identified Topic Value situation.")
     config = ModelConfig("codex", "gpt-5.6-sol", "ultra")
-    guidance_block = (
-        "\n\nHUMAN_AUTHORITY_GUIDANCE\n"
-        f"{human_guidance}\n"
-        "END_HUMAN_AUTHORITY_GUIDANCE\n"
-        "Use this only to clarify the author's authority judgment and reader payoff. "
-        "It cannot change the selected Topic Value candidate, evidence, proof availability, "
-        "locked thesis, score thresholds, or hard gates."
-        if human_guidance is not None
-        else ""
-    )
     task = (
         "Package the already-selected Topic Value situation for the feed. Do not choose a different topic, "
         "invent a stronger event, or turn the thesis itself into the opening. The two_line_packaging must "
@@ -257,7 +257,6 @@ def invoke_selector(
         f"PRODUCT_DECISION\n{day.get('product_decision', '')}\n"
         f"ARTIFACT_POLICY\n{day.get('artifact_policy', '')}\n"
         f"EVIDENCE\n{json.dumps(day.get('evidence', []), indent=2, sort_keys=True)}"
-        f"{guidance_block}"
     )
     result = invoker(
         "resonance_selector",
@@ -281,43 +280,6 @@ def invoke_selector(
         raise workflow.WorkflowError("Resonance Selector thesis-fit flag must be boolean.")
     computed = selector_passes(scores, supports_locked_thesis=supports)
     expected_status = "PASS" if computed else "BLOCKED"
-    if result.get("status") != expected_status:
-        conflict = SelectorStatusConflict(
-            result,
-            scores=scores,
-            supports_locked_thesis=supports,
-            computed_status=expected_status,
-        )
-        if human_guidance is None:
-            if human_guidance_provider is None:
-                raise conflict
-            supplied = human_guidance_provider(conflict, day, selected_topic_value)
-            if not isinstance(supplied, str) or not supplied.strip():
-                raise workflow.WorkflowError(
-                    "Resonance human guidance must be non-blank."
-                )
-            if len(supplied.strip()) > 1200:
-                raise workflow.WorkflowError(
-                    "Resonance human guidance must be 1,200 characters or fewer."
-                )
-            return invoke_selector(
-                day,
-                selected_topic_value,
-                invoker=invoker,
-                human_guidance_provider=None,
-                human_guidance=supplied.strip(),
-            )
-        model_status = str(result.get("status", ""))
-        result = {
-            **dict(result),
-            "status": expected_status,
-            "model_status": model_status,
-            "status_normalized": True,
-            "status_normalization_reason": (
-                "Python computed the gate from the recorded scores and locked-thesis flag "
-                "after one human-guided reevaluation."
-            ),
-        }
     proof_type = result.get("proof_type")
     proof_available = result.get("proof_available")
     if proof_type not in PROOF_TYPES or type(proof_available) is not bool:
@@ -328,17 +290,15 @@ def invoke_selector(
         raise workflow.WorkflowError("Proof/value score contradicts the unavailable proof plan.")
     return {
         **dict(result),
+        "status": expected_status,
+        "status_owner": "python-deterministic-selector-v1",
         "two_line_packaging": "\n".join(lines),
         "scores": scores,
         "total": sum(scores.values()),
         "topic_value": dict(selected_topic_value),
-        **(
-            {
-                "human_authority_guidance": human_guidance,
-                "human_guidance_applied": True,
-            }
-            if human_guidance is not None
-            else {}
+        "shortfalls": selector_shortfalls(
+            scores,
+            supports_locked_thesis=supports,
         ),
     }
 
@@ -394,7 +354,6 @@ def prepare_campaign_spec(
     output_root: Path,
     only_day: str | None = None,
     invoker: StageInvoker = _default_invoker,
-    human_guidance_provider: HumanGuidanceProvider | None = None,
 ) -> tuple[Path, dict[str, dict[str, object]]]:
     """Run Topic Value then Resonance before Writer and emit a compatible enriched spec."""
 
@@ -418,16 +377,12 @@ def prepare_campaign_spec(
             continue
         selected_topic = topic_value.invoke_campaign_selector(raw_day, invoker=invoker)
         topic_results[day_name] = selected_topic
-        selector = invoke_selector(
-            raw_day,
-            selected_topic,
-            invoker=invoker,
-            human_guidance_provider=human_guidance_provider,
-        )
+        selector = invoke_selector(raw_day, selected_topic, invoker=invoker)
         results[day_name] = selector
         if selector["status"] != "PASS":
             raise workflow.WorkflowError(
-                f"Resonance Selector blocked {day_name}: {selector.get('diagnosis', 'weak feed entry')}"
+                f"Resonance Selector blocked {day_name}: "
+                f"{selector_failure_summary(selector)}"
             )
         enriched_days.append(enrich_day(raw_day, selector, selected_topic))
     spec["days"] = enriched_days
