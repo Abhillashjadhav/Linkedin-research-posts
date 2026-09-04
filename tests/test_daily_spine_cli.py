@@ -647,7 +647,7 @@ class SpineCardTests(unittest.TestCase):
         )
         self.assertNotIn("recommended_spine", strategy)
 
-    def test_thesis_evidence_manifest_binds_run_ids_to_persisted_identities(self) -> None:
+    def test_thesis_evidence_manifest_carries_only_selected_source_urls(self) -> None:
         card = daily_spine_cli.validate_cards(cards(), signals(), profile())[0]
         card["signal_ids"] = ["signal-1", "signal-2"]
         items = [
@@ -665,20 +665,11 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual(manifest["thesis_id"], "thesis-1")
         self.assertEqual(manifest["display_topic"], card["topic"])
         self.assertEqual(
-            manifest["evidence"],
-            [
-                {
-                    "signal_id": "signal-1",
-                    "canonical_url": "https://example.com/1",
-                    "content_hash": f"{1:064x}",
-                },
-                {
-                    "signal_id": "signal-2",
-                    "canonical_url": "https://example.com/2",
-                    "content_hash": f"{2:064x}",
-                },
-            ],
+            manifest["source_urls"],
+            ["https://example.com/1", "https://example.com/2"],
         )
+        self.assertEqual(manifest["schema_version"], 2)
+        self.assertNotIn("evidence", manifest)
 
 
 if __name__ == "__main__":

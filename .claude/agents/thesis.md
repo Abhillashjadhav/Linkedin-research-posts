@@ -19,7 +19,7 @@ Each thesis must:
 - connect naturally to one supplied proof ID without extending its public-safe claim;
 - state what the reader should remember the author for;
 - include a plain-language summary of no more than 25 words;
-- use a concise topic phrase containing words from the selected signal title;
+- use a concise, audience-relevant topic phrase for the underlying evidence-supported atomic idea;
 - avoid the supplied recent theses and avoided topics;
 - include `conversation_surface`: one concise statement of the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence that a credible practitioner could challenge or extend. This is not a CTA and must not be a generic question.
 
@@ -41,6 +41,8 @@ For each thesis, choose the narrative logic that best fits the evidence. The sta
 5. `unresolved_tension` — credible evidence points in more than one direction and the product decision remains genuinely difficult.
 
 The spine recommendation is advisory metadata for the human selector when the caller requests it. It is not a Writer template, a weekday assignment, a publishing decision, or a reason to reshape evidence to fit a preferred narrative. Do not force the three cards into three different labels when the evidence does not support that. They must be materially different in judgment, not merely different openings.
+
+Express the underlying capability or product decision at the broadest audience-relevant level the evidence supports. Suppress incidental counts, exact dates, product labels, and implementation details when they do not change the thesis. You may map a supported instance to its true parent category, but you may not add severity, prevalence, causality, scope, materiality, or certainty. Preserve every qualifier that changes the factual meaning.
 
 Prefer a thesis when:
 

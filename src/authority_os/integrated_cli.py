@@ -8,7 +8,7 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from typing import Iterator
 
-from . import acceptance_policy, anti_slop, quality_cli, resonance, topic_value, v1_completion, workflow
+from . import acceptance_policy, anti_slop, quality_cli, resonance, v1_completion, workflow
 
 
 _original_qualifying = quality_cli._qualifying_candidates
@@ -289,7 +289,7 @@ def _single_day(
 
 @contextmanager
 def _single_topic_selection_prompt(*, narrow_to_evidence: bool = False) -> Iterator[None]:
-    """Run Topic Value + Resonance once, then inject that decision into every quality cycle."""
+    """Reuse the selected thesis, run Resonance once, and inject it into every quality cycle."""
 
     global _active_single_selector, _active_single_topic_value, _active_resonance_diagnostics
     original = workflow.build_writer_prompt
@@ -305,7 +305,7 @@ def _single_topic_selection_prompt(*, narrow_to_evidence: bool = False) -> Itera
             raise workflow.WorkflowError("Single-topic selection could not inspect the Writer brief.")
         if not cached:
             day = _single_day(brief, evidence, proof)
-            selected_topic = topic_value.invoke_campaign_selector(day)
+            selected_topic = resonance.selected_topic_value_from_day(day)
             selector = resonance.invoke_selector(
                 day,
                 selected_topic,
@@ -373,12 +373,15 @@ def _command_draft(args: object) -> int:
             selector = _active_single_selector
             diagnostics = dict(_active_resonance_diagnostics)
             if result == 0 and isinstance(topic_result, Mapping) and isinstance(selector, Mapping):
-                print(
-                    f"Topic Value Selector: PASS ({topic_result.get('total', 'n/a')}/25; "
-                    f"route={topic_result.get('reader_value_type', 'n/a')}; "
-                    f"gravity={topic_result.get('gravity', 'n/a')}; "
-                    f"priority={topic_result.get('priority', 'n/a')})."
-                )
+                if topic_result.get("reader_value_type") == "UPSTREAM_SELECTION":
+                    print("Topic selection: reused upstream; not reevaluated during drafting.")
+                else:
+                    print(
+                        f"Topic Value: reused upstream PASS ({topic_result.get('total', 'n/a')}/25; "
+                        f"route={topic_result.get('reader_value_type', 'n/a')}; "
+                        f"gravity={topic_result.get('gravity', 'n/a')}; "
+                        f"priority={topic_result.get('priority', 'n/a')})."
+                    )
                 print(
                     f"Resonance Selector: PASS ({selector.get('total', 'n/a')}/25)."
                 )

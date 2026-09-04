@@ -950,7 +950,7 @@ class MinimalCliTests(unittest.TestCase):
             )
             self.assertIn("No LinkedIn action was taken", output.getvalue())
 
-    def test_identity_manifest_ignores_unretrievable_topic_and_keeps_multi_cluster_evidence(self) -> None:
+    def test_url_manifest_ignores_unretrievable_topic_and_keeps_multi_cluster_evidence(self) -> None:
         fixture = cli.workflow.load_fixture()
         items = cli.workflow.prepare_research_items(
             [
@@ -973,17 +973,10 @@ class MinimalCliTests(unittest.TestCase):
             ]
         )
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "thesis_id": "thesis-1",
             "display_topic": "Alignment and security evaluation boundaries",
-            "evidence": [
-                {
-                    "signal_id": f"signal-{index}",
-                    "canonical_url": item["canonical_url"],
-                    "content_hash": item["content_hash"],
-                }
-                for index, item in enumerate(items, start=1)
-            ],
+            "source_urls": [item["canonical_url"] for item in items],
         }
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1023,7 +1016,7 @@ class MinimalCliTests(unittest.TestCase):
                 ),
                 patch.object(
                     cli.storage,
-                    "list_research_items_by_identity",
+                    "list_research_items_by_urls",
                     return_value=items,
                 ) as exact_lookup,
                 patch.object(cli.storage, "list_research_items") as topic_lookup,
@@ -1048,7 +1041,7 @@ class MinimalCliTests(unittest.TestCase):
         topic_lookup.assert_not_called()
         exact_lookup.assert_called_once_with(
             database,
-            manifest["evidence"],
+            manifest["source_urls"],
             evidence_origin="private-import",
         )
         self.assertIsNone(analyse.call_args.kwargs["topic"])
@@ -1060,22 +1053,16 @@ class MinimalCliTests(unittest.TestCase):
             {item["canonical_url"] for item in items},
         )
         self.assertEqual(critic.call_args.args[2], writer.call_args.kwargs["evidence"])
-        self.assertIn("selection=identity-bound", output.getvalue())
+        self.assertIn("selection=url-bound", output.getvalue())
 
-    def test_identity_manifest_fails_closed_when_a_selected_record_changed(self) -> None:
+    def test_url_manifest_fails_closed_when_a_selected_url_is_missing(self) -> None:
         fixture = cli.workflow.load_fixture()
         item = cli.workflow.prepare_research_items(fixture["research_items"])[0]
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "thesis_id": "thesis-1",
             "display_topic": "Unretrievable generated topic",
-            "evidence": [
-                {
-                    "signal_id": "signal-1",
-                    "canonical_url": item["canonical_url"],
-                    "content_hash": "f" * 64,
-                }
-            ],
+            "source_urls": [item["canonical_url"]],
         }
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1107,14 +1094,14 @@ class MinimalCliTests(unittest.TestCase):
                 ),
                 patch.object(
                     cli.storage,
-                    "list_research_items_by_identity",
+                    "list_research_items_by_urls",
                     return_value=[],
                 ),
                 patch.object(cli.workflow, "invoke_writer") as writer,
             ):
                 with self.assertRaisesRegex(
                     cli.workflow.WorkflowError,
-                    "missing or changed.*signal-1",
+                    "missing from.*example.com",
                 ):
                     cli.command_draft(args)
             writer.assert_not_called()

@@ -38,6 +38,20 @@ def research_items(count: int = 3) -> list[dict[str, object]]:
 
 
 class EvidenceScoutRecoveryTests(unittest.TestCase):
+    def test_one_body_read_primary_source_is_sufficient(self) -> None:
+        prepared = daily_spine_cli._validate_body_verified_evidence(
+            research_items(1),
+            days=7,
+            as_of=AS_OF,
+        )
+
+        self.assertEqual(len(prepared), 1)
+
+    def test_research_schema_allows_one_source(self) -> None:
+        items = daily_spine_cli._schema("research")["properties"]["items"]
+        self.assertEqual(items["minItems"], 1)
+        self.assertEqual(items["maxItems"], 7)
+
     def test_targeted_scout_runs_once_without_repeating_discovery(self) -> None:
         expected = workflow.prepare_research_items(research_items())
         with patch.object(
@@ -267,6 +281,30 @@ class EvidenceScoutRecoveryTests(unittest.TestCase):
         expired[0]["published_at"] = "2026-08-01T00:00:00Z"
         with self.assertRaisesRegex(workflow.WorkflowError, "outside the requested time window"):
             daily_spine_cli._validate_body_verified_evidence(expired, days=7, as_of=AS_OF)
+
+    def test_month_only_publication_is_accepted_when_month_overlaps_window(self) -> None:
+        items = research_items()
+        for item in items:
+            item["published_at"] = "2026-09"
+
+        prepared = daily_spine_cli._validate_body_verified_evidence(
+            items, days=7, as_of=AS_OF
+        )
+
+        self.assertTrue(all(item["publication_date_uncertain"] for item in prepared))
+        self.assertEqual(
+            {item["publication_date_precision"] for item in prepared}, {"month"}
+        )
+
+    def test_month_only_publication_is_rejected_when_month_misses_window(self) -> None:
+        items = research_items()
+        items[0]["published_at"] = "2026-07"
+        with self.assertRaisesRegex(
+            workflow.WorkflowError, "outside the requested time window"
+        ):
+            daily_spine_cli._validate_body_verified_evidence(
+                items, days=7, as_of=AS_OF
+            )
 
 
 if __name__ == "__main__":

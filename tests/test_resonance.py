@@ -122,10 +122,21 @@ class ResonanceThresholdTests(unittest.TestCase):
 
         self.assertEqual(invoker.call_count, 1)
         self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["claim_support"], "SUPPORTED")
         self.assertEqual(result["status_owner"], "python-deterministic-selector-v1")
         self.assertEqual(result["shortfalls"], [])
         self.assertNotIn("status", resonance.SELECTOR_SCHEMA["properties"])
         self.assertNotIn("status", resonance.SELECTOR_SCHEMA["required"])
+
+    def test_selector_prompt_supports_broad_faithful_packaging(self):
+        invoker = Mock(return_value=selector_payload())
+
+        resonance.invoke_selector(day(), selected_topic(), invoker=invoker)
+
+        task_prompt = invoker.call_args.args[3].casefold()
+        self.assertIn("supported abstraction", task_prompt)
+        self.assertIn("key failure modes", task_prompt)
+        self.assertIn("major, production, or customer-impacting failures require evidence", task_prompt)
 
     def test_model_pass_cannot_turn_failing_scores_into_a_pass(self):
         failing = {
@@ -140,6 +151,7 @@ class ResonanceThresholdTests(unittest.TestCase):
         result = resonance.invoke_selector(day(), selected_topic(), invoker=invoker)
 
         self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["claim_support"], "SUPPORTED")
         self.assertEqual(
             result["shortfalls"],
             ["recognition=3/5 below 4/5 by 1"],
@@ -149,7 +161,7 @@ class ResonanceThresholdTests(unittest.TestCase):
             "recognition=3/5 below 4/5 by 1",
         )
 
-    def test_narrowing_uses_bounded_schema_and_keeps_proof_floor(self):
+    def test_narrowing_uses_bounded_schema_without_a_proof_score_gate(self):
         invoker = Mock(return_value=selector_payload(narrowed=True))
 
         result = resonance.invoke_selector(
@@ -167,9 +179,9 @@ class ResonanceThresholdTests(unittest.TestCase):
         self.assertTrue(result["narrowed_to_evidence"])
         self.assertEqual(result["original_locked_thesis"], day()["thesis"])
         self.assertEqual(result["status"], "PASS")
-        self.assertEqual(resonance.SELECTOR_FLOORS["proof_value"], 4)
+        self.assertNotIn("proof_value", resonance.SELECTOR_FLOORS)
 
-    def test_narrowing_still_blocks_when_proof_value_is_three(self):
+    def test_proof_value_score_does_not_duplicate_the_claim_support_decision(self):
         failing = dict(selector_payload(narrowed=True))
         scores = dict(failing["scores"])
         scores["proof_value"] = 3
@@ -182,14 +194,32 @@ class ResonanceThresholdTests(unittest.TestCase):
             invoker=Mock(return_value=failing),
         )
 
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["shortfalls"], [])
+
+    def test_unsupported_claim_names_the_two_recovery_choices(self):
+        unsupported = selector_payload()
+        unsupported["supports_locked_thesis"] = False
+
+        result = resonance.invoke_selector(
+            day(),
+            selected_topic(),
+            invoker=Mock(return_value=unsupported),
+        )
+
         self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["claim_support"], "UNSUPPORTED")
         self.assertEqual(
             result["shortfalls"],
-            [
-                "proof_value=3/5 below 4/5 by 1",
-                "total=19/25 below 20/25 by 1",
-            ],
+            ["claim_support=UNSUPPORTED; choose NARROW or MORE EVIDENCE"],
         )
+
+    def test_selected_topic_is_reused_without_an_upstream_scorecard(self):
+        selected = resonance.selected_topic_value_from_day(day())
+
+        self.assertEqual(selected["id"], "selected-thesis")
+        self.assertEqual(selected["status"], "PASS")
+        self.assertEqual(selected["priority"], "NOT_REEVALUATED")
 
 
 class ResonanceProjectionTests(unittest.TestCase):

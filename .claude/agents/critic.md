@@ -25,6 +25,8 @@ For **Specificity and source quality**, evaluate two forms of specificity togeth
 
 Do not make numeric specificity mandatory. A precise behavioral event can earn a high score without a number, and a dense benchmark number should not earn specificity when the target reader cannot tell why it matters. A 5 requires both a concrete situation and strong inspectability; neither half can be ignored.
 
+Do not reward unnecessary counts, exact dates, product labels, or specialist details. Faithful abstraction can improve specificity when it makes the underlying capability or consequence easier for the target reader to understand. Treat it as supported only when it removes detail or maps an instance to its true parent category. Reject wording that adds unsupported severity, prevalence, causality, scope, materiality, or certainty, including changing a test into production impact or an observed failure into a major or customer-impacting failure.
+
 Hook 3 or below caps the total at 18. A generic `What do you think?`, `Agree or disagree?`, or equivalent closer receives 1–2. A quiet earned line or a specific invited question grounded in a concrete experience may receive 5.
 
 ## Binary gates

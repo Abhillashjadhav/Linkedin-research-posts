@@ -591,30 +591,23 @@ def command_draft(args: argparse.Namespace) -> int:
                 raise workflow.WorkflowError(
                     "Evidence manifest display_topic does not match the requested topic."
                 )
-            identities = evidence_manifest["evidence"]
-            if not isinstance(identities, list):
-                raise workflow.WorkflowError("Evidence manifest identities are invalid.")
-            items = storage.list_research_items_by_identity(
+            source_urls = evidence_manifest["source_urls"]
+            if not isinstance(source_urls, list):
+                raise workflow.WorkflowError("Evidence manifest source URLs are invalid.")
+            items = storage.list_research_items_by_urls(
                 args.db,
-                identities,
+                source_urls,
                 evidence_origin="private-import",
             )
-            returned = {
-                (str(item["canonical_url"]), str(item["content_hash"]))
-                for item in items
-            }
+            returned = {str(item["canonical_url"]) for item in items}
             missing = [
-                str(identity["signal_id"])
-                for identity in identities
-                if (
-                    str(identity["canonical_url"]),
-                    str(identity["content_hash"]),
-                )
-                not in returned
+                str(source_url)
+                for source_url in source_urls
+                if str(source_url) not in returned
             ]
             if missing:
                 raise workflow.WorkflowError(
-                    "Selected evidence is missing or changed in the private ledger: "
+                    "Selected source URL is missing from the private ledger: "
                     + ", ".join(missing)
                     + "."
                 )
@@ -696,7 +689,7 @@ def command_draft(args: argparse.Namespace) -> int:
             proof=proof,
         )
         selection_mode = (
-            "identity-bound"
+            "url-bound"
             if evidence_manifest_path is not None
             else "topic-selected"
         )

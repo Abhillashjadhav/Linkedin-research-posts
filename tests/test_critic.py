@@ -614,6 +614,14 @@ class CriticPromptTests(unittest.TestCase):
         )
         workflow.enforce_pre_critic_voice_gate(candidates)
 
+    def test_pre_critic_voice_gate_does_not_treat_corpus_gaps_as_verdicts(self) -> None:
+        candidates = candidate_set()
+        candidates[0]["text"] = (
+            "Fallback dependencies can overlap during outages.\n"
+            "Readiness checks expose degraded failover paths.\n\nBody text."
+        )
+        workflow.enforce_pre_critic_voice_gate(candidates)
+
     def test_critic_prompt_marks_dynamic_data_untrusted_and_requests_only_scores(self) -> None:
         prompt = workflow.build_critic_prompt(
             candidates=self.candidates,
@@ -638,6 +646,16 @@ class CriticPromptTests(unittest.TestCase):
         instructions = folded.split("untrusted_strategic_brief_data", 1)[0]
         self.assertNotRegex(instructions, r"\bgates?\b")
         self.assertNotRegex(instructions, r"\b(?:ready|drop|proof)\b")
+
+    def test_critic_prompt_accepts_abstraction_but_rejects_added_impact(self) -> None:
+        prompt = workflow.build_critic_prompt(
+            candidates=self.candidates,
+            brief=self.brief,
+            evidence=self.evidence,
+        ).casefold()
+        self.assertIn("faithful abstraction", prompt)
+        self.assertIn("true parent category", prompt)
+        self.assertIn("major, production, or customer-impacting failures require evidence", prompt)
 
     def test_prompt_projects_brief_and_query_strips_minimal_evidence(self) -> None:
         secret = "private-query-sentinel"

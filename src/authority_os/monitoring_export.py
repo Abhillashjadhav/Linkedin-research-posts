@@ -21,7 +21,6 @@ from . import v1_completion, workflow
 
 CONTRACTS = {
     "research_trust": "research-trust",
-    "claim_body_support": "claim-body-support",
     "atomic_value_novelty": "atomic-value-novelty",
     "critic_anchor_integrity": "critic-anchor-integrity",
     "critic_reproducibility": "critic-reproducibility",

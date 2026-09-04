@@ -84,11 +84,6 @@ class SingleTopicSelectionTests(unittest.TestCase):
         }
         with (
             patch.object(
-                integrated_cli.topic_value,
-                "invoke_campaign_selector",
-                return_value=topic_result(),
-            ),
-            patch.object(
                 integrated_cli.resonance,
                 "invoke_selector",
                 return_value=blocked,
@@ -111,7 +106,7 @@ class SingleTopicSelectionTests(unittest.TestCase):
 
     def test_live_selection_uses_one_model_call_and_python_status(self) -> None:
         raw_selector = {
-            "selected_candidate_id": "topic-1",
+            "selected_candidate_id": "selected-thesis",
             "two_line_packaging": (
                 "The eval had not run.\nThe release gate refused to give a verdict."
             ),
@@ -140,11 +135,6 @@ class SingleTopicSelectionTests(unittest.TestCase):
 
         with (
             patch.object(workflow, "build_writer_prompt", side_effect=original_writer_prompt),
-            patch.object(
-                integrated_cli.topic_value,
-                "invoke_campaign_selector",
-                return_value=topic_result(),
-            ),
             patch.object(
                 integrated_cli.resonance,
                 "invoke_structured",
@@ -179,10 +169,6 @@ class SingleTopicSelectionTests(unittest.TestCase):
             return str(supplied["analysis"]["dominant_take"])
 
         with patch.object(workflow, "build_writer_prompt", side_effect=original_writer_prompt), patch.object(
-            integrated_cli.topic_value,
-            "invoke_campaign_selector",
-            return_value=topic_result(),
-        ) as topic_select, patch.object(
             integrated_cli.resonance,
             "invoke_selector",
             return_value=selector(),
@@ -201,10 +187,9 @@ class SingleTopicSelectionTests(unittest.TestCase):
                     proof=None,
                 )
 
-        self.assertEqual(topic_select.call_count, 1)
         self.assertEqual(resonance_select.call_count, 1)
         self.assertIn("TOPIC VALUE SELECTED BEFORE WRITING", first)
-        self.assertIn("FLAGSHIP", first)
+        self.assertIn("NOT_REEVALUATED", first)
         self.assertEqual(first, second)
         self.assertEqual(len(calls), 2)
 
@@ -231,11 +216,6 @@ class SingleTopicSelectionTests(unittest.TestCase):
 
         with (
             patch.object(workflow, "build_writer_prompt", side_effect=original_writer_prompt),
-            patch.object(
-                integrated_cli.topic_value,
-                "invoke_campaign_selector",
-                return_value=topic_result(),
-            ),
             patch.object(
                 integrated_cli.resonance,
                 "invoke_selector",

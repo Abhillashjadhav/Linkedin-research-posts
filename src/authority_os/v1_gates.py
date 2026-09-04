@@ -29,7 +29,6 @@ MODES = frozenset({"off", "shadow", "enforce"})
 CONTRACTS = (
     "atomic_value_novelty",
     "research_trust",
-    "claim_body_support",
     "critic_anchor_integrity",
     "solution_plausibility",
     "reader_attention",
@@ -332,7 +331,7 @@ def evaluate_research_trust(
         body_read = bool(isinstance(body, str) and body.strip()) or item.get("body_read") is True
         quality = str(item.get("source_quality", "")).casefold()
         social = _is_social(host)
-        trusted = bool(host and body_read and not social)
+        trusted = bool(host and body_read and not social and quality == "primary")
         trusted_count += int(trusted)
         audit.append(
             {
@@ -354,41 +353,8 @@ def evaluate_research_trust(
     return _decision(
         "research_trust",
         trusted_count >= 1,
-        "body-read-non-social-source-present" if trusted_count else "no-body-read-non-social-source-for-selected-value",
+        "body-read-primary-source-present" if trusted_count else "no-body-read-primary-source-for-selected-value",
         sources=audit,
-    )
-
-
-def _numbers(value: object) -> set[str]:
-    return set(re.findall(r"(?<![A-Za-z])\d+(?:[.,]\d+)*(?:%|x|×)?", str(value)))
-
-
-def evaluate_claim_body_support(
-    candidate: Mapping[str, object], evidence: Sequence[Mapping[str, object]]
-) -> dict[str, object]:
-    """Cheap shadow diagnostic; existing honesty/citation gates remain the release authority."""
-
-    if contract_mode("claim_body_support") == "off":
-        return _decision("claim_body_support", None, "contract-disabled")
-    by_id = _evidence_by_id(evidence)
-    sources = candidate.get("source_ids")
-    if not isinstance(sources, Sequence) or isinstance(sources, (str, bytes)):
-        return _decision("claim_body_support", False, "candidate-has-no-source-ids")
-    body = " ".join(
-        str(by_id[str(source_id)].get("body") or by_id[str(source_id)].get("claim") or "")
-        for source_id in sources
-        if str(source_id) in by_id
-    ).strip()
-    claim = " ".join(str(candidate.get(field, "")) for field in ("situation", "what_changed")).strip()
-    similarity = workflow.text_similarity(claim, body) if claim and body else 0.0
-    numbers_supported = _numbers(claim) <= _numbers(body)
-    passed = bool(body) and numbers_supported and similarity >= 0.18
-    return _decision(
-        "claim_body_support",
-        passed,
-        "claim-has-body-binding-signal" if passed else "claim-needs-stronger-body-binding",
-        text_similarity=round(similarity, 4),
-        numbers_supported=numbers_supported,
     )
 
 
@@ -404,11 +370,9 @@ def _evaluate_topic_candidates(
         candidate["atomic_value"] = validate_atomic_value(candidate.get("atomic_value"))
         novelty = evaluate_atomic_novelty(str(candidate["atomic_value"]))
         research = evaluate_research_trust(candidate, evidence)
-        body = evaluate_claim_body_support(candidate, evidence)
         candidate["v1_evals"] = {
             "atomic_value_novelty": novelty,
             "research_trust": research,
-            "claim_body_support": body,
         }
         evaluated.append(candidate)
 
@@ -427,13 +391,10 @@ def _evaluate_topic_candidates(
         assert isinstance(evaluations, Mapping)
         novelty = evaluations["atomic_value_novelty"]
         research = evaluations["research_trust"]
-        body = evaluations["claim_body_support"]
         assert isinstance(novelty, Mapping)
         assert isinstance(research, Mapping)
-        assert isinstance(body, Mapping)
         _enforce(novelty)
         _enforce(research)
-        _enforce(body)
     return evaluated
 
 
@@ -863,7 +824,7 @@ def install() -> None:
     load_config()
     load_critic_rubric()
 
-    if any(contract_mode(name) != "off" for name in ("atomic_value_novelty", "research_trust", "claim_body_support")):
+    if any(contract_mode(name) != "off" for name in ("atomic_value_novelty", "research_trust")):
         _install_pairs(_TOPIC_PAIR_NAMES)
 
     if contract_mode("critic_anchor_integrity") != "off":

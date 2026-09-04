@@ -446,6 +446,8 @@ class RepairPromptTests(unittest.TestCase):
         self.assertIn("Retain this grounded mechanism", prompt)
         self.assertIn("Aim for 24-25/25", prompt)
         self.assertIn("Never invent evidence", prompt)
+        self.assertIn("Supported abstraction", prompt)
+        self.assertIn("must not add severity, prevalence, causality, scope, materiality", prompt)
 
     def test_integrated_dispatch_updates_the_real_command_table(self) -> None:
         def integrated_command(_args: object) -> int:

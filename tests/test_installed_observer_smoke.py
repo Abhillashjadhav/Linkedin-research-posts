@@ -558,13 +558,13 @@ class InstalledObserverSmokeTests(unittest.TestCase):
                 ]
                 assert all(len(rows) == 3 for _stage, rows in observer.records)
                 post_gate = observer.records[1][1]
-                assert all(len(row["v1_evals"]) == 3 for row in post_gate)
+                assert all(len(row["v1_evals"]) == 2 for row in post_gate)
                 assert observer.failures == []
 
                 ledger = v1_completion._read_jsonl(
                     state_root / v1_completion.DECISION_LEDGER_NAME
                 )
-                assert len(ledger) == 9
+                assert len(ledger) == 6
                 assert all(row["status"] == "PASS" for row in ledger)
 
                 drafting = daily_spine_cli.run_drafting_child(
@@ -662,7 +662,7 @@ class InstalledObserverSmokeTests(unittest.TestCase):
             {
                 "candidates": 3,
                 "stages": ["pre-gate", "post-gate"],
-                "decision_rows": 9,
+                "decision_rows": 6,
                 "drafting_returncode": 0,
                 "critic_calls": 2,
                 "critic_voice": 4,
@@ -726,7 +726,7 @@ class InstalledObserverSmokeTests(unittest.TestCase):
                 ledger = v1_completion._read_jsonl(
                     state_root / v1_completion.DECISION_LEDGER_NAME
                 )
-                assert len(ledger) == 9
+                assert len(ledger) == 6
                 print(json.dumps({
                     "pre_gate_candidates": len(observer.records[0][1]),
                     "post_gate_candidates": len(post_gate),
@@ -738,7 +738,7 @@ class InstalledObserverSmokeTests(unittest.TestCase):
         )
         self.assertEqual(result["pre_gate_candidates"], 3)
         self.assertEqual(result["post_gate_candidates"], 3)
-        self.assertEqual(result["decision_rows"], 9)
+        self.assertEqual(result["decision_rows"], 6)
         self.assertEqual(result["blocked_contract"], "research_trust")
         self.assertEqual(result["blocked_reason"], "missing-trust")
 

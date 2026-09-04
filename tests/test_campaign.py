@@ -69,7 +69,7 @@ class FakeInvoker:
             source = self.drafts[0]["text"] if stage == "no_ai_slop_artisanal" else "The source documents the reliability budget. https://example.com/reliability"
             return {"edited_text": source, "changes_made": [], "status": "PASS", "failed_checks": []}
         if stage == "first_comment_writer":
-            return {"text": "The source documents the reliability budget. https://example.com/reliability", "claim_ids": ["source-1"]}
+            return {"text": "The source documents the reliability budget. https://example.com/reliability"}
         if stage == "first_comment_reviewer":
             return {"scores": {axis: 5 for axis in campaign.COMMENT_AXES}}
         if stage == "artifact_editor":
@@ -334,7 +334,7 @@ class CampaignTests(unittest.TestCase):
 
     def test_comment_numbers_and_links_fail_closed(self) -> None:
         gates = campaign._comment_evidence_gates(
-            {"text": "The result was 99%. https://wrong.example/data", "claim_ids": ["source-1"]},
+            {"text": "The result was 99%. https://wrong.example/data"},
             post_text="No number appears here.",
             evidence=self.day()["evidence"],
         )
@@ -348,13 +348,70 @@ class CampaignTests(unittest.TestCase):
         gates = campaign._comment_evidence_gates(
             {
                 "text": "Primary source: https://example.com/gemini-api-3-6",
-                "claim_ids": ["source-1"],
             },
             post_text="No number appears here.",
             evidence=evidence,
         )
         self.assertTrue(gates["passes"])
         self.assertEqual(gates["numbers_supported"], "PASS")
+
+    def test_comment_requires_a_supplied_source_url(self) -> None:
+        gates = campaign._comment_evidence_gates(
+            {"text": "The source documents the reliability budget."},
+            post_text="No number appears here.",
+            evidence=self.day()["evidence"],
+        )
+        self.assertFalse(gates["passes"])
+        self.assertEqual(gates["source_links_supported"], "FAIL")
+        self.assertEqual(gates["source_urls"], [])
+
+    def test_comment_accepts_multiple_supplied_source_urls(self) -> None:
+        evidence = json.loads(json.dumps(self.day()["evidence"]))
+        evidence.append(
+            {
+                **evidence[0],
+                "id": "source-2",
+                "source": "https://example.com/second-primary-source",
+            }
+        )
+        gates = campaign._comment_evidence_gates(
+            {
+                "text": (
+                    "Primary sources: https://example.com/reliability and "
+                    "https://example.com/second-primary-source"
+                )
+            },
+            post_text="No number appears here.",
+            evidence=evidence,
+        )
+        self.assertTrue(gates["passes"])
+        self.assertEqual(
+            gates["source_urls"],
+            [
+                "https://example.com/reliability",
+                "https://example.com/second-primary-source",
+            ],
+        )
+
+    def test_comment_writer_contract_exposes_urls_not_internal_ids(self) -> None:
+        observed: dict[str, object] = {}
+
+        def invoker(stage, _config, role, _task, schema):
+            self.assertEqual(stage, "first_comment_writer")
+            observed.update({"role": role, "schema": schema})
+            return {"text": "Primary source: https://example.com/reliability"}
+
+        result = campaign._invoke_comment_writer(
+            post={"text": "Post"},
+            day=self.day(),
+            evidence=self.day()["evidence"],
+            config=campaign.StageModels.preferred().comment_writer,
+            invoker=invoker,
+        )
+        self.assertEqual(set(result), {"text"})
+        self.assertEqual(observed["schema"]["required"], ["text"])
+        self.assertNotIn("claim_ids", observed["schema"]["properties"])
+        self.assertIn("at least one supplied primary-source URL", observed["role"])
 
     def test_day_rerun_prunes_only_outputs_stale_after_completion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

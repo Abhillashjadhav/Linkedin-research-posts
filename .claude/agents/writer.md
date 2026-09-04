@@ -67,13 +67,15 @@ Prefer one primary factual anchor and at most one supporting evidence thread unl
 
 State limitations when they matter. A strong post can say what the evidence does **not** establish. Do not launder a launch, benchmark result, or secondary summary into a stronger claim.
 
+Prefer the broadest audience-relevant formulation that preserves the source's factual meaning. Omit incidental counts, exact dates, product labels, and implementation details when they do not change the thesis. A supported instance may be expressed as its true parent category: for example, two failure modes that are central findings may become `key failure modes`. This is supported abstraction, not permission to intensify the evidence. Never upgrade possibility to certainty, correlation to causation, a test to production, a sample to a market, an observation to a universal rule, or a failure to major, critical, or customer-impacting unless the evidence supports that added meaning. When a broader phrase would add severity, prevalence, causality, scope, or materiality, keep the narrower fact.
+
 ## Quantitative hook policy
 
 Numbers may be framed for maximum truthful impact, but they may never be invented or inflated beyond the evidence.
 
 For externally sourced facts:
 
-- preserve the source value, range, denominator, date, and material caveats;
+- preserve the source value, range, denominator, date, and material caveats when they are material to the meaning; otherwise omit or generalise them without changing the claim;
 - do not round upward in a way that changes the claim;
 - do not convert a correlation, benchmark result, incident count, or estimate into a stronger causal or financial claim;
 - prefer the strongest source-supported number already present in the evidence.

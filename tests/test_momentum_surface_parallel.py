@@ -12,6 +12,45 @@ from authority_os import workflow
 
 
 class SurfaceParallelTests(unittest.TestCase):
+    def test_month_only_signal_keeps_uncertainty_and_loses_exact_date_tie(self) -> None:
+        lane = surface.SURFACES[0]
+        common = {
+            "topic": "Agent budgets",
+            "why_now": "Adoption is accelerating.",
+            "platform": "Google Search",
+            "source": "Example",
+            "freshness_hours": None,
+            "engagement_units": 10,
+            "acceleration_percent": 20,
+        }
+        raw = {
+            "status": "OBSERVED",
+            "signals": [
+                {
+                    **common,
+                    "url": "https://example.com/month",
+                    "published_at": "2026-09",
+                },
+                {
+                    **common,
+                    "url": "https://example.com/exact",
+                    "published_at": "2026-09-03T00:00:00Z",
+                    "freshness_hours": 36,
+                },
+            ],
+            "caveat": "Public evidence only.",
+        }
+
+        result = surface._validate_surface_result(
+            raw, surface=lane, days=7, as_of="2026-09-04T12:00:00Z"
+        )
+
+        exact, month = result["signals"]
+        self.assertEqual(exact["url"], "https://example.com/exact")
+        self.assertFalse(exact["publication_date_uncertain"])
+        self.assertEqual(month["publication_date_precision"], "month")
+        self.assertIsNone(month["freshness_hours"])
+
     def test_unavailable_surface_is_retried_once(self) -> None:
         lane = surface.SURFACES[0]
         observed = {

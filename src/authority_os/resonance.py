@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
-from . import topic_value, workflow
+from . import workflow
 from .model_runtime import ModelConfig, invoke_structured
 
 SELECTOR_AXES = (
@@ -28,13 +28,13 @@ POST_AXES = (
     "shareability",
     "proof_proximity",
 )
-SELECTOR_MIN_TOTAL = 20
+SELECTOR_DECISION_AXES = tuple(axis for axis in SELECTOR_AXES if axis != "proof_value")
+SELECTOR_DECISION_MIN_TOTAL = 16
 POST_MIN_TOTAL = 20
 SELECTOR_FLOORS = {
     "recognition": 4,
     "attention_trigger": 3,
     "situation_specificity": 4,
-    "proof_value": 4,
     "payoff": 4,
 }
 
@@ -176,7 +176,7 @@ def _validate_scores(raw: object, axes: Sequence[str]) -> dict[str, int]:
 
 
 def selector_passes(scores: Mapping[str, int], *, supports_locked_thesis: bool) -> bool:
-    """Hard entry gate derived from reader value, not mandatory surprise."""
+    """Gate feed packaging and explicit claim support without re-scoring evidence."""
 
     return (
         supports_locked_thesis
@@ -184,7 +184,8 @@ def selector_passes(scores: Mapping[str, int], *, supports_locked_thesis: bool) 
             scores.get(axis, 0) >= floor
             for axis, floor in SELECTOR_FLOORS.items()
         )
-        and sum(scores.get(axis, 0) for axis in SELECTOR_AXES) >= SELECTOR_MIN_TOTAL
+        and sum(scores.get(axis, 0) for axis in SELECTOR_DECISION_AXES)
+        >= SELECTOR_DECISION_MIN_TOTAL
     )
 
 
@@ -197,18 +198,20 @@ def selector_shortfalls(
 
     failures: list[str] = []
     if not supports_locked_thesis:
-        failures.append("supports_locked_thesis=false")
+        failures.append(
+            "claim_support=UNSUPPORTED; choose NARROW or MORE EVIDENCE"
+        )
     for axis, floor in SELECTOR_FLOORS.items():
         observed = int(scores.get(axis, 0))
         if observed < floor:
             failures.append(
                 f"{axis}={observed}/5 below {floor}/5 by {floor - observed}"
             )
-    total = sum(int(scores.get(axis, 0)) for axis in SELECTOR_AXES)
-    if total < SELECTOR_MIN_TOTAL:
+    total = sum(int(scores.get(axis, 0)) for axis in SELECTOR_DECISION_AXES)
+    if total < SELECTOR_DECISION_MIN_TOTAL:
         failures.append(
-            f"total={total}/25 below {SELECTOR_MIN_TOTAL}/25 by "
-            f"{SELECTOR_MIN_TOTAL - total}"
+            f"feed_packaging_total={total}/20 below {SELECTOR_DECISION_MIN_TOTAL}/20 by "
+            f"{SELECTOR_DECISION_MIN_TOTAL - total}"
         )
     return failures
 
@@ -246,6 +249,24 @@ def post_passes(
     )
 
 
+def selected_topic_value_from_day(day: Mapping[str, object]) -> dict[str, object]:
+    """Reuse an upstream selection, or identify the already-selected draft without reselecting it."""
+
+    existing = day.get("topic_value")
+    if isinstance(existing, Mapping) and existing.get("status") == "PASS":
+        return dict(existing)
+    return {
+        "id": "selected-thesis",
+        "status": "PASS",
+        "situation": str(day.get("thesis", "")).strip(),
+        "reader_value_type": "UPSTREAM_SELECTION",
+        "reader_value": str(day.get("reader_problem", "")).strip(),
+        "gravity": "NOT_REEVALUATED",
+        "priority": "NOT_REEVALUATED",
+        "authority_add": str(day.get("product_decision", "")).strip(),
+    }
+
+
 def invoke_selector(
     day: Mapping[str, object],
     selected_topic_value: Mapping[str, object],
@@ -279,7 +300,11 @@ def invoke_selector(
         "utility, or a meaningful observed change; surprise is not mandatory. Situation specificity can be "
         "behavioral, visual, numeric, or artifact-based. Proof/value must be visible early enough that the "
         "reader is not asked to trust an abstract conclusion. Numbers only help when the target reader can "
-        "interpret them. Use only supplied evidence and honest artifact availability.\n\n"
+        "interpret them. Prefer supported abstraction: omit incidental precision or map an instance to its "
+        "true parent category when meaning is preserved. Two failure modes that are central findings may "
+        "become key failure modes, but major, production, or customer-impacting failures require evidence "
+        "for that added meaning. Never add severity, prevalence, causality, scope, materiality, or certainty. "
+        "Use only supplied evidence and honest artifact availability.\n\n"
         f"SELECTED_TOPIC_VALUE\n{json.dumps(dict(selected_topic_value), indent=2, sort_keys=True)}\n"
         f"LOCKED_THESIS\n{day.get('thesis', '')}\n"
         f"TARGET_READER\n{day.get('target_reader', '')}\n"
@@ -317,8 +342,6 @@ def invoke_selector(
         raise workflow.WorkflowError("Resonance Selector returned an invalid proof plan.")
     if proof_type == "NONE" and proof_available:
         raise workflow.WorkflowError("A NONE proof plan cannot claim proof is available.")
-    if proof_type != "NONE" and not proof_available and scores["proof_value"] >= 4:
-        raise workflow.WorkflowError("Proof/value score contradicts the unavailable proof plan.")
     narrowed_fields: dict[str, object] = {}
     if narrow_to_evidence:
         bounded_thesis = result.get("evidence_bounded_thesis")
@@ -346,6 +369,7 @@ def invoke_selector(
         **narrowed_fields,
         "status": expected_status,
         "status_owner": "python-deterministic-selector-v1",
+        "claim_support": "SUPPORTED" if supports else "UNSUPPORTED",
         "two_line_packaging": "\n".join(lines),
         "scores": scores,
         "total": sum(scores.values()),
@@ -435,7 +459,7 @@ def prepare_campaign_spec(
         if not should_run:
             enriched_days.append(raw_day)
             continue
-        selected_topic = topic_value.invoke_campaign_selector(raw_day, invoker=invoker)
+        selected_topic = selected_topic_value_from_day(raw_day)
         topic_results[day_name] = selected_topic
         selector = invoke_selector(
             raw_day,

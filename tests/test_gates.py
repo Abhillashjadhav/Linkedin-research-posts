@@ -286,7 +286,7 @@ class ProofManifestTests(unittest.TestCase):
 
 
 class EvidenceManifestTests(unittest.TestCase):
-    def test_valid_manifest_preserves_only_stable_identity_fields(self) -> None:
+    def test_legacy_manifest_is_normalised_to_source_urls(self) -> None:
         workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             dir=workflow.DEFAULT_PRIVATE_DATA
@@ -308,14 +308,30 @@ class EvidenceManifestTests(unittest.TestCase):
             loaded = workflow.load_evidence_manifest_file(path)
         self.assertEqual(loaded["thesis_id"], "thesis-2")
         self.assertEqual(
-            loaded["evidence"],
-            [
-                {
-                    "signal_id": "signal-3",
-                    "canonical_url": "https://example.com/research?a=1&b=2",
-                    "content_hash": "a" * 64,
-                }
-            ],
+            loaded["source_urls"],
+            ["https://example.com/research?a=1&b=2"],
+        )
+        self.assertEqual(loaded["schema_version"], 2)
+
+    def test_url_manifest_canonicalises_source_urls(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            path = Path(temporary) / "evidence.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "thesis_id": "thesis-2",
+                        "display_topic": "A display topic",
+                        "source_urls": ["https://example.com/research?b=2&a=1"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            loaded = workflow.load_evidence_manifest_file(path)
+        self.assertEqual(
+            loaded["source_urls"],
+            ["https://example.com/research?a=1&b=2"],
         )
 
     def test_manifest_rejects_duplicate_or_malformed_identities(self) -> None:

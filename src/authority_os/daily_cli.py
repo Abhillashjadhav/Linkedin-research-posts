@@ -60,7 +60,7 @@ def _schema(kind: str) -> dict[str, object]:
             "required": ["url", "title", "body", "source", "author", "published_at", "source_quality"],
             "additionalProperties": False,
         }
-        return {"type": "object", "properties": {"items": {"type": "array", "minItems": 3, "maxItems": 7, "items": item}}, "required": ["items"], "additionalProperties": False}
+        return {"type": "object", "properties": {"items": {"type": "array", "minItems": 1, "maxItems": 7, "items": item}}, "required": ["items"], "additionalProperties": False}
     if kind == "cards":
         props = {key: {"type": "string"} for key in CARD_KEYS - {"signal_ids"}}
         props["signal_ids"] = {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "string"}}
@@ -224,7 +224,7 @@ def validate_cards(raw: object, signals: Sequence[Mapping[str, object]], profile
 
 def generate_cards(profile: Mapping[str, object], signals: Sequence[Mapping[str, object]], feedback: Mapping[str, object] | None) -> list[dict[str, object]]:
     retry = f"\nUNTRUSTED_PREVIOUS_SCORES\n{json.dumps(feedback, indent=2, sort_keys=True)}\nEND_UNTRUSTED_PREVIOUS_SCORES\nCreate genuinely different theses." if feedback else ""
-    prompt = f"""Create exactly three one-idea authority thesis cards. Turn current signals into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. It must not be a CTA or a generic question. The topic field must be a concise phrase using words from the selected signal title so stored evidence can be retrieved later. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
+    prompt = f"""Create exactly three one-idea authority thesis cards. Turn current signals into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. Prefer the broadest audience-relevant formulation that preserves the evidence: omit incidental precision or map an instance to its true parent category, but never add severity, prevalence, causality, scope, materiality, or certainty. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. It must not be a CTA or a generic question. The topic field must express the underlying evidence-supported atomic idea in a concise audience-relevant phrase. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
 UNTRUSTED_PROFILE
 {json.dumps(dict(profile), indent=2, sort_keys=True)}
 END_UNTRUSTED_PROFILE
@@ -363,7 +363,7 @@ def evidence_manifest_for(
     signals: Sequence[Mapping[str, object]],
     items: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
-    """Bind one thesis to the exact Scout records that its gates evaluated."""
+    """Carry the selected primary-source URLs into drafting."""
 
     raw_ids = card.get("signal_ids")
     if not isinstance(raw_ids, Sequence) or isinstance(raw_ids, (str, bytes)):
@@ -374,7 +374,7 @@ def evidence_manifest_for(
         for item in items
         if str(item.get("canonical_url", ""))
     }
-    evidence: list[dict[str, str]] = []
+    source_urls: list[str] = []
     for raw_id in raw_ids:
         signal_id = str(raw_id)
         signal = by_signal.get(signal_id)
@@ -384,23 +384,16 @@ def evidence_manifest_for(
             )
         canonical_url = str(signal.get("canonical_url", ""))
         item = by_url.get(canonical_url)
-        content_hash = item.get("content_hash") if item is not None else None
-        if item is None or not isinstance(content_hash, str) or not content_hash:
+        if item is None:
             raise workflow.WorkflowError(
-                f"Selected evidence {signal_id!r} has no canonical stored identity."
+                f"Selected evidence {signal_id!r} has no stored source URL."
             )
-        evidence.append(
-            {
-                "signal_id": signal_id,
-                "canonical_url": canonical_url,
-                "content_hash": content_hash,
-            }
-        )
+        source_urls.append(workflow.canonicalise_url(canonical_url))
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "thesis_id": str(card.get("id", "")),
         "display_topic": str(card.get("topic", "")),
-        "evidence": evidence,
+        "source_urls": source_urls,
     }
 
 

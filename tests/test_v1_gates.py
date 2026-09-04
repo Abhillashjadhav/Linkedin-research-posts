@@ -116,25 +116,24 @@ class V1ContractTests(unittest.TestCase):
         )
         self.assertEqual(decision["status"], "PASS")
 
-    def test_claim_body_support_is_shadow_diagnostic_not_truth_oracle(self) -> None:
-        decision = v1_gates.evaluate_claim_body_support(
-            {
-                "source_ids": ["signal-1"],
-                "situation": "A deployment changed retry behavior",
-                "what_changed": "The system reported 99% reliability after the change",
-            },
+    def test_secondary_source_does_not_satisfy_primary_source_requirement(self) -> None:
+        decision = v1_gates.evaluate_research_trust(
+            {"source_ids": ["signal-1"]},
             [
                 {
                     "id": "signal-1",
-                    "canonical_url": "https://example.com/report",
-                    "body": "The deployment changed retry behavior but reported no reliability percentage.",
-                    "source_quality": "primary",
+                    "canonical_url": "https://example.com/summary",
+                    "body": "A secondary summary of another organisation's result.",
+                    "source_quality": "secondary",
                 }
             ],
         )
-        self.assertEqual(decision["mode"], "shadow")
+
         self.assertEqual(decision["status"], "FAIL")
-        self.assertIs(decision["numbers_supported"], False)
+        self.assertEqual(
+            decision["reason"],
+            "no-body-read-primary-source-for-selected-value",
+        )
 
     def test_anchored_critic_requires_exact_artifact_evidence(self) -> None:
         candidate = {
@@ -282,16 +281,6 @@ class V1ContractTests(unittest.TestCase):
                 "evaluate_research_trust",
                 side_effect=research,
             ) as trust,
-            mock.patch.object(
-                v1_gates,
-                "evaluate_claim_body_support",
-                return_value={
-                    "contract": "claim_body_support",
-                    "mode": "shadow",
-                    "status": "PASS",
-                    "reason": "claim-has-body-binding-signal",
-                },
-            ) as support,
         ):
             with self.assertRaises(v1_gates.V1ContractError) as raised:
                 v1_gates._evaluate_topic_candidates(
@@ -304,7 +293,6 @@ class V1ContractTests(unittest.TestCase):
 
         self.assertEqual(novelty.call_count, 3)
         self.assertEqual(trust.call_count, 3)
-        self.assertEqual(support.call_count, 3)
         self.assertEqual(
             [item["id"] for item in observed],
             ["topic-1", "topic-2", "topic-3"],

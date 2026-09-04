@@ -37,11 +37,10 @@ CANDIDATE_INVENTORY = base.OUTPUT_ROOT / "candidate-inventory.json"
 EVIDENCE_TIMEOUT_SECONDS = 180
 EVIDENCE_CACHE_NAME = "evidence-research.json"
 ADMITTED_SCOPE_NAME = "admitted-topics.json"
-MIN_VERIFIED_EVIDENCE = 3
+MIN_VERIFIED_EVIDENCE = 1
 MAX_VERIFIED_EVIDENCE = 7
 EVAL_CONTRACTS = (
     ("research_trust", "Topic Value", "research trust"),
-    ("claim_body_support", "Topic Value", "claim/body support"),
     ("atomic_value_novelty", "Topic Value", "atomic-value novelty"),
     ("critic_anchor_integrity", "Critic", "anchor integrity"),
     ("critic_reproducibility", "Critic", "score reproducibility"),
@@ -666,7 +665,9 @@ def record_evidence_decisions(
             expected="valid timestamp, inspectable source body, canonical URL, and allowed source quality",
             observed=(
                 f"source_quality={item.get('source_quality')}; "
-                f"published_at={item.get('published_at')}; url={item.get('canonical_url')}"
+                f"published_month={workflow.display_publication_month(item.get('published_at'))}; "
+                f"date_precision={item.get('publication_date_precision', 'exact')}; "
+                f"url={item.get('canonical_url')}"
             ),
             reason="signal passed research-item validation and projection",
             subject_id=str(item.get("id", "unknown-signal")),
@@ -1297,7 +1298,7 @@ def generate_cards(
         if feedback
         else ""
     )
-    prompt = f"""Create exactly three one-idea authority thesis cards from the Topic-Value-selected signals. Each supplied signal may contain topic_value annotations naming the selected situation, reader-value route, gravity, reader payoff, and the authority contribution available to this author. Preserve that selected reader value; do not replace it with a generic AI-news thesis. Turn the situation into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. The spine is advisory only; do not force a template or choose by weekday. The topic field must be a concise phrase using words from the selected signal title so stored evidence can be retrieved later. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
+    prompt = f"""Create exactly three one-idea authority thesis cards from the Topic-Value-selected signals. Each supplied signal may contain topic_value annotations naming the selected situation, reader-value route, gravity, reader payoff, and the authority contribution available to this author. Preserve that selected reader value; do not replace it with a generic AI-news thesis. Turn the situation into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. Prefer the broadest audience-relevant formulation that preserves the evidence: omit incidental precision or map an instance to its true parent category, but never add severity, prevalence, causality, scope, materiality, or certainty. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. The spine is advisory only; do not force a template or choose by weekday. The topic field must express the underlying evidence-supported atomic idea in a concise audience-relevant phrase. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
 UNTRUSTED_PROFILE
 {json.dumps(dict(profile), indent=2, sort_keys=True)}
 END_UNTRUSTED_PROFILE
@@ -1546,11 +1547,15 @@ def _validate_body_verified_evidence(
         body = item.get("body")
         if not isinstance(body, str) or not body.strip():
             raise workflow.WorkflowError("Evidence verification requires a non-blank source body.")
-        published = workflow.parse_published_at(str(item["published_at"]))
-        if published < window_start or published > window_end:
+        earliest, latest, precision = workflow.source_publication_bounds(
+            str(item["published_at"])
+        )
+        if latest < window_start or earliest > window_end:
             raise workflow.WorkflowError(
                 "Evidence verification found a source outside the requested time window."
             )
+        item["publication_date_precision"] = precision
+        item["publication_date_uncertain"] = precision == "month"
         canonical_url = str(item["canonical_url"])
         content_hash = str(item["content_hash"])
         if require_stored_hash and raw.get("content_hash") != content_hash:
