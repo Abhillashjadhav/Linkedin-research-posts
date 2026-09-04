@@ -1347,6 +1347,59 @@ def list_research_items(
         return [dict(row) for row in connection.execute(query, parameters)]
 
 
+def list_research_items_by_identity(
+    db_path: Path | str,
+    identities: Sequence[Mapping[str, object]],
+    *,
+    evidence_origin: str = "private-import",
+) -> list[dict[str, object]]:
+    """Return exact URL/hash pairs in caller order without topic re-selection."""
+
+    if evidence_origin not in EVIDENCE_ORIGINS:
+        raise ValueError(
+            f"invalid evidence origin; expected one of {sorted(EVIDENCE_ORIGINS)}"
+        )
+    if not 1 <= len(identities) <= 8:
+        raise ValueError("one to eight evidence identities are required")
+    pairs: list[tuple[str, str]] = []
+    for identity in identities:
+        if not isinstance(identity, Mapping):
+            raise ValueError("evidence identities must be mappings")
+        canonical_url = identity.get("canonical_url")
+        content_hash = identity.get("content_hash")
+        if not isinstance(canonical_url, str) or not canonical_url:
+            raise ValueError("evidence identity canonical_url is required")
+        if (
+            not isinstance(content_hash, str)
+            or re.fullmatch(r"[0-9a-f]{64}", content_hash) is None
+        ):
+            raise ValueError("evidence identity content_hash is invalid")
+        pair = (canonical_url, content_hash)
+        if pair in pairs:
+            raise ValueError("evidence identities must be distinct")
+        pairs.append(pair)
+
+    predicates = " OR ".join(
+        "(canonical_url = ? AND content_hash = ?)" for _ in pairs
+    )
+    parameters: list[object] = [evidence_origin]
+    for pair in pairs:
+        parameters.extend(pair)
+    with closing(connect(db_path)) as connection:
+        rows = connection.execute(
+            f"""
+            SELECT * FROM research_items
+            WHERE evidence_origin = ? AND ({predicates})
+            """,
+            parameters,
+        )
+        by_identity = {
+            (str(row["canonical_url"]), str(row["content_hash"])): dict(row)
+            for row in rows
+        }
+    return [by_identity[pair] for pair in pairs if pair in by_identity]
+
+
 def normalise_performance_timestamp(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be a timezone-aware timestamp")

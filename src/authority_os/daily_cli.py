@@ -358,6 +358,52 @@ def strategy_for(card: Mapping[str, object], profile: Mapping[str, object]) -> d
     }
 
 
+def evidence_manifest_for(
+    card: Mapping[str, object],
+    signals: Sequence[Mapping[str, object]],
+    items: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    """Bind one thesis to the exact Scout records that its gates evaluated."""
+
+    raw_ids = card.get("signal_ids")
+    if not isinstance(raw_ids, Sequence) or isinstance(raw_ids, (str, bytes)):
+        raise workflow.WorkflowError("Thesis signal IDs are unavailable for drafting.")
+    by_signal = {str(signal.get("id", "")): signal for signal in signals}
+    by_url = {
+        str(item.get("canonical_url", "")): item
+        for item in items
+        if str(item.get("canonical_url", ""))
+    }
+    evidence: list[dict[str, str]] = []
+    for raw_id in raw_ids:
+        signal_id = str(raw_id)
+        signal = by_signal.get(signal_id)
+        if signal is None:
+            raise workflow.WorkflowError(
+                f"Selected evidence {signal_id!r} is unavailable before drafting."
+            )
+        canonical_url = str(signal.get("canonical_url", ""))
+        item = by_url.get(canonical_url)
+        content_hash = item.get("content_hash") if item is not None else None
+        if item is None or not isinstance(content_hash, str) or not content_hash:
+            raise workflow.WorkflowError(
+                f"Selected evidence {signal_id!r} has no canonical stored identity."
+            )
+        evidence.append(
+            {
+                "signal_id": signal_id,
+                "canonical_url": canonical_url,
+                "content_hash": content_hash,
+            }
+        )
+    return {
+        "schema_version": 1,
+        "thesis_id": str(card.get("id", "")),
+        "display_topic": str(card.get("topic", "")),
+        "evidence": evidence,
+    }
+
+
 def command(args: argparse.Namespace) -> int:
     if not args.allow_web_research:
         raise workflow.WorkflowError("Discovery requires --allow-web-research.")
@@ -385,8 +431,13 @@ def command(args: argparse.Namespace) -> int:
     print("Three theses cleared the locked authority bar:")
     for card in theses:
         strategy = write_private_json(folder / f"strategy-{card['id']}.json", strategy_for(card, profile))
+        evidence_manifest = write_private_json(
+            folder / f"evidence-{card['id']}.json",
+            evidence_manifest_for(card, signals, items),
+        )
         strategy_rel = strategy.relative_to(workflow.REPO_ROOT).as_posix()
-        draft = f"./bin/linkedin-os draft --topic {json.dumps(str(card['topic']))} --goal authority --format text --strategy-input {json.dumps(strategy_rel)} --db {json.dumps(db_rel)} --allow-model-egress --package"
+        evidence_rel = evidence_manifest.relative_to(workflow.REPO_ROOT).as_posix()
+        draft = f"./bin/linkedin-os draft --topic {json.dumps(str(card['topic']))} --goal authority --format text --strategy-input {json.dumps(strategy_rel)} --evidence-manifest {json.dumps(evidence_rel)} --db {json.dumps(db_rel)} --allow-model-egress --package"
         print(f"{card['id']}: {card['plain_language_summary']} [{card['total']}/25; simplicity={card['scores']['simplicity']}/5]")
         print(f"Decision: {card['product_decision']}")
         print(f"Conversation: {card['conversation_surface']}")

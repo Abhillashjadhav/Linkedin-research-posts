@@ -105,6 +105,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Private JSON object containing the five explicit strategy fields.",
     )
     draft.add_argument(
+        "--evidence-manifest",
+        type=_path,
+        help=(
+            "Private manifest binding an upstream-selected thesis to exact research "
+            "URL and content-hash identities."
+        ),
+    )
+    draft.add_argument(
         "--allow-model-egress",
         action="store_true",
         help=(
@@ -529,13 +537,15 @@ def command_doctor(args: argparse.Namespace) -> int:
 
 def command_draft(args: argparse.Namespace) -> int:
     strategy_input = getattr(args, "strategy_input", None)
+    evidence_manifest_path = getattr(args, "evidence_manifest", None)
     allow_model_egress = bool(getattr(args, "allow_model_egress", False))
     proof_manifest = getattr(args, "proof_manifest", None)
     fixture: dict[str, object] | None = None
     if args.dry_run:
-        if strategy_input or allow_model_egress or proof_manifest:
+        if strategy_input or evidence_manifest_path or allow_model_egress or proof_manifest:
             raise workflow.WorkflowError(
-                "Fixture drafting does not accept strategy files, proof files, or model-egress consent."
+                "Fixture drafting does not accept strategy files, proof files, "
+                "evidence manifests, or model-egress consent."
             )
         fixture = workflow.load_fixture(topic=args.topic)
         items = workflow.prepare_research_items(fixture["research_items"])
@@ -564,22 +574,62 @@ def command_draft(args: argparse.Namespace) -> int:
             )
         storage.initialise(args.db)
         strategy_inputs = workflow.load_strategy_inputs_file(strategy_input)
-        # Apply the bounded query after boundary-safe topic matching, rather than
-        # hiding an older match behind 200 unrelated newer rows or materialising
-        # an unbounded ledger in memory.
-        items = storage.list_research_items(
-            args.db,
-            topic_terms=(
-                workflow.topic_prefilter_terms(args.topic) if args.topic else None
-            ),
-            evidence_origins=("private-import",),
-        )
+        evidence_manifest: dict[str, object] | None = None
+        if evidence_manifest_path is not None:
+            evidence_manifest = workflow.load_evidence_manifest_file(
+                evidence_manifest_path
+            )
+            if args.topic and args.topic != evidence_manifest["display_topic"]:
+                raise workflow.WorkflowError(
+                    "Evidence manifest display_topic does not match the requested topic."
+                )
+            identities = evidence_manifest["evidence"]
+            if not isinstance(identities, list):
+                raise workflow.WorkflowError("Evidence manifest identities are invalid.")
+            items = storage.list_research_items_by_identity(
+                args.db,
+                identities,
+                evidence_origin="private-import",
+            )
+            returned = {
+                (str(item["canonical_url"]), str(item["content_hash"]))
+                for item in items
+            }
+            missing = [
+                str(identity["signal_id"])
+                for identity in identities
+                if (
+                    str(identity["canonical_url"]),
+                    str(identity["content_hash"]),
+                )
+                not in returned
+            ]
+            if missing:
+                raise workflow.WorkflowError(
+                    "Selected evidence is missing or changed in the private ledger: "
+                    + ", ".join(missing)
+                    + "."
+                )
+        else:
+            # Apply the bounded query after boundary-safe topic matching, rather than
+            # hiding an older match behind 200 unrelated newer rows or materialising
+            # an unbounded ledger in memory.
+            items = storage.list_research_items(
+                args.db,
+                topic_terms=(
+                    workflow.topic_prefilter_terms(args.topic) if args.topic else None
+                ),
+                evidence_origins=("private-import",),
+            )
         if not items:
             raise workflow.WorkflowError(
                 "Live drafting needs explicitly imported private research evidence; "
                 "fixture and unverified rows are ineligible, so nothing was invented."
             )
-        analysis = workflow.analyse_research(items, topic=args.topic)
+        analysis = workflow.analyse_research(
+            items,
+            topic=None if evidence_manifest is not None else args.topic,
+        )
         strategy_input_origin = "explicit-input"
 
     selected = analysis["pass_2"]["selected"]
@@ -595,6 +645,7 @@ def command_draft(args: argparse.Namespace) -> int:
     evidence = workflow.build_drafting_evidence(
         items,
         topic_slug=str(brief["topic_slug"]),
+        include_all=fixture is None and evidence_manifest_path is not None,
     )
     proof: workflow.LoadedProof | None = None
     if fixture is not None and brief["goal"] == "opportunity":
@@ -636,9 +687,14 @@ def command_draft(args: argparse.Namespace) -> int:
             allow_model_egress=allow_model_egress,
             proof=proof,
         )
+        selection_mode = (
+            "identity-bound"
+            if evidence_manifest_path is not None
+            else "topic-selected"
+        )
         print(
             f"Stored evidence selected for Writer: topic={brief['topic_slug']}; "
-            f"sources={len(evidence)}."
+            f"sources={len(evidence)}; selection={selection_mode}."
         )
     if fixture is None:
         workflow.enforce_pre_critic_voice_gate(candidates)
