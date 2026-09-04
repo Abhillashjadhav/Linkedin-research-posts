@@ -45,7 +45,12 @@ class IntegratedGateTests(unittest.TestCase):
             original = integrated_cli._original_qualifying
             try:
                 integrated_cli._original_qualifying = quality_cli._qualifying_candidates
-                accepted = integrated_cli._qualifying_candidates(object())
+                accepted = integrated_cli._qualifying_candidates(
+                    object(),
+                    rejected_openings=set(),
+                    package_requested=False,
+                    fixture_mode=True,
+                )
             finally:
                 integrated_cli._original_qualifying = original
         self.assertEqual(accepted, (clean,))
