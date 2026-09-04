@@ -8,8 +8,10 @@ a click, or generic announcement energy.
 
 from __future__ import annotations
 
+import copy
 import json
 import re
+import sys
 from typing import Callable, Mapping, Sequence
 
 from . import workflow
@@ -359,8 +361,10 @@ def invoke_discovery_selector(
     signals: Sequence[Mapping[str, object]],
     *,
     invoker: StageInvoker = _default_invoker,
-    observer: Callable[[Sequence[Mapping[str, object]]], None] | None = None,
+    observer: Callable[[str, Sequence[Mapping[str, object]]], None] | None = None,
 ) -> list[dict[str, object]]:
+    """Select discovery candidates; observers receive read-only snapshots only."""
+
     target_reader = str(profile.get("target_audience", "")).strip()
     authority_goal = str(profile.get("authority_goal", "")).strip()
     candidates = invoke_selector(
@@ -370,8 +374,7 @@ def invoke_discovery_selector(
         count=3,
         invoker=invoker,
     )
-    if observer is not None:
-        observer(candidates)
+    _notify_observer(observer, "pre-gate", candidates)
     blocked = [candidate for candidate in candidates if candidate["status"] != "PASS"]
     passing = [candidate for candidate in candidates if candidate["status"] == "PASS"]
     if not passing:
@@ -387,6 +390,37 @@ def invoke_discovery_selector(
             f"{len(blocked)} weaker candidate(s) did not veto them."
         )
     return passing
+
+
+def _notify_observer(
+    observer: Callable[[str, Sequence[Mapping[str, object]]], None] | None,
+    stage: str,
+    candidates: Sequence[Mapping[str, object]],
+) -> None:
+    """Report an immutable snapshot without allowing telemetry to affect selection."""
+
+    if observer is None:
+        return
+    try:
+        observer(stage, copy.deepcopy(list(candidates)))
+    except Exception as exc:
+        failure_recorder = getattr(observer, "record_observability_failure", None)
+        if callable(failure_recorder):
+            try:
+                failure_recorder(stage, exc)
+                return
+            except Exception as recorder_exc:
+                print(
+                    "OBSERVABILITY_FAILURE: Topic Value observer failure could not "
+                    f"be recorded: {type(recorder_exc).__name__}: {recorder_exc}",
+                    file=sys.stderr,
+                )
+                return
+        print(
+            "OBSERVABILITY_FAILURE: Topic Value observer failed during "
+            f"{stage}: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
 
 
 def invoke_campaign_selector(
