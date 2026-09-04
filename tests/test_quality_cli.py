@@ -144,17 +144,12 @@ class QualitySearchTests(unittest.TestCase):
         self.assertNotIn("Second body", rendered)
         self.assertNotIn("Third body", rendered)
 
-    def test_four_of_five_hook_regenerates_even_at_24_total(self) -> None:
+    def test_four_of_five_hook_advances_under_the_new_floor(self) -> None:
         responses = [
             attempt_output(
                 first_score=24,
                 first_hook=4,
-                first_opening="Four-of-five opening must be rejected.",
-            ),
-            attempt_output(
-                first_score=24,
-                first_hook=5,
-                first_opening="Five-of-five replacement opening.",
+                first_opening="Four-of-five opening clears the working standard.",
             ),
         ]
 
@@ -172,11 +167,10 @@ class QualitySearchTests(unittest.TestCase):
 
         rendered = output.getvalue()
         self.assertEqual(result, 0)
-        self.assertIn("Quality cycle 1/2 rejected", rendered)
         self.assertIn("hook=4/5", rendered)
-        self.assertIn("Quality search passed on cycle 2/2", rendered)
-        self.assertIn("Five-of-five replacement opening", rendered)
-        self.assertNotIn("Four-of-five opening must be rejected", rendered)
+        self.assertIn("Quality search passed on cycle 1/2", rendered)
+        self.assertIn("Four-of-five opening clears the working standard", rendered)
+        self.assertEqual(responses, [])
 
     def test_score_without_required_gates_regenerates(self) -> None:
         responses = [
@@ -276,7 +270,7 @@ class QualitySearchTests(unittest.TestCase):
         self.assertIn("Fixture envelope validated:", output.getvalue())
         self.assertIn("No approval package was generated", output.getvalue())
 
-    def test_campaign_path_carries_post_edit_four_of_five_hook_back_to_writer(self) -> None:
+    def test_campaign_path_carries_post_edit_three_of_five_hook_back_to_writer(self) -> None:
         args = SimpleNamespace(
             run_spec="spec.json",
             trace_output="outputs/run",
@@ -290,7 +284,7 @@ class QualitySearchTests(unittest.TestCase):
             if stage == "post_edit_recritic":
                 return {
                     "scorecards": [
-                        {"candidate_id": "candidate-1", "hook_strength": 4}
+                        {"candidate_id": "candidate-1", "hook_strength": 3}
                     ]
                 }
             if stage == "writer":
@@ -299,7 +293,7 @@ class QualitySearchTests(unittest.TestCase):
             return {}
 
         def fake_run_campaign(**kwargs):
-            self.assertEqual(campaign.MIN_HOOK, 5)
+            self.assertEqual(campaign.MIN_HOOK, 4)
             invoker = kwargs["invoker"]
             with patch.object(campaign, "default_stage_invoker", fake_default):
                 invoker(
@@ -329,8 +323,8 @@ class QualitySearchTests(unittest.TestCase):
         self.assertEqual(result, 0)
         prompt = str(observed["task_prompt"])
         self.assertIn("HOOK_REGENERATION_CONTRACT", prompt)
-        self.assertIn("previous hook was 4/5", prompt.casefold())
-        self.assertIn("hook below 5/5 is a hard failure", prompt.casefold())
+        self.assertIn("previous hook was 3/5", prompt.casefold())
+        self.assertIn("hook below 4/5 is a hard failure", prompt.casefold())
 
 
 class RetryPromptTests(unittest.TestCase):
@@ -352,7 +346,7 @@ class RetryPromptTests(unittest.TestCase):
                 self.assertIn("QUALITY_SEARCH_RETRY_INSTRUCTION", prompt)
                 self.assertIn('"rejected_cycle": 1', prompt)
                 self.assertIn("Do not reuse a rejected opening", prompt)
-                self.assertIn("hook below 5/5 is a hard failure", prompt.casefold())
+                self.assertIn("hook below 4/5 is a hard failure", prompt.casefold())
             self.assertIs(workflow.build_writer_prompt, patched_original)
         self.assertIs(workflow.build_writer_prompt, original)
 

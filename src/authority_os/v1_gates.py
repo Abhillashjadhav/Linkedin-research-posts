@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 from . import resonance, topic_value, workflow
 
 CONFIG_PATH = workflow.REPO_ROOT / "config" / "eval-v1.json"
-RUBRIC_PATH = workflow.REPO_ROOT / "config" / "critic-rubric-v1.json"
+RUBRIC_PATH = workflow.CRITIC_RUBRIC_PATH
 STATE_ROOT = workflow.DEFAULT_PRIVATE_DATA / "v1-evals"
 ATOMIC_LEDGER_NAME = "atomic-values.jsonl"
 CRITIC_AUDIT_NAME = "critic-anchors.jsonl"
@@ -501,20 +501,22 @@ def _enrich_day_v1(day, selector, selected_topic_value=None):
 
 
 def load_critic_rubric(path: Path | None = None) -> dict[str, object]:
-    payload = _load_object(path or RUBRIC_PATH, "V1 Critic rubric")
-    if set(payload) != {"schema_version", "rubric_id", "axes"} or payload.get("schema_version") != 1:
-        raise workflow.WorkflowError("V1 Critic rubric has an invalid schema.")
+    payload = _load_object(path or RUBRIC_PATH, "V2 Critic rubric")
+    if payload.get("schema_version") != 2:
+        raise workflow.WorkflowError("V2 Critic rubric has an invalid schema.")
     axes = payload.get("axes")
     if not isinstance(payload.get("rubric_id"), str) or not isinstance(axes, Mapping):
-        raise workflow.WorkflowError("V1 Critic rubric identity is invalid.")
+        raise workflow.WorkflowError("V2 Critic rubric identity is invalid.")
     if set(axes) != set(workflow.CRITIC_AXES):
-        raise workflow.WorkflowError("V1 Critic rubric axes do not match runtime axes.")
+        raise workflow.WorkflowError("V2 Critic rubric axes do not match runtime axes.")
     for axis in workflow.CRITIC_AXES:
         levels = axes[axis]
-        if not isinstance(levels, Mapping) or set(levels) != {"1", "2", "3", "4", "5"}:
-            raise workflow.WorkflowError(f"V1 Critic axis {axis!r} must define levels 1-5.")
+        if not isinstance(levels, Mapping) or any(
+            str(level) not in levels for level in range(1, 6)
+        ):
+            raise workflow.WorkflowError(f"V2 Critic axis {axis!r} must define levels 1-5.")
         if any(not isinstance(levels[str(level)], str) or not levels[str(level)].strip() for level in range(1, 6)):
-            raise workflow.WorkflowError("V1 Critic anchors must be non-blank.")
+            raise workflow.WorkflowError("V2 Critic anchors must be non-blank.")
     return payload
 
 
@@ -522,7 +524,7 @@ def critic_rubric_sha256() -> str:
     try:
         return hashlib.sha256(RUBRIC_PATH.read_bytes()).hexdigest()
     except OSError as exc:
-        raise workflow.WorkflowError("V1 Critic rubric is unavailable.") from exc
+        raise workflow.WorkflowError("V2 Critic rubric is unavailable.") from exc
 
 
 def _render_rubric() -> str:
@@ -531,7 +533,7 @@ def _render_rubric() -> str:
     assert isinstance(axes, Mapping)
     lines = [f"# Critic behavioral anchors ({rubric['rubric_id']})"]
     for axis in workflow.CRITIC_AXES:
-        lines.append(f"\n## {axis}")
+        lines.append(f"\n## {axis.replace('_', ' ')}")
         levels = axes[axis]
         assert isinstance(levels, Mapping)
         for level in range(1, 6):
@@ -687,6 +689,7 @@ def _validate_critic_scorecards_v1(raw_scorecards, candidates):
                 "scores": {axis: stripped[axis] for axis in workflow.CRITIC_AXES},
                 "anchors": dict(anchors),
                 "rubric_sha256": critic_rubric_sha256(),
+                "critic_rubric_sha256": critic_rubric_sha256(),
             }
         )
     validated = _ORIGINAL_VALIDATE_CRITIC(numeric, candidates)

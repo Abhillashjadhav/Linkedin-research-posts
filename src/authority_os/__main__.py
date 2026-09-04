@@ -640,6 +640,8 @@ def command_draft(args: argparse.Namespace) -> int:
             f"Stored evidence selected for Writer: topic={brief['topic_slug']}; "
             f"sources={len(evidence)}."
         )
+    if fixture is None:
+        workflow.enforce_pre_critic_voice_gate(candidates)
     if fixture is not None:
         fixture_scorecards = fixture.get("critic_scorecards")
         if not isinstance(fixture_scorecards, dict):

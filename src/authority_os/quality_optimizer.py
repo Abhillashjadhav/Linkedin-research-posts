@@ -2,9 +2,9 @@
 
 The V0 baseline stays frozen. This overlay changes only the current live V1 path:
 failed cycles carry the best grounded candidate forward as repair context instead of
-starting from a blank page. The target remains 24-25/25; 22/25 is the human-review
-floor only when every Critic axis is at least 4/5 and every required deterministic
-contract passes.
+starting from a blank page. The target remains 24-25/25; 18/25 is the human-review
+floor only when the named per-axis floors and every required deterministic contract
+pass.
 """
 
 from __future__ import annotations
@@ -14,14 +14,20 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Iterator, Mapping, Sequence
 
-from . import best_effort
+from . import acceptance_policy, best_effort
 from . import package as approval_package
-from . import quality_cli, social_media_gate_policy, v1_completion, workflow
+from . import quality_cli, v1_completion, workflow
 
 TARGET_QUALITY_SCORE = 24
-ACCEPTABLE_QUALITY_FLOOR = 22
-MIN_AXIS_SCORE = 4
-MIN_HOOK_SCORE = 5
+ACCEPTABLE_QUALITY_FLOOR = acceptance_policy.ACCEPTABLE_QUALITY_FLOOR
+MIN_HOOK_SCORE = acceptance_policy.MIN_HOOK_SCORE
+MIN_MIDDLE_ESCALATION_SCORE = acceptance_policy.MIN_MIDDLE_ESCALATION_SCORE
+MIN_EARNED_CLOSER_SCORE = acceptance_policy.MIN_EARNED_CLOSER_SCORE
+MIN_SPECIFICITY_AND_SOURCE_QUALITY_SCORE = (
+    acceptance_policy.MIN_SPECIFICITY_AND_SOURCE_QUALITY_SCORE
+)
+MIN_VOICE_FIDELITY_SCORE = acceptance_policy.MIN_VOICE_FIDELITY_SCORE
+AXIS_FLOORS = acceptance_policy.AXIS_FLOORS
 
 _INSTALLED = False
 _ORIGINAL_COMMAND_DRAFT = quality_cli.command_draft
@@ -57,8 +63,8 @@ def candidate_is_acceptable(candidate: quality_cli.CandidateResult) -> bool:
 
     return (
         candidate.effective_total >= ACCEPTABLE_QUALITY_FLOOR
-        and _axis_floor(candidate) >= MIN_AXIS_SCORE
-        and int(candidate.axes.get("hook_strength", 0)) >= MIN_HOOK_SCORE
+        and not acceptance_policy.axis_shortfalls(candidate.axes)
+        and acceptance_policy.hard_candidate_gates_pass(candidate.gates)
         and candidate.passes_required_gates
     )
 
@@ -132,6 +138,7 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
                 "effective_total": candidate.effective_total,
                 "threshold": ACCEPTABLE_QUALITY_FLOOR,
                 "axes": dict(candidate.axes),
+                "axis_shortfalls": acceptance_policy.axis_shortfalls(candidate.axes),
                 "cycle": cycle,
                 "failure_codes": list(candidate.gate_reasons),
                 "gates": failed_gates,
@@ -141,6 +148,28 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
             artifact_sha256=v1_completion._sha256_text(candidate.text),  # type: ignore[attr-defined]
         )
         artifact = v1_completion._sha256_text(candidate.text)  # type: ignore[attr-defined]
+        for axis, threshold in AXIS_FLOORS.items():
+            score = int(candidate.axes.get(axis, 0))
+            shortfall = max(0, threshold - score)
+            v1_completion.record_decision(
+                {
+                    "contract": axis,
+                    "mode": "enforce",
+                    "status": "PASS" if shortfall == 0 else "FAIL",
+                    "reason": (
+                        f"{axis}-{score}-of-5-meets-{threshold}"
+                        if shortfall == 0
+                        else f"{axis}-{score}-of-5-short-by-{shortfall}"
+                    ),
+                    "score": score,
+                    "threshold": threshold,
+                    "shortfall": shortfall,
+                    "cycle": cycle,
+                },
+                stage=f"quality-cycle-{cycle}-axes",
+                subject_id=candidate.candidate_id,
+                artifact_sha256=artifact,
+            )
         for gate_name, gate_status in sorted(candidate.gates.items()):
             normalized = str(gate_status)
             decision_status = (
@@ -203,8 +232,7 @@ def _quality_feedback(
         "rejected_cycle": cycle,
         "quality_target": TARGET_QUALITY_SCORE,
         "acceptable_floor": ACCEPTABLE_QUALITY_FLOOR,
-        "minimum_axis_score": MIN_AXIS_SCORE,
-        "minimum_hook_score": MIN_HOOK_SCORE,
+        "axis_floors": dict(AXIS_FLOORS),
         "cycle_best_score": current_best.effective_total,
         "cycle_score_delta": delta,
         "best_so_far_score": seed.effective_total,
@@ -223,9 +251,10 @@ def _quality_feedback(
         "required_next_action": (
             "Repair the best-so-far candidate instead of starting over. Preserve its grounded "
             "atomic value and strongest passages, remove every unsupported or failing claim, "
-            "and improve the weakest Critic axes. Target 24-25/25. A 22-23/25 result is acceptable "
-            "only when every Critic axis is at least 4/5, hook_strength is 5/5, and every required "
-            "deterministic/V1 gate passes. Do not trade a passing axis below 4/5 to improve another. "
+            "and improve the weakest Critic axes. Target 24-25/25. A result at or above 18/25 is "
+            "acceptable only when hook_strength and voice_fidelity are at least 4/5; "
+            "middle_escalation, earned_closer, and specificity_and_source_quality are at least 3/5; "
+            "and every required deterministic/V1 gate passes. Voice below 4/5 is never traded away. "
             "Return three materially different repairs in the Writer's required angle slots: "
             "candidate-1 remains mechanism-led, candidate-2 remains product-decision-led, and "
             "candidate-3 remains artefact/failure-mode-led. All three must inherit the repair seed's "
@@ -314,11 +343,10 @@ def _scorecard_is_acceptable(
     effective = scorecard.get("effective_total")
     if type(effective) is not int or int(effective) < ACCEPTABLE_QUALITY_FLOOR:
         return False
-    for axis in workflow.CRITIC_AXES:
-        value = scorecard.get(axis)
-        if type(value) is not int or int(value) < MIN_AXIS_SCORE:
-            return False
-    return int(scorecard.get("hook_strength", 0)) >= MIN_HOOK_SCORE
+    if acceptance_policy.axis_shortfalls(scorecard):
+        return False
+    raw_gates = gate_result.get("gates")
+    return isinstance(raw_gates, Mapping) and acceptance_policy.hard_candidate_gates_pass(raw_gates)
 
 
 def _package_data(
@@ -361,11 +389,7 @@ def _package_data(
         for row in scorecards
         if isinstance(row, Mapping)
     }
-    normalized_gate_results = [
-        social_media_gate_policy.soften_gate_result(row)
-        for row in gate_results
-        if isinstance(row, Mapping)
-    ]
+    normalized_gate_results = [dict(row) for row in gate_results if isinstance(row, Mapping)]
     gates_by_id = {
         str(row.get("candidate_id")): row
         for row in normalized_gate_results
@@ -519,6 +543,7 @@ def install() -> None:
     if _INSTALLED:
         return
     quality_cli.MIN_QUALITY_SCORE = ACCEPTABLE_QUALITY_FLOOR
+    quality_cli.MIN_HOOK_SCORE = MIN_HOOK_SCORE
     quality_cli._run_attempt = _run_attempt  # type: ignore[attr-defined,assignment]
     quality_cli._qualifying_candidates = _qualifying_candidates  # type: ignore[assignment]
     quality_cli._quality_feedback = _quality_feedback  # type: ignore[assignment]

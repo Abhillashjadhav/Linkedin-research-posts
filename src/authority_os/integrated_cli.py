@@ -8,7 +8,7 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from typing import Iterator
 
-from . import anti_slop, quality_cli, resonance, topic_value, v1_completion, workflow
+from . import acceptance_policy, anti_slop, quality_cli, resonance, topic_value, v1_completion, workflow
 
 
 _original_qualifying = quality_cli._qualifying_candidates
@@ -29,13 +29,30 @@ def _record_post_quality(candidate: object) -> None:
     if not isinstance(axes, Mapping) or not text:
         return
     artifact = v1_completion._sha256_text(text)  # type: ignore[attr-defined]
-    hook = int(axes.get("hook_strength", 0))
-    voice = int(axes.get("voice_fidelity", 0))
     findings = anti_slop.audit(text)
-    decisions = (
-        ("hook_strength", hook >= 5, f"hook-strength-{hook}-of-5", {"score": hook, "threshold": 5}),
-        ("voice_fidelity", voice >= 4, f"voice-fidelity-{voice}-of-5", {"score": voice, "threshold": 4}),
-        ("anti_slop", not findings, "no-anti-slop-findings" if not findings else "anti-slop-findings-present", {"finding_count": len(findings), "threshold": 0}),
+    decisions = []
+    for axis, threshold in acceptance_policy.AXIS_FLOORS.items():
+        score = int(axes.get(axis, 0))
+        shortfall = max(0, threshold - score)
+        decisions.append(
+            (
+                axis,
+                shortfall == 0,
+                (
+                    f"{axis}-{score}-of-5-meets-{threshold}"
+                    if shortfall == 0
+                    else f"{axis}-{score}-of-5-short-by-{shortfall}"
+                ),
+                {"score": score, "threshold": threshold, "shortfall": shortfall},
+            )
+        )
+    decisions.append(
+        (
+            "anti_slop",
+            not findings,
+            "no-anti-slop-findings" if not findings else "anti-slop-findings-present",
+            {"finding_count": len(findings), "threshold": 0},
+        )
     )
     for contract, passed, reason, evidence in decisions:
         v1_completion.record_decision(
@@ -59,17 +76,18 @@ def _pre_acceptance_failures(
 ) -> list[str]:
     reasons: list[str] = []
     score = int(getattr(candidate, "effective_total", 0))
-    if score < 22:
-        reasons.append(f"critic-total:{score}/25<22/25")
+    if score < acceptance_policy.ACCEPTABLE_QUALITY_FLOOR:
+        reasons.append(
+            f"critic-total:{score}/25<{acceptance_policy.ACCEPTABLE_QUALITY_FLOOR}/25;"
+            f"shortfall={acceptance_policy.ACCEPTABLE_QUALITY_FLOOR - score}"
+        )
     axes = getattr(candidate, "axes", {})
     if isinstance(axes, Mapping):
-        for axis in workflow.CRITIC_AXES:
-            value = int(axes.get(axis, 0))
-            if value < 4:
-                reasons.append(f"critic-axis:{axis}={value}/5<4/5")
-        hook = int(axes.get("hook_strength", 0))
-        if hook < 5:
-            reasons.append(f"hook-strength:{hook}/5<5/5")
+        for axis, detail in acceptance_policy.axis_shortfalls(axes).items():
+            reasons.append(
+                f"critic-axis:{axis}={detail['observed']}/5<{detail['required']}/5;"
+                f"shortfall={detail['shortfall']}"
+            )
     if not bool(getattr(candidate, "passes_required_gates", False)):
         gates = getattr(candidate, "gates", {})
         failed = (

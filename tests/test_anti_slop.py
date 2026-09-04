@@ -130,7 +130,7 @@ class IntegratedGateTests(unittest.TestCase):
             ],
         )
 
-    def test_post_quality_records_hook_voice_total_and_anti_slop(self) -> None:
+    def test_post_quality_records_every_axis_and_anti_slop(self) -> None:
         candidate = quality_cli.CandidateResult(
             candidate_id="candidate-3",
             angle="decision",
@@ -154,7 +154,14 @@ class IntegratedGateTests(unittest.TestCase):
         contracts = [call.args[0]["contract"] for call in record.call_args_list]
         self.assertEqual(
             contracts,
-            ["hook_strength", "voice_fidelity", "anti_slop"],
+            [
+                "hook_strength",
+                "middle_escalation",
+                "earned_closer",
+                "specificity_and_source_quality",
+                "voice_fidelity",
+                "anti_slop",
+            ],
         )
 
 
