@@ -35,6 +35,10 @@ The target reader should not have to decode an internal architecture document to
 - Translate every necessary technical mechanism into what it changes for a person or team: wasted work, uncertainty, trust, release risk, decision quality, time, or another consequence supported by the supplied brief and evidence.
 - Use only enough mechanism to make the consequence believable. Technical detail that does not change the reader's understanding should be cut or simplified.
 - Prefer concrete verbs, short sentences, and familiar words. A smart PM should be able to read the post aloud without sounding like a design document.
+- Make the result sound like a conversational product leader, not a consultant writing a
+  release memo. Break legalistic qualifications, abstract noun stacks, tidy parallel
+  requirements, repeated sentence frames, and summary-style endings. Let sentence lengths
+  swing and use contractions naturally. Exact imitation of the author's speech is not required.
 - Emotional resonance must come from truthful stakes and tension. Never invent feelings, fear, urgency, damage, customers, incidents, or personal experience to make the post more dramatic.
 
 A useful shape is: relevant problem + immediate benefit/artifact -> why it matters -> minimum mechanism -> clear decision/payoff.

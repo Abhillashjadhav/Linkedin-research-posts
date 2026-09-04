@@ -148,6 +148,17 @@ class CriticScoreValidationTests(unittest.TestCase):
     def test_axes_are_the_recovered_five_axis_rubric(self) -> None:
         self.assertEqual(workflow.CRITIC_AXES, EXPECTED_AXES)
 
+    def test_live_voice_anchor_is_human_authentic_not_exact_imitation(self) -> None:
+        role = workflow.critic_scoring_system_prompt()
+        self.assertIn("conversational product-leader writing", role)
+        self.assertIn("Exact imitation", role)
+        self.assertIn("consultant memo", role)
+        rubric = json.loads(workflow.CRITIC_RUBRIC_PATH.read_text(encoding="utf-8"))
+        voice = rubric["axes"]["voice_fidelity"]
+        self.assertIn("conversational product-leader", voice["4"])
+        self.assertIn("Exact imitation", voice["4"])
+        self.assertIn("consultant memo", voice["3"])
+
     def test_exact_scores_are_enriched_with_local_totals_and_bands(self) -> None:
         validated = workflow.validate_critic_scorecards(
             scorecard_set(

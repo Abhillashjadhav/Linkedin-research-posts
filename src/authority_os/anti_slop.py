@@ -35,7 +35,6 @@ BANNED_WORDS = (
     "elevate",
     "embark",
     "supercharge",
-    "harness",
     "ever-evolving",
 )
 
@@ -67,6 +66,10 @@ _PATTERN_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(
             r"(?i)\b(?:marks a pivotal moment|stands as a testament|plays a vital role|solidifies its position|underscores its significance)\b"
         ),
+    ),
+    (
+        "hype-harness",
+        re.compile(r"(?i)\bharness\s+(?:the\s+)?(?:power|potential)\b"),
     ),
     (
         "weasel-attribution",
