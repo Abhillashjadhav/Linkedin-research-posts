@@ -403,9 +403,21 @@ def _evaluate_topic_candidates(
     return evaluated
 
 
-def _discovery_selector_v1(profile, signals, *, invoker=topic_value._default_invoker):  # type: ignore[attr-defined]
+def _discovery_selector_v1(
+    profile,
+    signals,
+    *,
+    invoker=topic_value._default_invoker,  # type: ignore[attr-defined]
+    observer=None,
+):
     return _evaluate_topic_candidates(
-        _ORIGINAL_DISCOVERY_SELECTOR(profile, signals, invoker=invoker), signals
+        _ORIGINAL_DISCOVERY_SELECTOR(
+            profile,
+            signals,
+            invoker=invoker,
+            observer=observer,
+        ),
+        signals,
     )
 
 
