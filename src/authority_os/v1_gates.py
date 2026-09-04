@@ -13,7 +13,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 from urllib.parse import urlsplit
 
 from . import resonance, topic_value, workflow
@@ -382,7 +382,10 @@ def evaluate_claim_body_support(
 
 
 def _evaluate_topic_candidates(
-    candidates: Sequence[Mapping[str, object]], evidence: Sequence[Mapping[str, object]]
+    candidates: Sequence[Mapping[str, object]],
+    evidence: Sequence[Mapping[str, object]],
+    *,
+    decision_observer: Callable[[Mapping[str, object]], None] | None = None,
 ) -> list[dict[str, object]]:
     evaluated: list[dict[str, object]] = []
     for raw in candidates:
@@ -396,6 +399,13 @@ def _evaluate_topic_candidates(
             "research_trust": research,
             "claim_body_support": body,
         }
+        if decision_observer is not None:
+            try:
+                decision_observer(candidate)
+            except workflow.WorkflowError as exc:
+                raise workflow.WorkflowError(
+                    f"Topic Value observability could not record its decisions: {exc}"
+                ) from exc
         _enforce(novelty)
         _enforce(research)
         _enforce(body)
