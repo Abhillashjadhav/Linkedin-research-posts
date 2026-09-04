@@ -521,20 +521,23 @@ def _record_performance_many_v1(*args, **kwargs):
 # ---------------------------------------------------------------------------
 
 
+def _record_topic_candidate_decisions(candidate: Mapping[str, object]) -> None:
+    subject = str(candidate.get("id", ""))
+    evaluations = candidate.get("v1_evals")
+    if not isinstance(evaluations, Mapping):
+        return
+    for name in ("atomic_value_novelty", "research_trust", "claim_body_support"):
+        decision = evaluations.get(name)
+        if isinstance(decision, Mapping):
+            record_decision(decision, stage="topic-value", subject_id=subject)
+
+
 def _topic_evaluator_v1(candidates, evidence):
-    evaluated = _BASE_TOPIC_EVALUATOR(candidates, evidence)
-    for candidate in evaluated:
-        if not isinstance(candidate, Mapping):
-            continue
-        subject = str(candidate.get("id", ""))
-        evaluations = candidate.get("v1_evals")
-        if not isinstance(evaluations, Mapping):
-            continue
-        for name in ("atomic_value_novelty", "research_trust", "claim_body_support"):
-            decision = evaluations.get(name)
-            if isinstance(decision, Mapping):
-                record_decision(decision, stage="topic-value", subject_id=subject)
-    return evaluated
+    return _BASE_TOPIC_EVALUATOR(
+        candidates,
+        evidence,
+        decision_observer=_record_topic_candidate_decisions,
+    )
 
 
 def _critic_validator_v1(raw_scorecards, candidates):
