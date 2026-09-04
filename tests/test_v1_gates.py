@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import inspect
+import os
+import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -243,6 +248,62 @@ class V1ContractTests(unittest.TestCase):
             invoker=invoker,
             observer=observer,
         )
+
+    def test_v1_wrapper_keeps_base_selector_keyword_contract(self) -> None:
+        base = inspect.signature(v1_gates._ORIGINAL_DISCOVERY_SELECTOR).parameters
+        wrapper = inspect.signature(v1_gates._discovery_selector_v1).parameters
+        base_keywords = {
+            name
+            for name, parameter in base.items()
+            if parameter.kind
+            in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY)
+        }
+        self.assertLessEqual(base_keywords, set(wrapper))
+
+    def test_installed_v1_stack_accepts_public_observer_callback(self) -> None:
+        script = textwrap.dedent(
+            """
+            from authority_os import topic_value, v1_gates
+
+            seen = []
+            candidate = {"id": "topic-value-1", "v1_evals": {}}
+
+            def base_selector(profile, signals, *, invoker, observer=None):
+                if observer is not None:
+                    observer([candidate])
+                return [candidate]
+
+            def evaluator(candidates, evidence, *, decision_observer=None):
+                if decision_observer is not None:
+                    for item in candidates:
+                        decision_observer(item)
+                return list(candidates)
+
+            v1_gates._ORIGINAL_DISCOVERY_SELECTOR = base_selector
+            v1_gates._evaluate_topic_candidates = evaluator
+            v1_gates.install()
+
+            from authority_os import v1_completion
+            v1_completion.install()
+
+            result = topic_value.invoke_discovery_selector(
+                {}, [], observer=lambda rows: seen.extend(rows)
+            )
+            assert result == [candidate]
+            assert seen == [candidate]
+            """
+        )
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = str(workflow.REPO_ROOT / "src")
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=workflow.REPO_ROOT,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
 
 
 if __name__ == "__main__":
