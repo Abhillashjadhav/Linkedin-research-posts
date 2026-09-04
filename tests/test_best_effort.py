@@ -44,6 +44,7 @@ class BestEffortTests(unittest.TestCase):
             with (
                 patch.dict(os.environ, {best_effort.OUTPUT_ENV: str(target)}),
                 patch.object(best_effort.v1_completion, "_read_jsonl", return_value=[]),
+                patch.object(best_effort.v1_completion, "record_decision") as record,
             ):
                 written = best_effort.write(
                     candidate(),
@@ -58,12 +59,18 @@ class BestEffortTests(unittest.TestCase):
             self.assertIn("`critic_total` — observed 20/25", rendered)
             self.assertIn("`hook_strength` — observed 4/5", rendered)
             self.assertEqual(stat.S_IMODE(written.stat().st_mode), 0o600)
+            privacy = record.call_args.args[0]
+            self.assertEqual(privacy["contract"], "gate_privacy")
+            self.assertEqual(privacy["status"], "PASS")
 
     def test_hard_gate_failure_writes_nothing_and_names_gate(self) -> None:
         workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
             target = Path(temporary) / "best-effort-post.md"
-            with patch.dict(os.environ, {best_effort.OUTPUT_ENV: str(target)}):
+            with (
+                patch.dict(os.environ, {best_effort.OUTPUT_ENV: str(target)}),
+                patch.object(best_effort.v1_completion, "record_decision"),
+            ):
                 with self.assertRaisesRegex(workflow.WorkflowError, "honesty"):
                     best_effort.write(
                         candidate(honesty="FAIL"),

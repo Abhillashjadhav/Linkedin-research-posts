@@ -200,9 +200,16 @@ class RepairStateTests(unittest.TestCase):
             )
 
         self.assertEqual(result.candidates, (first, second))
-        self.assertEqual(record.call_count, 2)
-        first_decision = record.call_args_list[0].args[0]
-        second_decision = record.call_args_list[1].args[0]
+        recorded = [call.args[0] for call in record.call_args_list]
+        critic_decisions = [
+            decision for decision in recorded if decision["contract"] == "critic_total"
+        ]
+        gate_decisions = [
+            decision for decision in recorded if str(decision["contract"]).startswith("gate_")
+        ]
+        self.assertEqual(len(critic_decisions), 2)
+        self.assertEqual(len(gate_decisions), 10)
+        first_decision, second_decision = critic_decisions
         self.assertEqual(first_decision["contract"], "critic_total")
         self.assertEqual(first_decision["cycle"], 2)
         self.assertEqual(first_decision["score"], 24)
@@ -210,6 +217,13 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(second_decision["status"], "FAIL")
         self.assertEqual(second_decision["gates"], {"honesty": "FAIL"})
         self.assertIn("unsupported-factual-marker", second_decision["failure_codes"])
+        failed_honesty = next(
+            decision
+            for decision in gate_decisions
+            if decision["contract"] == "gate_honesty" and decision["status"] == "FAIL"
+        )
+        self.assertEqual(failed_honesty["observed_status"], "FAIL")
+        self.assertIn("unsupported-factual-marker", failed_honesty["failure_codes"])
 
     def test_best_so_far_survives_a_later_score_regression(self) -> None:
         state = quality_optimizer.RepairState()

@@ -173,6 +173,27 @@ class TopicValueRuntimeTests(unittest.TestCase):
 
         self.assertEqual([item["id"] for item in selected], ["topic-1"])
 
+    def test_observer_receives_blocked_candidates_before_stage_failure(self) -> None:
+        candidates = []
+        for index in range(1, 4):
+            item = candidate(reader_relevance=3)
+            item["id"] = f"topic-{index}"
+            item["source_ids"] = [f"signal-{index}"]
+            item["situation"] = f"A weak situation {index}."
+            candidates.append(item)
+        observed: list[dict[str, object]] = []
+
+        with self.assertRaisesRegex(workflow.WorkflowError, "could not find"):
+            topic_value.invoke_discovery_selector(
+                {"target_audience": "AI PMs", "authority_goal": "Practical AI systems"},
+                [{"id": f"signal-{index}"} for index in range(1, 4)],
+                invoker=lambda *_args, **_kwargs: {"candidates": candidates},
+                observer=lambda rows: observed.extend(dict(row) for row in rows),
+            )
+
+        self.assertEqual([item["id"] for item in observed], ["topic-1", "topic-2", "topic-3"])
+        self.assertTrue(all(item["status"] == "BLOCKED" for item in observed))
+
 
 class TopicValueProjectionTests(unittest.TestCase):
     def test_project_discovery_signals_filters_and_annotates_selected_sources(self) -> None:

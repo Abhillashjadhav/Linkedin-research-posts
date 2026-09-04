@@ -199,5 +199,33 @@ def write(
         cycle=cycle,
         failure_reason=failure_reason,
     )
-    target = output_path()
-    return daily_cli.write_private_text(target, payload)
+    candidate_id = str(getattr(candidate, "candidate_id", "unknown"))
+    artifact = v1_completion._sha256_text(  # type: ignore[attr-defined]
+        str(getattr(candidate, "text", ""))
+    )
+
+    def record_privacy(status: str, reason: str) -> None:
+        try:
+            v1_completion.record_decision(
+                {
+                    "contract": "gate_privacy",
+                    "mode": "enforce",
+                    "status": status,
+                    "reason": reason,
+                },
+                stage="best-effort-handoff",
+                subject_id=candidate_id,
+                artifact_sha256=artifact,
+            )
+        except workflow.WorkflowError:
+            # Observability must not replace the original storage result.
+            pass
+
+    try:
+        target = output_path()
+        written = daily_cli.write_private_text(target, payload)
+    except (OSError, workflow.WorkflowError):
+        record_privacy("FAIL", "private-path-or-owner-only-write-failed")
+        raise
+    record_privacy("PASS", "private-path-and-mode-0o600-enforced")
+    return written
