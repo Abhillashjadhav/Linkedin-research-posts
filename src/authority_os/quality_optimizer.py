@@ -2,8 +2,7 @@
 
 The V0 baseline stays frozen. This overlay changes only the current live V1 path:
 failed cycles carry the best grounded candidate forward as repair context instead of
-starting from a blank page. The 24/25 target remains telemetry, not a reason to rewrite
-an axis that already passes. A repair stops when the 18/25 total, named per-axis floors,
+starting from a blank page. A repair stops when the 18/25 total, named per-axis floors,
 and every required deterministic contract pass.
 """
 
@@ -18,7 +17,6 @@ from . import acceptance_policy, anti_slop, best_effort
 from . import package as approval_package
 from . import quality_cli, v1_completion, workflow
 
-TARGET_QUALITY_SCORE = acceptance_policy.QUALITY_TARGET
 ACCEPTABLE_QUALITY_FLOOR = acceptance_policy.ACCEPTABLE_QUALITY_FLOOR
 MIN_HOOK_SCORE = acceptance_policy.MIN_HOOK_SCORE
 MIN_MIDDLE_ESCALATION_SCORE = acceptance_policy.MIN_MIDDLE_ESCALATION_SCORE
@@ -136,7 +134,6 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
                 "score": candidate.effective_total,
                 "effective_total": candidate.effective_total,
                 "threshold": ACCEPTABLE_QUALITY_FLOOR,
-                "quality_target": TARGET_QUALITY_SCORE,
                 "acceptance_contract_version": (
                     acceptance_policy.ACCEPTANCE_CONTRACT_VERSION
                 ),
@@ -296,7 +293,6 @@ def _quality_feedback(
 
     return {
         "rejected_cycle": cycle,
-        "quality_target": TARGET_QUALITY_SCORE,
         "acceptable_floor": ACCEPTABLE_QUALITY_FLOOR,
         "axis_floors": dict(AXIS_FLOORS),
         "cycle_best_score": current_best.effective_total,
