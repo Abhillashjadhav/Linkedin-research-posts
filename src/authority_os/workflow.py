@@ -205,6 +205,17 @@ PROOF_MANIFEST_FIELDS = {
     "public_claim",
     "attested_personal_sentences",
 }
+EVIDENCE_MANIFEST_FIELDS = {
+    "schema_version",
+    "thesis_id",
+    "display_topic",
+    "evidence",
+}
+EVIDENCE_IDENTITY_FIELDS = {
+    "signal_id",
+    "canonical_url",
+    "content_hash",
+}
 MAX_PROOF_MANIFEST_BYTES = 64 * 1024
 
 
@@ -344,7 +355,7 @@ def _read_validated_local_text(
     )
     try:
         if before.st_size > MAX_PROOF_MANIFEST_BYTES:
-            raise WorkflowError("Proof manifest is too large.")
+            raise WorkflowError(f"{label} is too large.")
         chunks: list[bytes] = []
         remaining = MAX_PROOF_MANIFEST_BYTES + 1
         while remaining:
@@ -358,12 +369,12 @@ def _read_validated_local_text(
     except WorkflowError:
         raise
     except OSError:
-        raise WorkflowError("Proof manifest could not be read safely.") from None
+        raise WorkflowError(f"{label} could not be read safely.") from None
     finally:
         os.close(file_fd)
 
     if len(raw_payload) > MAX_PROOF_MANIFEST_BYTES:
-        raise WorkflowError("Proof manifest is too large.")
+        raise WorkflowError(f"{label} is too large.")
     before_token = (
         before.st_dev,
         before.st_ino,
@@ -379,12 +390,99 @@ def _read_validated_local_text(
         after.st_ctime_ns,
     )
     if before_token != after_token or len(raw_payload) != after.st_size:
-        raise WorkflowError("Proof manifest changed while it was being read.")
+        raise WorkflowError(f"{label} changed while it was being read.")
     try:
         text = raw_payload.decode("utf-8")
     except UnicodeDecodeError:
-        raise WorkflowError("Proof manifest must contain valid UTF-8 JSON.") from None
+        raise WorkflowError(f"{label} must contain valid UTF-8 JSON.") from None
     return candidate, text, after
+
+
+def load_evidence_manifest_file(path: Path | str) -> dict[str, object]:
+    """Load an upstream-selected evidence identity bundle from private storage."""
+
+    supplied_path = Path(path).expanduser()
+    if ".." in supplied_path.parts:
+        raise WorkflowError("Evidence manifest paths cannot contain parent traversal.")
+    manifest_path = (
+        supplied_path
+        if supplied_path.is_absolute()
+        else Path.cwd() / supplied_path
+    )
+    _path, manifest_text, _metadata = _read_validated_local_text(
+        manifest_path,
+        root=DEFAULT_PRIVATE_DATA.absolute(),
+        label="Evidence manifest",
+    )
+    try:
+        payload = json.loads(manifest_text)
+    except json.JSONDecodeError:
+        raise WorkflowError("Evidence manifest must contain valid UTF-8 JSON.") from None
+    if not isinstance(payload, Mapping) or set(payload) != EVIDENCE_MANIFEST_FIELDS:
+        raise WorkflowError("Evidence manifest has an invalid schema.")
+    if type(payload.get("schema_version")) is not int or payload["schema_version"] != 1:
+        raise WorkflowError("Evidence manifest schema_version must be integer 1.")
+    thesis_id = payload.get("thesis_id")
+    if (
+        not isinstance(thesis_id, str)
+        or re.fullmatch(r"thesis-[1-9][0-9]*", thesis_id) is None
+    ):
+        raise WorkflowError("Evidence manifest thesis_id is invalid.")
+    display_topic = payload.get("display_topic")
+    if not isinstance(display_topic, str) or not display_topic.strip():
+        raise WorkflowError("Evidence manifest display_topic must be non-blank text.")
+    raw_evidence = payload.get("evidence")
+    if (
+        not isinstance(raw_evidence, Sequence)
+        or isinstance(raw_evidence, (str, bytes))
+        or not 1 <= len(raw_evidence) <= 2
+    ):
+        raise WorkflowError("Evidence manifest must contain one or two identities.")
+    evidence: list[dict[str, str]] = []
+    signal_ids: set[str] = set()
+    identities: set[tuple[str, str]] = set()
+    for index, raw in enumerate(raw_evidence, start=1):
+        if not isinstance(raw, Mapping) or set(raw) != EVIDENCE_IDENTITY_FIELDS:
+            raise WorkflowError(f"Evidence manifest item {index} has an invalid schema.")
+        signal_id = raw.get("signal_id")
+        canonical_url = raw.get("canonical_url")
+        content_hash = raw.get("content_hash")
+        if (
+            not isinstance(signal_id, str)
+            or re.fullmatch(r"signal-[1-9][0-9]*", signal_id) is None
+        ):
+            raise WorkflowError(f"Evidence manifest item {index} signal_id is invalid.")
+        if not isinstance(canonical_url, str):
+            raise WorkflowError(f"Evidence manifest item {index} canonical_url is invalid.")
+        try:
+            canonical_url = canonicalise_url(canonical_url)
+        except ValueError as exc:
+            raise WorkflowError(
+                f"Evidence manifest item {index} canonical_url is invalid: {exc}"
+            ) from exc
+        if (
+            not isinstance(content_hash, str)
+            or re.fullmatch(r"[0-9a-f]{64}", content_hash) is None
+        ):
+            raise WorkflowError(f"Evidence manifest item {index} content_hash is invalid.")
+        identity = (canonical_url, content_hash)
+        if signal_id in signal_ids or identity in identities:
+            raise WorkflowError("Evidence manifest identities must be distinct.")
+        signal_ids.add(signal_id)
+        identities.add(identity)
+        evidence.append(
+            {
+                "signal_id": signal_id,
+                "canonical_url": canonical_url,
+                "content_hash": content_hash,
+            }
+        )
+    return {
+        "schema_version": 1,
+        "thesis_id": thesis_id,
+        "display_topic": display_topic.strip(),
+        "evidence": evidence,
+    }
 
 
 def load_proof_manifest(
@@ -1263,13 +1361,16 @@ def build_drafting_evidence(
     *,
     topic_slug: str,
     limit: int = 8,
+    include_all: bool = False,
 ) -> list[dict[str, object]]:
-    """Project only the selected cluster into a small Writer evidence envelope."""
+    """Project a selected cluster or pre-bound evidence bundle for the Writer."""
 
     if not isinstance(topic_slug, str) or not topic_slug.strip():
         raise WorkflowError("Drafting evidence needs a non-blank selected topic slug.")
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
         raise WorkflowError("Drafting evidence limit must be a positive integer.")
+    if type(include_all) is not bool:
+        raise WorkflowError("Drafting evidence include_all must be boolean.")
     ranked: list[tuple[int, float, str, str, str, str, str, bool]] = []
     quality_rank = {"primary": 2, "mixed": 1, "secondary": 0}
     for index, item in enumerate(items, start=1):
@@ -1278,7 +1379,7 @@ def build_drafting_evidence(
         title = item.get("title")
         if not isinstance(title, str) or not title.strip():
             raise WorkflowError(f"Drafting evidence item {index} needs a non-blank title.")
-        if _theme_for(title) != topic_slug.strip():
+        if not include_all and _theme_for(title) != topic_slug.strip():
             continue
         quality = item.get("source_quality")
         if quality not in SOURCE_QUALITIES:

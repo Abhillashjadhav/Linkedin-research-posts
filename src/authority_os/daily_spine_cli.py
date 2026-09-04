@@ -1642,13 +1642,19 @@ def command(args: argparse.Namespace) -> int:
             folder / f"strategy-{card['id']}.json",
             base.strategy_for(card, profile),
         )
+        evidence_manifest = base.write_private_json(
+            folder / f"evidence-{card['id']}.json",
+            base.evidence_manifest_for(card, signals, items),
+        )
         strategy_rel = strategy.relative_to(workflow.REPO_ROOT).as_posix()
+        evidence_rel = evidence_manifest.relative_to(workflow.REPO_ROOT).as_posix()
         week_slot = getattr(args, "week_slot", None)
         slot_arg = f" --week-slot {week_slot}" if week_slot is not None else ""
         draft = (
             f"./bin/linkedin-os draft --topic {json.dumps(str(card['topic']))} "
             f"--goal authority --format text{slot_arg} "
             f"--strategy-input {json.dumps(strategy_rel)} "
+            f"--evidence-manifest {json.dumps(evidence_rel)} "
             f"--db {json.dumps(db_rel)} --allow-model-egress --package"
         )
         draft_argv = [
@@ -1666,6 +1672,8 @@ def command(args: argparse.Namespace) -> int:
         draft_argv.extend([
             "--strategy-input",
             strategy_rel,
+            "--evidence-manifest",
+            evidence_rel,
             "--db",
             db_rel,
             "--allow-model-egress",

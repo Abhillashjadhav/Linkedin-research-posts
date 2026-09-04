@@ -945,6 +945,175 @@ class MinimalCliTests(unittest.TestCase):
             )
             self.assertIn("No LinkedIn action was taken", output.getvalue())
 
+    def test_identity_manifest_ignores_unretrievable_topic_and_keeps_multi_cluster_evidence(self) -> None:
+        fixture = cli.workflow.load_fixture()
+        items = cli.workflow.prepare_research_items(
+            [
+                {
+                    "url": "https://example.com/retry-boundary",
+                    "title": "Retry budgets stop runaway agent loops",
+                    "body": "A bounded retry checkpoint stops queue saturation.",
+                    "source": "Runtime engineering",
+                    "published_at": "2026-09-01T00:00:00Z",
+                    "source_quality": "primary",
+                },
+                {
+                    "url": "https://example.org/payment-approval",
+                    "title": "Payment agents require human approval",
+                    "body": "A human authorization boundary is required before funds move.",
+                    "source": "Payments engineering",
+                    "published_at": "2026-09-02T00:00:00Z",
+                    "source_quality": "primary",
+                },
+            ]
+        )
+        manifest = {
+            "schema_version": 1,
+            "thesis_id": "thesis-1",
+            "display_topic": "Alignment and security evaluation boundaries",
+            "evidence": [
+                {
+                    "signal_id": f"signal-{index}",
+                    "canonical_url": item["canonical_url"],
+                    "content_hash": item["content_hash"],
+                }
+                for index, item in enumerate(items, start=1)
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "authority.sqlite"
+            database.touch()
+            strategy = root / "strategy.json"
+            strategy.write_text(
+                json.dumps(fixture["strategy_inputs"]),
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                dry_run=False,
+                topic=manifest["display_topic"],
+                goal="authority",
+                output_format="text",
+                week_slot=None,
+                strong_current_signal=False,
+                strategy_input=strategy,
+                evidence_manifest=root / "evidence.json",
+                allow_model_egress=True,
+                proof_manifest=None,
+                db=database,
+            )
+            candidates = fixture["draft_candidates"]["authority"]
+            critic_scores = [
+                {
+                    "candidate_id": candidate["id"],
+                    **{axis: 5 for axis in cli.workflow.CRITIC_AXES},
+                }
+                for candidate in candidates
+            ]
+            with (
+                patch.object(
+                    cli.workflow,
+                    "load_evidence_manifest_file",
+                    return_value=manifest,
+                ),
+                patch.object(
+                    cli.storage,
+                    "list_research_items_by_identity",
+                    return_value=items,
+                ) as exact_lookup,
+                patch.object(cli.storage, "list_research_items") as topic_lookup,
+                patch.object(
+                    cli.workflow,
+                    "analyse_research",
+                    wraps=cli.workflow.analyse_research,
+                ) as analyse,
+                patch.object(
+                    cli.workflow,
+                    "invoke_writer",
+                    return_value=candidates,
+                ) as writer,
+                patch.object(
+                    cli.workflow,
+                    "invoke_critic",
+                    return_value=critic_scores,
+                ) as critic,
+                redirect_stdout(io.StringIO()) as output,
+            ):
+                self.assertEqual(cli.command_draft(args), 0)
+        topic_lookup.assert_not_called()
+        exact_lookup.assert_called_once_with(
+            database,
+            manifest["evidence"],
+            evidence_origin="private-import",
+        )
+        self.assertIsNone(analyse.call_args.kwargs["topic"])
+        writer_sources = {
+            item["source"] for item in writer.call_args.kwargs["evidence"]
+        }
+        self.assertEqual(
+            writer_sources,
+            {item["canonical_url"] for item in items},
+        )
+        self.assertEqual(critic.call_args.args[2], writer.call_args.kwargs["evidence"])
+        self.assertIn("selection=identity-bound", output.getvalue())
+
+    def test_identity_manifest_fails_closed_when_a_selected_record_changed(self) -> None:
+        fixture = cli.workflow.load_fixture()
+        item = cli.workflow.prepare_research_items(fixture["research_items"])[0]
+        manifest = {
+            "schema_version": 1,
+            "thesis_id": "thesis-1",
+            "display_topic": "Unretrievable generated topic",
+            "evidence": [
+                {
+                    "signal_id": "signal-1",
+                    "canonical_url": item["canonical_url"],
+                    "content_hash": "f" * 64,
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "authority.sqlite"
+            database.touch()
+            strategy = root / "strategy.json"
+            strategy.write_text(
+                json.dumps(fixture["strategy_inputs"]),
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                dry_run=False,
+                topic=manifest["display_topic"],
+                goal="authority",
+                output_format="text",
+                week_slot=None,
+                strong_current_signal=False,
+                strategy_input=strategy,
+                evidence_manifest=root / "evidence.json",
+                allow_model_egress=True,
+                proof_manifest=None,
+                db=database,
+            )
+            with (
+                patch.object(
+                    cli.workflow,
+                    "load_evidence_manifest_file",
+                    return_value=manifest,
+                ),
+                patch.object(
+                    cli.storage,
+                    "list_research_items_by_identity",
+                    return_value=[],
+                ),
+                patch.object(cli.workflow, "invoke_writer") as writer,
+            ):
+                with self.assertRaisesRegex(
+                    cli.workflow.WorkflowError,
+                    "missing or changed.*signal-1",
+                ):
+                    cli.command_draft(args)
+            writer.assert_not_called()
+
     def test_fixture_research_is_persisted_and_deduplicated(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             database = Path(temporary) / "private" / "authority.sqlite"

@@ -97,6 +97,137 @@ class Observer:
 
 
 class InstalledObserverSmokeTests(unittest.TestCase):
+    def test_installed_public_draft_uses_identity_manifest_and_reaches_critic(self) -> None:
+        result = _run_installed_smoke(
+            """
+            import json
+            import io
+            import tempfile
+            from contextlib import redirect_stderr, redirect_stdout
+            from pathlib import Path
+            from types import SimpleNamespace
+            from unittest.mock import patch
+            from authority_os import storage, v1_gates, workflow
+
+            workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+                root = Path(temporary)
+                state_root = root / "v1-evals"
+                v1_gates.STATE_ROOT = state_root
+                v1_gates.install()
+                from authority_os import v1_completion
+                v1_completion.STATE_ROOT = state_root
+                v1_completion.begin_run("installed-evidence-handoff-smoke")
+                v1_completion.install()
+                from authority_os import __main__ as cli
+
+                items = workflow.prepare_research_items([
+                    {
+                        "url": "https://example.com/retry-boundary",
+                        "title": "Retry budgets stop runaway agent loops",
+                        "body": "A bounded retry checkpoint stops queue saturation.",
+                        "source": "Runtime engineering",
+                        "published_at": "2026-09-01T00:00:00Z",
+                        "source_quality": "primary",
+                    },
+                    {
+                        "url": "https://example.org/payment-approval",
+                        "title": "Payment agents require human approval",
+                        "body": "A human authorization boundary is required before funds move.",
+                        "source": "Payments engineering",
+                        "published_at": "2026-09-02T00:00:00Z",
+                        "source_quality": "primary",
+                    },
+                ])
+                database = root / "authority.sqlite"
+                storage.initialise(database)
+                storage.insert_research_items(
+                    database,
+                    items,
+                    evidence_origin="private-import",
+                )
+                topic = "Alignment and security evaluation boundaries"
+                manifest = root / "evidence.json"
+                manifest.write_text(json.dumps({
+                    "schema_version": 1,
+                    "thesis_id": "thesis-1",
+                    "display_topic": topic,
+                    "evidence": [
+                        {
+                            "signal_id": f"signal-{index}",
+                            "canonical_url": item["canonical_url"],
+                            "content_hash": item["content_hash"],
+                        }
+                        for index, item in enumerate(items, start=1)
+                    ],
+                }), encoding="utf-8")
+                strategy = root / "strategy.json"
+                strategy.write_text(json.dumps({
+                    "target_reader": "Senior AI product leaders",
+                    "reader_problem": "Agents reach production without explicit boundaries.",
+                    "core_hypothesis": "Evidence-bound decisions reduce silent workflow risk.",
+                    "product_decision": "Require the boundary before expanding autonomy.",
+                    "authority_statement": "Translate agent mechanics into release decisions.",
+                }), encoding="utf-8")
+                candidates = workflow.load_fixture(topic=topic)["draft_candidates"]["authority"]
+                scorecards = []
+                for candidate in candidates:
+                    excerpt = candidate["text"].split("\\n", 1)[0]
+                    scorecards.append({
+                        "candidate_id": candidate["id"],
+                        **{axis: 4 for axis in workflow.CRITIC_AXES},
+                        "anchors": {
+                            axis: {
+                                "anchor_id": f"{axis}:4",
+                                "evidence": excerpt,
+                                "why_not_higher": "The candidate does not completely meet anchor 5.",
+                                "why_not_lower": "The excerpt exceeds anchor 3.",
+                            }
+                            for axis in workflow.CRITIC_AXES
+                        },
+                    })
+                response = SimpleNamespace(
+                    returncode=0,
+                    stdout=json.dumps({"structured_output": {"scorecards": scorecards}}),
+                    stderr="",
+                )
+                with (
+                    patch.object(workflow, "invoke_writer", return_value=candidates),
+                    patch.object(workflow.shutil, "which", return_value="/opt/claude"),
+                    patch.object(workflow.subprocess, "run", return_value=response) as critic_run,
+                ):
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with redirect_stdout(stdout), redirect_stderr(stderr):
+                        returncode = cli.main([
+                            "draft",
+                            "--topic", topic,
+                            "--goal", "authority",
+                            "--format", "text",
+                            "--strategy-input", str(strategy),
+                            "--evidence-manifest", str(manifest),
+                            "--db", str(database),
+                            "--allow-model-egress",
+                        ])
+                print(json.dumps({
+                    "returncode": returncode,
+                    "critic_calls": critic_run.call_count,
+                    "evidence_urls": [item["canonical_url"] for item in items],
+                    "stdout": stdout.getvalue(),
+                    "stderr": stderr.getvalue(),
+                }))
+            """
+        )
+        self.assertEqual(result["returncode"], 0, result["stderr"])
+        self.assertEqual(result["critic_calls"], 2)
+        self.assertEqual(
+            result["evidence_urls"],
+            [
+                "https://example.com/retry-boundary",
+                "https://example.org/payment-approval",
+            ],
+        )
+
     def test_installed_public_path_observes_both_stages_and_reaches_drafting(self) -> None:
         result = _run_installed_smoke(
             """
