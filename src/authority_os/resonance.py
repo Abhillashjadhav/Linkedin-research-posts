@@ -334,8 +334,6 @@ def invoke_selector(
     supports = result.get("supports_locked_thesis")
     if type(supports) is not bool:
         raise workflow.WorkflowError("Resonance Selector thesis-fit flag must be boolean.")
-    computed = selector_passes(scores, supports_locked_thesis=supports)
-    expected_status = "PASS" if computed else "BLOCKED"
     proof_type = result.get("proof_type")
     proof_available = result.get("proof_available")
     if proof_type not in PROOF_TYPES or type(proof_available) is not bool:
@@ -343,6 +341,7 @@ def invoke_selector(
     if proof_type == "NONE" and proof_available:
         raise workflow.WorkflowError("A NONE proof plan cannot claim proof is available.")
     narrowed_fields: dict[str, object] = {}
+    effective_support = supports
     if narrow_to_evidence:
         bounded_thesis = result.get("evidence_bounded_thesis")
         bounded_decision = result.get("evidence_bounded_product_decision")
@@ -364,19 +363,36 @@ def invoke_selector(
             "original_locked_thesis": str(day.get("thesis", "")).strip(),
             "original_product_decision": str(day.get("product_decision", "")).strip(),
         }
+        # NARROW is the human's recovery decision. Once the provider satisfies
+        # the bounded-field contract, the original thesis-fit flag is diagnostic
+        # only; the final honesty and citation gates still validate the draft.
+        effective_support = True
+    computed = selector_passes(
+        scores,
+        supports_locked_thesis=effective_support,
+    )
+    expected_status = "PASS" if computed else "BLOCKED"
     return {
         **dict(result),
         **narrowed_fields,
+        "model_claim_support": supports,
+        "supports_locked_thesis": effective_support,
         "status": expected_status,
         "status_owner": "python-deterministic-selector-v1",
-        "claim_support": "SUPPORTED" if supports else "UNSUPPORTED",
+        "claim_support": (
+            "SUPPORTED"
+            if supports
+            else "NARROWED_TO_EVIDENCE"
+            if narrow_to_evidence
+            else "UNSUPPORTED"
+        ),
         "two_line_packaging": "\n".join(lines),
         "scores": scores,
         "total": sum(scores.values()),
         "topic_value": dict(selected_topic_value),
         "shortfalls": selector_shortfalls(
             scores,
-            supports_locked_thesis=supports,
+            supports_locked_thesis=effective_support,
         ),
     }
 

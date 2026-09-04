@@ -181,6 +181,23 @@ class ResonanceThresholdTests(unittest.TestCase):
         self.assertEqual(result["status"], "PASS")
         self.assertNotIn("proof_value", resonance.SELECTOR_FLOORS)
 
+    def test_narrowing_cannot_be_vetoed_by_the_original_claim_support_flag(self):
+        narrowed = selector_payload(narrowed=True)
+        narrowed["supports_locked_thesis"] = False
+
+        result = resonance.invoke_selector(
+            day(),
+            selected_topic(),
+            narrow_to_evidence=True,
+            invoker=Mock(return_value=narrowed),
+        )
+
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["claim_support"], "NARROWED_TO_EVIDENCE")
+        self.assertFalse(result["model_claim_support"])
+        self.assertTrue(result["supports_locked_thesis"])
+        self.assertEqual(result["shortfalls"], [])
+
     def test_proof_value_score_does_not_duplicate_the_claim_support_decision(self):
         failing = dict(selector_payload(narrowed=True))
         scores = dict(failing["scores"])
