@@ -325,8 +325,16 @@ def _rubric_identity() -> dict[str, str]:
         payload = json.loads(raw)
     except (OSError, json.JSONDecodeError) as exc:
         raise workflow.WorkflowError("Current Critic rubric is unavailable.") from exc
+    try:
+        display_path = workflow.CRITIC_RUBRIC_PATH.relative_to(
+            workflow.REPO_ROOT
+        ).as_posix()
+    except ValueError:
+        # Tests may replace the loader's path with an external fixture. Do not expose
+        # host paths in provenance records; the byte hash remains the identity.
+        display_path = f"<external>/{workflow.CRITIC_RUBRIC_PATH.name}"
     return {
-        "path": workflow.CRITIC_RUBRIC_PATH.relative_to(workflow.REPO_ROOT).as_posix(),
+        "path": display_path,
         "rubric_id": str(payload.get("rubric_id", "unknown")),
         "sha256": hashlib.sha256(raw).hexdigest(),
     }
