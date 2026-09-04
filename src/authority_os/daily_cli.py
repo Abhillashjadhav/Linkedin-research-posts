@@ -319,10 +319,10 @@ def _under_private(path: Path) -> Path:
     return target
 
 
-def write_private_json(path: Path, payload: Mapping[str, object]) -> Path:
+def write_private_text(path: Path, text: str) -> Path:
     target = _under_private(path)
     legacy_cli._ensure_owner_only_directory(target.parent)
-    data = (json.dumps(dict(payload), indent=2, sort_keys=True) + "\n").encode()
+    data = text.encode("utf-8")
     try:
         descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     except FileExistsError:
@@ -339,6 +339,13 @@ def write_private_json(path: Path, payload: Mapping[str, object]) -> Path:
     finally:
         os.close(descriptor)
     return target
+
+
+def write_private_json(path: Path, payload: Mapping[str, object]) -> Path:
+    return write_private_text(
+        path,
+        json.dumps(dict(payload), indent=2, sort_keys=True) + "\n",
+    )
 
 
 def strategy_for(card: Mapping[str, object], profile: Mapping[str, object]) -> dict[str, str]:

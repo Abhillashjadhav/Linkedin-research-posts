@@ -9,6 +9,47 @@ from authority_os import eval_dashboard_html
 
 
 class EvalDashboardHtmlTests(unittest.TestCase):
+    def test_empty_scorecard_says_drafting_stopped_before_critic(self) -> None:
+        rendered = eval_dashboard_html.render_dashboard(
+            {
+                "outcome": "FAIL",
+                "checks": [
+                    {
+                        "stage": "drafting",
+                        "label": "High-bar drafting",
+                        "status": "FAIL",
+                        "reason": "ERROR: writer failed",
+                    }
+                ],
+            },
+            {"checks": [], "critic_scorecards": []},
+        )
+        self.assertIn(
+            "Drafting stopped before the Critic ran. See FIRST BLOCKER.",
+            rendered,
+        )
+        self.assertNotIn("The Critic ran but", rendered)
+
+    def test_empty_scorecard_says_critic_returned_no_valid_scorecard(self) -> None:
+        rendered = eval_dashboard_html.render_dashboard(
+            {
+                "outcome": "FAIL",
+                "checks": [
+                    {
+                        "stage": "drafting",
+                        "label": "High-bar drafting",
+                        "status": "PASS",
+                        "reason": "draft candidates reached evaluation",
+                    }
+                ],
+            },
+            {"checks": [], "critic_scorecards": []},
+        )
+        self.assertIn(
+            "The Critic ran but returned no valid 1–5 scorecard.",
+            rendered,
+        )
+
     def test_render_names_first_blocker_and_keeps_missing_checks_visible(self) -> None:
         rendered = eval_dashboard_html.render_dashboard(
             {

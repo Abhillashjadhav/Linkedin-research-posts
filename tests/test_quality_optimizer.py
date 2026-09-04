@@ -392,6 +392,11 @@ class FourCycleConvergenceTests(unittest.TestCase):
         output = io.StringIO()
         with (
             patch.object(quality_optimizer, "_ORIGINAL_COMMAND_DRAFT", exhaust),
+            patch.object(
+                quality_optimizer.best_effort,
+                "write",
+                return_value=workflow.REPO_ROOT / "data/private/run/best-effort-post.md",
+            ) as write,
             redirect_stdout(output),
         ):
             result = quality_optimizer._command_draft(SimpleNamespace())  # type: ignore[attr-defined]
@@ -399,9 +404,10 @@ class FourCycleConvergenceTests(unittest.TestCase):
         self.assertEqual(result, 1)
         rendered = output.getvalue()
         self.assertIn("best overall=candidate-1 score=24/25", rendered)
-        self.assertIn("The retained best overall candidate.", rendered)
-        self.assertIn("Content package: data/private/content-packages/best", rendered)
-        self.assertIn("NEEDS_HUMAN_REVIEW", rendered)
+        self.assertNotIn("The retained best overall candidate.", rendered)
+        self.assertIn("best-effort-post.md", rendered)
+        self.assertIn("BEST_EFFORT", rendered)
+        write.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -48,6 +49,95 @@ DISCOVERY_STAGES = (
     ("drafting", "High-bar drafting"),
     ("final_evals", "Final evals"),
 )
+STAGE_EXCEPTIONS = (workflow.WorkflowError, ValueError, json.JSONDecodeError)
+
+
+@dataclass(frozen=True, slots=True)
+class DraftingRun:
+    returncode: int
+    reason: str
+    log_path: str
+    captured_tail: tuple[str, ...]
+
+
+def run_drafting_child(
+    command: Sequence[str],
+    *,
+    cwd: Path,
+    folder: Path,
+    env: Mapping[str, str] | None = None,
+) -> DraftingRun:
+    """Stream one child to the operator while retaining its complete private log."""
+
+    chunks: list[str] = []
+    returncode = 127
+    try:
+        with subprocess.Popen(
+            list(command),
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=dict(env) if env is not None else None,
+        ) as process:
+            if process.stdout is None:
+                raise workflow.WorkflowError("Drafting child output pipe was unavailable.")
+            for line in process.stdout:
+                print(line, end="", flush=True)
+                chunks.append(line)
+            returncode = process.wait()
+    except OSError as exc:
+        line = f"ERROR: drafting child could not start: {exc}\n"
+        print(line, end="", flush=True)
+        chunks.append(line)
+
+    captured = "".join(chunks)
+    log = base.write_private_text(folder / "drafting.log", captured)
+    lines = captured.splitlines()
+    reason = next(
+        (line.strip() for line in reversed(lines) if line.strip().startswith("ERROR:")),
+        next((line.strip() for line in reversed(lines) if line.strip()), "no child output was captured"),
+    )
+    return DraftingRun(
+        returncode=returncode,
+        reason=reason,
+        log_path=log.relative_to(workflow.REPO_ROOT).as_posix(),
+        captured_tail=tuple(lines[-20:]),
+    )
+
+
+def record_drafting_stage(
+    dashboard: dict[str, object],
+    result: DraftingRun,
+    *,
+    post_evaluated: bool,
+) -> None:
+    details = {
+        "return_code": result.returncode,
+        "log_path": result.log_path,
+        "captured_tail": list(result.captured_tail),
+    }
+    dashboard["drafting"] = {
+        "log_path": result.log_path,
+        "captured_tail": list(result.captured_tail),
+    }
+    if result.returncode == 0 or post_evaluated:
+        mark_run_stage(
+            dashboard,
+            "drafting",
+            "PASS",
+            "draft candidates were generated and reached evaluation",
+            **details,
+        )
+        return
+    mark_run_stage(
+        dashboard,
+        "drafting",
+        "FAIL",
+        f"high-bar drafting exited {result.returncode}: {result.reason}",
+        **details,
+    )
 
 
 def new_run_dashboard(run_id: str = "") -> dict[str, object]:
@@ -781,7 +871,7 @@ def command(args: argparse.Namespace) -> int:
         top_five = ranked[: momentum.MOMENTUM_TOP_K]
         authority_scores = momentum.score_authority_fit(top_five, profile)
         top_five = momentum.attach_authority_fit(top_five, authority_scores)
-    except workflow.WorkflowError as exc:
+    except STAGE_EXCEPTIONS as exc:
         run_dashboard["surface_scouts"] = surface_diagnostics(folder)
         mark_run_stage(
             run_dashboard,
@@ -884,7 +974,7 @@ def command(args: argparse.Namespace) -> int:
             [str(item["topic"]) for item in eligible],
         )
         raw_signals = base.project_signals(items)
-    except workflow.WorkflowError as exc:
+    except STAGE_EXCEPTIONS as exc:
         mark_run_stage(
             run_dashboard,
             "evidence_verification",
@@ -909,7 +999,7 @@ def command(args: argparse.Namespace) -> int:
     try:
         topic_value_candidates = topic_value.invoke_discovery_selector(profile, raw_signals)
         signals = topic_value.project_discovery_signals(raw_signals, topic_value_candidates)
-    except workflow.WorkflowError as exc:
+    except STAGE_EXCEPTIONS as exc:
         mark_run_stage(run_dashboard, "topic_value", "FAIL", str(exc))
         persist_run_dashboard(folder, run_dashboard)
         persist_browser_dashboard(
@@ -969,7 +1059,7 @@ def command(args: argparse.Namespace) -> int:
             signals,
             trace_path=thesis_trace_path,
         )
-    except workflow.WorkflowError as exc:
+    except STAGE_EXCEPTIONS as exc:
         trace_details: dict[str, object] = {}
         if thesis_trace_path.exists():
             trace_details["evaluation_artifact"] = thesis_trace_path.relative_to(
@@ -1093,10 +1183,15 @@ def command(args: argparse.Namespace) -> int:
             "provenance": str(guidance.get("provenance", "not-recorded")),
         }
         print("Drafting: starting the high-bar post workflow.", flush=True)
-        completed = subprocess.run(
+        child_env = os.environ.copy()
+        child_env["LINKEDIN_OS_BEST_EFFORT_OUTPUT"] = str(
+            folder / "best-effort-post.md"
+        )
+        completed = run_drafting_child(
             selected[1],
             cwd=workflow.REPO_ROOT,
-            check=False,
+            folder=folder,
+            env=child_env,
         )
         current_rows = v1_completion._read_jsonl(ledger_path)[ledger_start:]
         dashboard = render_eval_dashboard(current_rows)
@@ -1120,22 +1215,11 @@ def command(args: argparse.Namespace) -> int:
             for check in evaluated_rows
             if check["status"] in {"FAIL", "BLOCKED"}
         ]
-        if completed.returncode == 0 or post_evaluated_rows:
-            mark_run_stage(
-                run_dashboard,
-                "drafting",
-                "PASS",
-                "draft candidates were generated and reached evaluation",
-                return_code=completed.returncode,
-            )
-        else:
-            mark_run_stage(
-                run_dashboard,
-                "drafting",
-                "FAIL",
-                f"high-bar drafting workflow exited with code {completed.returncode} before an eval was recorded",
-                return_code=completed.returncode,
-            )
+        record_drafting_stage(
+            run_dashboard,
+            completed,
+            post_evaluated=bool(post_evaluated_rows),
+        )
         if failed_rows:
             first_failure = failed_rows[0]
             mark_run_stage(
@@ -1157,7 +1241,7 @@ def command(args: argparse.Namespace) -> int:
                 run_dashboard,
                 "final_evals",
                 "FAIL",
-                "workflow failed although every recorded eval passed; an unobserved gate remains",
+                f"workflow failed after recorded evals passed: {completed.reason}",
                 evaluated_contracts=[
                     str(check["contract"]) for check in evaluated_rows
                 ],
@@ -1167,7 +1251,7 @@ def command(args: argparse.Namespace) -> int:
                 run_dashboard,
                 "final_evals",
                 "FAIL",
-                "draft subprocess exited before a valid Critic 1-5 scorecard was recorded",
+                f"draft subprocess stopped before a valid Critic 1-5 scorecard: {completed.reason}",
                 return_code=completed.returncode,
             )
         elif completed.returncode == 0:

@@ -54,6 +54,18 @@ def _card(check: Mapping[str, object]) -> str:
     )
 
 
+def _empty_scorecard_message(
+    run_checks: Sequence[Mapping[str, object]],
+) -> str:
+    drafting = next(
+        (item for item in run_checks if item.get("stage") == "drafting"),
+        None,
+    )
+    if drafting is not None and _status(drafting.get("status")) == "PASS":
+        return "The Critic ran but returned no valid 1–5 scorecard."
+    return "Drafting stopped before the Critic ran. See FIRST BLOCKER."
+
+
 def render_dashboard(
     run_dashboard: Mapping[str, object],
     eval_dashboard: Mapping[str, object],
@@ -111,7 +123,7 @@ def render_dashboard(
         + f'<td>{_safe(" | ".join(str(value) for value in item.get("failure_codes", [])), "No Critic or gate failure recorded")}</td>'
         + "</tr>"
         for item in scorecards
-    ) or '<tr><td colspan="10">The Critic did not produce a valid 1–5 scorecard in this run.</td></tr>'
+    ) or f'<tr><td colspan="10">{_empty_scorecard_message(run_checks)}</td></tr>'
     raw_scouts = run_dashboard.get("surface_scouts")
     scouts = [item for item in raw_scouts if isinstance(item, Mapping)] if isinstance(raw_scouts, list) else []
     observed_scouts = sum(1 for item in scouts if item.get("status") == "OBSERVED")
