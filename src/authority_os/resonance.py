@@ -88,6 +88,23 @@ SELECTOR_SCHEMA = _object_schema(
     ),
 )
 
+NARROW_SELECTOR_SCHEMA = _object_schema(
+    {
+        **dict(SELECTOR_SCHEMA["properties"]),
+        "evidence_bounded_thesis": {"type": "string", "minLength": 1, "maxLength": 500},
+        "evidence_bounded_product_decision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+        },
+    },
+    (
+        *SELECTOR_SCHEMA["required"],
+        "evidence_bounded_thesis",
+        "evidence_bounded_product_decision",
+    ),
+)
+
 POST_SCHEMA = _object_schema(
     {
         "what_happened": {"type": "string"},
@@ -233,6 +250,7 @@ def invoke_selector(
     day: Mapping[str, object],
     selected_topic_value: Mapping[str, object],
     *,
+    narrow_to_evidence: bool = False,
     invoker: StageInvoker = _default_invoker,
 ) -> dict[str, object]:
     if selected_topic_value.get("status") != "PASS":
@@ -241,6 +259,18 @@ def invoke_selector(
     if not selected_id:
         raise workflow.WorkflowError("Resonance requires an identified Topic Value situation.")
     config = ModelConfig("codex", "gpt-5.6-sol", "ultra")
+    narrowing_instruction = ""
+    if narrow_to_evidence:
+        narrowing_instruction = (
+            "\n\nNARROW_TO_EVIDENCE\n"
+            "The human author chose to narrow the claim instead of acquiring new evidence. "
+            "Keep the selected Topic Value situation and every evidence identity unchanged. "
+            "Return evidence_bounded_thesis and evidence_bounded_product_decision that are "
+            "directly supported by the supplied evidence bodies. Remove claims of causation, "
+            "correlation, or generality when the evidence shows only a test, observation, or "
+            "specific behavior. Score supports_locked_thesis and proof_value against these "
+            "narrowed fields, not against the original broader wording."
+        )
     task = (
         "Package the already-selected Topic Value situation for the feed. Do not choose a different topic, "
         "invent a stronger event, or turn the thesis itself into the opening. The two_line_packaging must "
@@ -257,13 +287,14 @@ def invoke_selector(
         f"PRODUCT_DECISION\n{day.get('product_decision', '')}\n"
         f"ARTIFACT_POLICY\n{day.get('artifact_policy', '')}\n"
         f"EVIDENCE\n{json.dumps(day.get('evidence', []), indent=2, sort_keys=True)}"
+        f"{narrowing_instruction}"
     )
     result = invoker(
         "resonance_selector",
         config,
         _load_role("resonance_selector"),
         task,
-        SELECTOR_SCHEMA,
+        NARROW_SELECTOR_SCHEMA if narrow_to_evidence else SELECTOR_SCHEMA,
     )
     result_id = result.get("selected_candidate_id")
     if not isinstance(result_id, str) or result_id != selected_id:
@@ -288,8 +319,31 @@ def invoke_selector(
         raise workflow.WorkflowError("A NONE proof plan cannot claim proof is available.")
     if proof_type != "NONE" and not proof_available and scores["proof_value"] >= 4:
         raise workflow.WorkflowError("Proof/value score contradicts the unavailable proof plan.")
+    narrowed_fields: dict[str, object] = {}
+    if narrow_to_evidence:
+        bounded_thesis = result.get("evidence_bounded_thesis")
+        bounded_decision = result.get("evidence_bounded_product_decision")
+        if (
+            not isinstance(bounded_thesis, str)
+            or not bounded_thesis.strip()
+            or len(bounded_thesis) > 500
+            or not isinstance(bounded_decision, str)
+            or not bounded_decision.strip()
+            or len(bounded_decision) > 500
+        ):
+            raise workflow.WorkflowError(
+                "Evidence narrowing requires bounded thesis and product-decision text."
+            )
+        narrowed_fields = {
+            "evidence_bounded_thesis": bounded_thesis.strip(),
+            "evidence_bounded_product_decision": bounded_decision.strip(),
+            "narrowed_to_evidence": True,
+            "original_locked_thesis": str(day.get("thesis", "")).strip(),
+            "original_product_decision": str(day.get("product_decision", "")).strip(),
+        }
     return {
         **dict(result),
+        **narrowed_fields,
         "status": expected_status,
         "status_owner": "python-deterministic-selector-v1",
         "two_line_packaging": "\n".join(lines),
@@ -316,6 +370,11 @@ def enrich_day(
     if not isinstance(topic_result, Mapping) or topic_result.get("status") != "PASS":
         raise workflow.WorkflowError("Writer enrichment requires a passed Topic Value selection.")
     enriched = dict(day)
+    if selector.get("narrowed_to_evidence") is True:
+        enriched["thesis"] = str(selector["evidence_bounded_thesis"]).strip()
+        enriched["product_decision"] = str(
+            selector["evidence_bounded_product_decision"]
+        ).strip()
     packaging = str(selector["two_line_packaging"]).strip()
     what_happened = str(selector["what_happened"]).strip()
     why_interesting = str(selector["why_interesting"]).strip()
@@ -353,6 +412,7 @@ def prepare_campaign_spec(
     *,
     output_root: Path,
     only_day: str | None = None,
+    narrow_to_evidence: bool = False,
     invoker: StageInvoker = _default_invoker,
 ) -> tuple[Path, dict[str, dict[str, object]]]:
     """Run Topic Value then Resonance before Writer and emit a compatible enriched spec."""
@@ -377,7 +437,12 @@ def prepare_campaign_spec(
             continue
         selected_topic = topic_value.invoke_campaign_selector(raw_day, invoker=invoker)
         topic_results[day_name] = selected_topic
-        selector = invoke_selector(raw_day, selected_topic, invoker=invoker)
+        selector = invoke_selector(
+            raw_day,
+            selected_topic,
+            narrow_to_evidence=narrow_to_evidence,
+            invoker=invoker,
+        )
         results[day_name] = selector
         if selector["status"] != "PASS":
             raise workflow.WorkflowError(

@@ -288,7 +288,7 @@ def _single_day(
 
 
 @contextmanager
-def _single_topic_selection_prompt() -> Iterator[None]:
+def _single_topic_selection_prompt(*, narrow_to_evidence: bool = False) -> Iterator[None]:
     """Run Topic Value + Resonance once, then inject that decision into every quality cycle."""
 
     global _active_single_selector, _active_single_topic_value, _active_resonance_diagnostics
@@ -306,7 +306,11 @@ def _single_topic_selection_prompt() -> Iterator[None]:
         if not cached:
             day = _single_day(brief, evidence, proof)
             selected_topic = topic_value.invoke_campaign_selector(day)
-            selector = resonance.invoke_selector(day, selected_topic)
+            selector = resonance.invoke_selector(
+                day,
+                selected_topic,
+                narrow_to_evidence=narrow_to_evidence,
+            )
             if selector.get("status") != "PASS":
                 raise workflow.WorkflowError(
                     "Resonance Selector blocked the single-topic draft: "
@@ -323,6 +327,9 @@ def _single_topic_selection_prompt() -> Iterator[None]:
             raise workflow.WorkflowError("Single-topic selection cache is malformed.")
         enriched_day = resonance.enrich_day(day, selector, selected_topic)
         copied_brief = dict(brief)
+        if selector.get("narrowed_to_evidence") is True:
+            copied_brief["core_hypothesis"] = str(enriched_day["thesis"])
+            copied_brief["product_decision"] = str(enriched_day["product_decision"])
         analysis = copied_brief.get("analysis")
         if not isinstance(analysis, Mapping):
             raise workflow.WorkflowError("Writer brief analysis is unavailable for selection enrichment.")
@@ -358,7 +365,9 @@ def _command_draft(args: object) -> int:
         return _original_command_draft(args)
 
     if run_spec is None:
-        with _single_topic_selection_prompt():
+        with _single_topic_selection_prompt(
+            narrow_to_evidence=bool(getattr(args, "narrow_to_evidence", False))
+        ):
             result = _original_command_draft(args)
             topic_result = _active_single_topic_value
             selector = _active_single_selector
@@ -394,6 +403,7 @@ def _command_draft(args: object) -> int:
         Path(run_spec),
         output_root=output_root,
         only_day=getattr(args, "campaign_day", None),
+        narrow_to_evidence=bool(getattr(args, "narrow_to_evidence", False)),
     )
     setattr(args, "run_spec", prepared_spec)
     captured = io.StringIO()

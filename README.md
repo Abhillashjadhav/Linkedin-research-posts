@@ -107,6 +107,13 @@ the decision from those fields. A block records every failed axis, its
 shortfall, any total-score shortfall, and a failed thesis-fit flag. There is no
 second model verdict that can contradict the deterministic result.
 
+When Resonance reports that the selected evidence supports a narrower claim
+than the original thesis, rerun only drafting with `--narrow-to-evidence`.
+This keeps the selected topic and evidence identities unchanged, asks for an
+evidence-bounded thesis and product decision, and then applies the same
+Resonance, Critic, proof, honesty, citation, privacy, and relevance gates. It
+does not rerun discovery, acquire evidence, or lower the 4/5 proof-value floor.
+
 After four unsuccessful live cycles, the command fails closed and returns no post. When `--package` is selected, rejected cycles may leave private `BLOCKED` audit packages; only a live `READY_FOR_HUMAN_REVIEW` package can clear the coordinator.
 
 ## Run a persisted five-day campaign

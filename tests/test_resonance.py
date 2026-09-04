@@ -29,6 +29,7 @@ def selector_payload(
     *,
     scores: dict[str, int] | None = None,
     model_status: str | None = None,
+    narrowed: bool = False,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "selected_candidate_id": "topic-1",
@@ -51,6 +52,13 @@ def selector_payload(
     }
     if model_status is not None:
         payload["status"] = model_status
+    if narrowed:
+        payload["evidence_bounded_thesis"] = (
+            "Simultaneous-loss tests reveal whether a release gate handles overlapping disruption."
+        )
+        payload["evidence_bounded_product_decision"] = (
+            "Require a simultaneous-loss test before release."
+        )
     return payload
 
 
@@ -141,6 +149,48 @@ class ResonanceThresholdTests(unittest.TestCase):
             "recognition=3/5 below 4/5 by 1",
         )
 
+    def test_narrowing_uses_bounded_schema_and_keeps_proof_floor(self):
+        invoker = Mock(return_value=selector_payload(narrowed=True))
+
+        result = resonance.invoke_selector(
+            day(),
+            selected_topic(),
+            narrow_to_evidence=True,
+            invoker=invoker,
+        )
+
+        schema = invoker.call_args.args[4]
+        prompt = invoker.call_args.args[3]
+        self.assertIn("NARROW_TO_EVIDENCE", prompt)
+        self.assertIn("evidence_bounded_thesis", schema["required"])
+        self.assertIn("evidence_bounded_product_decision", schema["required"])
+        self.assertTrue(result["narrowed_to_evidence"])
+        self.assertEqual(result["original_locked_thesis"], day()["thesis"])
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(resonance.SELECTOR_FLOORS["proof_value"], 4)
+
+    def test_narrowing_still_blocks_when_proof_value_is_three(self):
+        failing = dict(selector_payload(narrowed=True))
+        scores = dict(failing["scores"])
+        scores["proof_value"] = 3
+        failing["scores"] = scores
+
+        result = resonance.invoke_selector(
+            day(),
+            selected_topic(),
+            narrow_to_evidence=True,
+            invoker=Mock(return_value=failing),
+        )
+
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(
+            result["shortfalls"],
+            [
+                "proof_value=3/5 below 4/5 by 1",
+                "total=19/25 below 20/25 by 1",
+            ],
+        )
+
 
 class ResonanceProjectionTests(unittest.TestCase):
     def test_enrich_day_moves_topic_value_packaging_and_proof_before_writer(self):
@@ -176,6 +226,24 @@ class ResonanceProjectionTests(unittest.TestCase):
         self.assertIn("situation first, insight second", enriched["missing_angle"])
         self.assertIn("PROOF PLAN DECIDED BEFORE DRAFTING", enriched["artifact_policy"])
         self.assertIn("FEED VALUE RULE", enriched["artifact_policy"])
+
+    def test_enrich_day_replaces_strategy_fields_only_when_narrowing_is_explicit(self):
+        original = day()
+        selector = {
+            **selector_payload(narrowed=True),
+            "status": "PASS",
+            "narrowed_to_evidence": True,
+            "topic_value": selected_topic(),
+        }
+
+        enriched = resonance.enrich_day(original, selector)
+
+        self.assertEqual(enriched["thesis"], selector["evidence_bounded_thesis"])
+        self.assertEqual(
+            enriched["product_decision"],
+            selector["evidence_bounded_product_decision"],
+        )
+        self.assertEqual(enriched["evidence"], original["evidence"])
 
 
 if __name__ == "__main__":
