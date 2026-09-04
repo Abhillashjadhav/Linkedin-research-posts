@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Mapping, Sequence
 
-from . import momentum_surface_parallel as surface
+from . import momentum_surface_parallel as surface_runtime
 from . import workflow
 from .model_runtime import ModelConfig
 
@@ -51,7 +51,7 @@ def _shallow_schema(allowed_platforms: Sequence[str]) -> dict[str, object]:
             "signals": {
                 "type": "array",
                 "minItems": 0,
-                "maxItems": surface.SIGNALS_PER_SURFACE,
+                "maxItems": surface_runtime.SIGNALS_PER_SURFACE,
                 "items": signal,
             },
             "caveat": {"type": "string"},
@@ -71,16 +71,16 @@ def _failure_status(exc: workflow.WorkflowError) -> str:
 
 
 def _run_surface(
-    lane: Mapping[str, object],
+    surface: Mapping[str, object],
     *,
     topic: str | None,
     days: int,
     as_of: str,
 ) -> dict[str, object]:
-    key = str(lane["key"])
-    label = str(lane["label"])
+    key = str(surface["key"])
+    label = str(surface["label"])
     print(f"Surface Scout [{label}]: started.", flush=True)
-    surface._trace_event(
+    surface_runtime._trace_event(
         {
             "event": "surface_started",
             "surface": key,
@@ -91,11 +91,11 @@ def _run_surface(
     )
     prompt = f"""You are one shallow bounded surface scout. Search one surface area only.
 Surface lane: {label}
-Lane rule: {lane['instruction']}
+Lane rule: {surface['instruction']}
 Research window: the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, agents, evaluations, reliability, context engineering, enterprise AI, developer tooling, model economics and AI product management'}.
 
-Return up to {surface.SIGNALS_PER_SURFACE} materially distinct current GenAI/product conversations visible on THIS SURFACE ONLY, ordered strongest first. This is a retrieval pass, not a thesis or deep momentum-analysis pass. Do not browse another source family to compensate for missing evidence.
+Return up to {surface_runtime.SIGNALS_PER_SURFACE} materially distinct current GenAI/product conversations visible on THIS SURFACE ONLY, ordered strongest first. This is a retrieval pass, not a thesis or deep momentum-analysis pass. Do not browse another source family to compensate for missing evidence.
 
 PRIORITISE BROAD, CONSUMABLE SITUATIONS:
 - Prefer situations a smart PM/AI product practitioner can understand before learning specialist infrastructure, benchmark, security, or ML-research context.
@@ -122,13 +122,13 @@ Social engagement may establish momentum only. It does not prove factual claims.
     status = "UNAVAILABLE"
     caveat = "Surface Scout did not execute."
     signals: list[dict[str, object]] = []
-    for attempt in range(1, surface.MAX_SURFACE_ATTEMPTS + 1):
+    for attempt in range(1, surface_runtime.MAX_SURFACE_ATTEMPTS + 1):
         try:
-            result = surface.invoke_structured(
+            result = surface_runtime.invoke_structured(
                 config=MODEL,
-                role_prompt=surface.daily_cli._role("scout"),
+                role_prompt=surface_runtime.daily_cli._role("scout"),
                 task_prompt=prompt,
-                schema=_shallow_schema(lane["allowed_platforms"]),  # type: ignore[arg-type,index]
+                schema=_shallow_schema(surface["allowed_platforms"]),  # type: ignore[arg-type,index]
                 timeout=SURFACE_TIMEOUT,
                 web_search=True,
                 stage_label=f"Surface Scout {label}",
@@ -144,7 +144,10 @@ Social engagement may establish momentum only. It does not prove factual claims.
                         for item in raw_signals
                     ],
                 }
-            validated = surface._validate_surface_result(result, surface=lane)
+            validated = surface_runtime._validate_surface_result(
+                result,
+                surface=surface,
+            )
             status = str(validated["status"])
             caveat = str(validated["caveat"])
             signals = list(validated["signals"])  # type: ignore[arg-type]
@@ -152,10 +155,13 @@ Social engagement may establish momentum only. It does not prove factual claims.
             status = _failure_status(exc)
             caveat = str(exc)
             signals = []
-        if status not in {"TIMEOUT", "UNAVAILABLE"} or attempt == surface.MAX_SURFACE_ATTEMPTS:
+        if (
+            status not in {"TIMEOUT", "UNAVAILABLE"}
+            or attempt == surface_runtime.MAX_SURFACE_ATTEMPTS
+        ):
             break
         print(f"Surface Scout [{label}]: {status}; retrying once.", flush=True)
-        surface._trace_event(
+        surface_runtime._trace_event(
             {
                 "event": "surface_retry",
                 "surface": key,
@@ -173,8 +179,8 @@ Social engagement may establish momentum only. It does not prove factual claims.
         "signals": signals,
         "caveat": caveat,
     }
-    surface._write_surface_file(key, payload)
-    surface._trace_event(
+    surface_runtime._write_surface_file(key, payload)
+    surface_runtime._trace_event(
         {
             "event": "surface_finished",
             "surface": key,
@@ -194,8 +200,8 @@ def install() -> None:
     global _INSTALLED
     if _INSTALLED:
         return
-    surface.SURFACE_TIMEOUT = SURFACE_TIMEOUT
-    surface.CONSOLIDATION_TIMEOUT = CONSOLIDATION_TIMEOUT
-    surface.MODEL = MODEL
-    surface._run_surface = _run_surface  # type: ignore[assignment]
+    surface_runtime.SURFACE_TIMEOUT = SURFACE_TIMEOUT
+    surface_runtime.CONSOLIDATION_TIMEOUT = CONSOLIDATION_TIMEOUT
+    surface_runtime.MODEL = MODEL
+    surface_runtime._run_surface = _run_surface  # type: ignore[assignment]
     _INSTALLED = True
