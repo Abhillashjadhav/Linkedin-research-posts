@@ -209,7 +209,22 @@ class MomentumRuntimeTests(unittest.TestCase):
 
     @patch("authority_os.daily_cli.invoke_structured")
     def test_source_scout_is_constrained_to_momentum_topics(self, invoke: object) -> None:
-        invoke.return_value = {"items": [{}, {}, {}]}  # type: ignore[attr-defined]
+        invoke.return_value = {  # type: ignore[attr-defined]
+            "items": [
+                {
+                    "lead_id": f"lead-{index}",
+                    "lead_url": url,
+                }
+                for index, url in enumerate(
+                    (
+                        "https://example.com/agent",
+                        "https://example.com/economics",
+                        "https://example.com/a2a",
+                    ),
+                    start=1,
+                )
+            ]
+        }
         prepared = [
             {
                 "id": f"research-{index}",
@@ -231,11 +246,62 @@ class MomentumRuntimeTests(unittest.TestCase):
                 None,
                 7,
                 "2026-08-18T00:00:00Z",
-                ["Agent coordination", "Model economics", "A2A"],
+                [
+                    {
+                        "topic": "Agent coordination",
+                        "representative_urls": ["https://example.com/agent"],
+                    },
+                    {
+                        "topic": "Model economics",
+                        "representative_urls": ["https://example.com/economics"],
+                    },
+                    {
+                        "topic": "A2A",
+                        "representative_urls": ["https://example.com/a2a"],
+                    },
+                ],
             )
         prompt = invoke.call_args.kwargs["task_prompt"]  # type: ignore[attr-defined]
-        self.assertIn("momentum-qualified topic candidates", prompt)
+        self.assertIn("Discovery is already complete", prompt)
         self.assertIn("Agent coordination", prompt)
+        self.assertIn("https://example.com/agent", prompt)
+        schema = invoke.call_args.kwargs["schema"]  # type: ignore[attr-defined]
+        item_schema = schema["properties"]["items"]["items"]
+        self.assertIn("lead_id", item_schema["required"])
+        self.assertIn("lead_url", item_schema["required"])
+
+    @patch("authority_os.daily_cli.invoke_structured")
+    def test_source_scout_rejects_evidence_bound_to_the_wrong_lead(
+        self, invoke: object
+    ) -> None:
+        invoke.return_value = {  # type: ignore[attr-defined]
+            "items": [
+                {
+                    "lead_id": "lead-1",
+                    "lead_url": "https://example.com/second",
+                }
+            ]
+        }
+        candidates = [
+            {
+                "topic": "First topic",
+                "representative_urls": ["https://example.com/first"],
+            },
+            {
+                "topic": "Second topic",
+                "representative_urls": ["https://example.com/second"],
+            },
+        ]
+        with patch.object(daily_spine_cli.base, "_role", return_value="Scout role"):
+            with self.assertRaisesRegex(
+                workflow.WorkflowError, "does not match its admitted"
+            ):
+                daily_spine_cli._invoke_signal_scout(
+                    None,
+                    7,
+                    "2026-08-18T00:00:00Z",
+                    candidates,
+                )
 
 
 if __name__ == "__main__":

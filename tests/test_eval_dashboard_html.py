@@ -170,7 +170,7 @@ class EvalDashboardHtmlTests(unittest.TestCase):
             "Reddit",
             "YouTube",
             "timeout",
-            "5 usable signal",
+            "5 surface signal",
             "linkedin-prior",
             "gpt-test",
             "abc123",

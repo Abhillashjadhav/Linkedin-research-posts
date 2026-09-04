@@ -68,6 +68,27 @@ authority-fit fallback may nominate a well-evidenced topic when current
 conversation momentum is insufficient; it never relabels that topic as
 trending. Publication remains disabled.
 
+If a run stops at Evidence verification, resume from its preserved run folder
+without repeating conversation discovery or topic admission:
+
+```bash
+./bin/linkedin-os discover \
+  --profile data/private/authority-profile.json \
+  --days 7 \
+  --resume-from data/private/daily-discovery/<date>/<failed-run> \
+  --output-dir data/private/daily-discovery/<date>/<resume-run> \
+  --allow-web-research \
+  --allow-model-egress \
+  --generate-post
+```
+
+The resume keeps the original `as-of` timestamp, admitted topics, and
+representative URLs. It reuses exact body-verified private evidence first and
+performs one targeted verification call only when evidence is still missing.
+Runs created before `admitted-topics.json` was introduced can resume from the
+rolling inventory only while that inventory still carries the failed run's
+exact timestamp; otherwise the command fails closed rather than guessing.
+
 ## Locked high-bar search
 
 A live invocation no longer exposes the first completed draft batch. It runs up to four candidate cycles and returns prose only when at least one candidate satisfies all of these conditions:

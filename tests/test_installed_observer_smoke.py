@@ -97,7 +97,172 @@ class Observer:
 
 
 class InstalledObserverSmokeTests(unittest.TestCase):
-    def test_public_discovery_recovers_evidence_timeout_before_topic_value(self) -> None:
+    def test_installed_public_resume_skips_discovery_and_reaches_evidence(self) -> None:
+        result = _run_installed_smoke(
+            """
+            import hashlib
+            import io
+            import json
+            import tempfile
+            from contextlib import redirect_stderr, redirect_stdout
+            from pathlib import Path
+            from unittest.mock import patch
+            from authority_os import workflow
+
+            workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+                root = Path(temporary)
+                source = root / "source"
+                output = root / "resume"
+                source.mkdir()
+
+                from authority_os import v1_gates
+                v1_gates.STATE_ROOT = root / "v1-evals"
+                v1_gates.install()
+                from authority_os import v1_completion
+                v1_completion.STATE_ROOT = v1_gates.STATE_ROOT
+                v1_completion.install()
+                from authority_os import topic_value_id_contract
+                topic_value_id_contract.install()
+                from authority_os import daily_discovery_cli
+                daily = daily_discovery_cli.base
+
+                profile_data = {
+                    "target_audience": "Senior AI product leaders",
+                    "authority_goal": "Practical production judgment",
+                    "proof_inventory": [{
+                        "id": "proof-repo",
+                        "label": "Public repository",
+                        "public_safe_claim": "A repository demonstrates the workflow.",
+                        "evidence_type": "repository",
+                    }],
+                    "avoid_topics": [],
+                    "recent_theses": [],
+                }
+                candidate = {
+                    "id": "topic-1",
+                    "topic": "Agent reliability boundaries",
+                    "why_now": "A current release makes the boundary consequential.",
+                    "total": 20,
+                    "observed_axes": 5,
+                    "momentum_eligible": True,
+                    "representative_urls": ["https://example.com/momentum"],
+                    "authority_fit": {"total": 22},
+                }
+                dashboard = daily.new_run_dashboard("source-run")
+                for check in dashboard["checks"]:
+                    if check["stage"] in {"conversation_discovery", "topic_admission"}:
+                        check["status"] = "PASS"
+                    elif check["stage"] == "evidence_verification":
+                        check["status"] = "FAIL"
+                admission = next(
+                    check for check in dashboard["checks"]
+                    if check["stage"] == "topic_admission"
+                )
+                admission["details"] = {
+                    "route": "momentum-qualified",
+                    "admitted_topics": [candidate["topic"]],
+                }
+                daily.base.write_private_json(source / "run-dashboard.json", dashboard)
+                daily.base.write_private_json(source / "momentum.json", {
+                    "schema_version": 1,
+                    "created_at": "2026-09-04T12:00:00Z",
+                    "topic": None,
+                    "days": 7,
+                    "candidates": [candidate],
+                })
+                daily.base.write_private_json(source / daily.ADMITTED_SCOPE_NAME, {
+                    "schema_version": 1,
+                    "created_at": "2026-09-04T12:00:00Z",
+                    "topic": None,
+                    "days": 7,
+                    "route": "momentum-qualified",
+                    "candidates": [candidate],
+                    "profile_sha256": daily._mapping_sha256(profile_data),
+                    "scope_fingerprint": daily.evidence_scope_fingerprint([candidate]),
+                })
+                previous = root / "previous"
+                previous.mkdir()
+                cached_items = workflow.prepare_research_items([
+                    {
+                        "url": f"https://example.com/research-{index}",
+                        "title": f"Agent reliability evidence {index}",
+                        "body": f"A body-read primary source records decision {index}.",
+                        "source": "Research lab",
+                        "published_at": "2026-09-01T00:00:00Z",
+                        "source_quality": "primary",
+                    }
+                    for index in range(1, 4)
+                ], fetched_at="2026-09-03T10:00:00Z")
+                daily.base.write_private_json(previous / daily.EVIDENCE_CACHE_NAME, {
+                    "schema_version": 1,
+                    "created_at": "2026-09-03T10:00:00Z",
+                    "scope_fingerprint": daily.evidence_scope_fingerprint([candidate]),
+                    "origin": "body-verified-private-web",
+                    "items": cached_items,
+                })
+                profile = root / "profile.json"
+                profile.write_text(json.dumps(profile_data), encoding="utf-8")
+                before = {
+                    path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                    for path in source.iterdir()
+                }
+
+                with (
+                    patch.object(daily.momentum, "invoke_scout", side_effect=AssertionError("discovery repeated")) as scout,
+                    patch.object(daily, "_invoke_signal_scout", side_effect=AssertionError("live evidence repeated")) as live_evidence,
+                    patch.object(daily.topic_value, "invoke_discovery_selector", side_effect=workflow.WorkflowError("topic value checkpoint")) as selector,
+                    patch.object(daily.eval_dashboard_html, "open_dashboard", return_value=False),
+                ):
+                    stdout = io.StringIO()
+                    stderr = io.StringIO()
+                    with redirect_stdout(stdout), redirect_stderr(stderr):
+                        returncode = daily_discovery_cli.main([
+                            "--profile", str(profile),
+                            "--days", "7",
+                            "--resume-from", str(source),
+                            "--output-dir", str(output),
+                            "--db", str(root / "authority.sqlite"),
+                            "--allow-web-research",
+                            "--allow-model-egress",
+                        ])
+                resumed = json.loads((output / "run-dashboard.json").read_text())
+                checks = {item["stage"]: item for item in resumed["checks"]}
+                after = {
+                    path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                    for path in source.iterdir()
+                }
+                print(json.dumps({
+                    "returncode": returncode,
+                    "discovery_calls": scout.call_count,
+                    "live_evidence_calls": live_evidence.call_count,
+                    "selector_calls": selector.call_count,
+                    "source_unchanged": before == after,
+                    "conversation_status": checks["conversation_discovery"]["status"],
+                    "admission_status": checks["topic_admission"]["status"],
+                    "evidence_status": checks["evidence_verification"]["status"],
+                    "evidence_route": checks["evidence_verification"]["details"]["acquisition_route"],
+                    "topic_value_status": checks["topic_value"]["status"],
+                }))
+            """
+        )
+        self.assertEqual(
+            result,
+            {
+                "returncode": 2,
+                "discovery_calls": 0,
+                "live_evidence_calls": 0,
+                "selector_calls": 1,
+                "source_unchanged": True,
+                "conversation_status": "PASS",
+                "admission_status": "PASS",
+                "evidence_status": "PASS",
+                "evidence_route": "verified-cache",
+                "topic_value_status": "FAIL",
+            },
+        )
+
+    def test_public_discovery_reuses_verified_evidence_before_topic_value(self) -> None:
         result = _run_installed_smoke(
             """
             import io
@@ -216,7 +381,7 @@ class InstalledObserverSmokeTests(unittest.TestCase):
             result,
             {
                 "returncode": 2,
-                "scout_timeouts": [75, 45],
+                "scout_timeouts": [],
                 "selector_calls": 1,
                 "evidence_status": "PASS",
                 "evidence_route": "verified-cache",
