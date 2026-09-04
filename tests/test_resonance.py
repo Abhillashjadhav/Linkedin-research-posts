@@ -27,10 +27,10 @@ def day() -> dict[str, object]:
 
 def selector_payload(
     *,
-    status: str,
     scores: dict[str, int] | None = None,
+    model_status: str | None = None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "selected_candidate_id": "topic-1",
         "two_line_packaging": "The eval had not run.\nThe gate refused a verdict.",
         "what_happened": "The release gate withheld its verdict.",
@@ -47,9 +47,11 @@ def selector_payload(
             "proof_value": 4,
             "payoff": 4,
         },
-        "status": status,
-        "diagnosis": "The model supplied a status independently of its scores.",
+        "diagnosis": "The supplied packaging follows from the evidence.",
     }
+    if model_status is not None:
+        payload["status"] = model_status
+    return payload
 
 
 class ResonanceThresholdTests(unittest.TestCase):
@@ -105,50 +107,19 @@ class ResonanceThresholdTests(unittest.TestCase):
             )
         )
 
-    def test_status_conflict_reports_both_decisions_and_every_score(self):
-        invoker = Mock(return_value=selector_payload(status="BLOCKED"))
+    def test_python_is_the_only_selector_status_owner(self):
+        invoker = Mock(return_value=selector_payload(model_status="BLOCKED"))
 
-        with self.assertRaises(resonance.SelectorStatusConflict) as raised:
-            resonance.invoke_selector(day(), selected_topic(), invoker=invoker)
+        result = resonance.invoke_selector(day(), selected_topic(), invoker=invoker)
 
-        message = str(raised.exception)
-        self.assertIn("model_status=BLOCKED", message)
-        self.assertIn("computed_status=PASS", message)
-        self.assertIn("total=20/25", message)
-        self.assertIn("recognition=5", message)
-
-    def test_human_guidance_retries_once_and_python_owns_final_status(self):
-        invoker = Mock(
-            side_effect=[
-                selector_payload(status="BLOCKED"),
-                selector_payload(status="BLOCKED"),
-            ]
-        )
-        provider = Mock(
-            return_value=(
-                "Make the authority judgment explicit: a release process must be "
-                "unable to manufacture a verdict when the eval did not run."
-            )
-        )
-
-        result = resonance.invoke_selector(
-            day(),
-            selected_topic(),
-            invoker=invoker,
-            human_guidance_provider=provider,
-        )
-
-        self.assertEqual(invoker.call_count, 2)
-        self.assertEqual(provider.call_count, 1)
+        self.assertEqual(invoker.call_count, 1)
         self.assertEqual(result["status"], "PASS")
-        self.assertEqual(result["model_status"], "BLOCKED")
-        self.assertIs(result["status_normalized"], True)
-        self.assertIs(result["human_guidance_applied"], True)
-        second_task = invoker.call_args_list[1].args[3]
-        self.assertIn("HUMAN_AUTHORITY_GUIDANCE", second_task)
-        self.assertIn("unable to manufacture a verdict", second_task)
+        self.assertEqual(result["status_owner"], "python-deterministic-selector-v1")
+        self.assertEqual(result["shortfalls"], [])
+        self.assertNotIn("status", resonance.SELECTOR_SCHEMA["properties"])
+        self.assertNotIn("status", resonance.SELECTOR_SCHEMA["required"])
 
-    def test_human_guidance_cannot_turn_failing_scores_into_a_pass(self):
+    def test_model_pass_cannot_turn_failing_scores_into_a_pass(self):
         failing = {
             "recognition": 3,
             "attention_trigger": 5,
@@ -156,23 +127,19 @@ class ResonanceThresholdTests(unittest.TestCase):
             "proof_value": 5,
             "payoff": 5,
         }
-        invoker = Mock(
-            side_effect=[
-                selector_payload(status="PASS", scores=failing),
-                selector_payload(status="PASS", scores=failing),
-            ]
-        )
+        invoker = Mock(return_value=selector_payload(scores=failing, model_status="PASS"))
 
-        result = resonance.invoke_selector(
-            day(),
-            selected_topic(),
-            invoker=invoker,
-            human_guidance_provider=Mock(return_value="Preserve the release decision."),
-        )
+        result = resonance.invoke_selector(day(), selected_topic(), invoker=invoker)
 
         self.assertEqual(result["status"], "BLOCKED")
-        self.assertEqual(result["model_status"], "PASS")
-        self.assertIs(result["human_guidance_applied"], True)
+        self.assertEqual(
+            result["shortfalls"],
+            ["recognition=3/5 below 4/5 by 1"],
+        )
+        self.assertEqual(
+            resonance.selector_failure_summary(result),
+            "recognition=3/5 below 4/5 by 1",
+        )
 
 
 class ResonanceProjectionTests(unittest.TestCase):
