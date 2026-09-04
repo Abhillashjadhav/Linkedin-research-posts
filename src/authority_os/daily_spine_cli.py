@@ -49,7 +49,13 @@ DISCOVERY_STAGES = (
     ("drafting", "High-bar drafting"),
     ("final_evals", "Final evals"),
 )
-STAGE_EXCEPTIONS = (workflow.WorkflowError, ValueError, json.JSONDecodeError)
+# Stage boundaries report every ordinary exception, then re-raise it unchanged.
+# KeyboardInterrupt/SystemExit remain outside this boundary.
+STAGE_EXCEPTIONS = (Exception,)
+OBSERVABILITY_CONTRACT = "decision-trace-v1"
+OBSERVABILITY_STATUS = frozenset(
+    {"PASS", "FAIL", "BLOCKED", "NOT_EVALUATED", "RUNNING", "REJECTED", "UNAVAILABLE"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,18 +142,89 @@ def record_drafting_stage(
         "drafting",
         "FAIL",
         f"high-bar drafting exited {result.returncode}: {result.reason}",
+        expected="drafting exits 0 after producing candidates and reaching evaluation",
+        observed=f"exit={result.returncode}; last_error={result.reason}",
         **details,
+    )
+
+
+def execution_identity() -> dict[str, object]:
+    """Describe the exact checkout executing the run without failing the workflow."""
+
+    def git_value(*arguments: str) -> str:
+        try:
+            completed = subprocess.run(
+                ["git", *arguments],
+                cwd=workflow.REPO_ROOT,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return "unavailable"
+        value = completed.stdout.strip()
+        return value if completed.returncode == 0 and value else "unavailable"
+
+    commit = os.environ.get("GITHUB_SHA", "").strip() or git_value("rev-parse", "HEAD")
+    branch = git_value("branch", "--show-current")
+    dirty_output = git_value("status", "--porcelain", "--untracked-files=no")
+    return {
+        "commit": commit,
+        "short_commit": commit[:12] if commit != "unavailable" else commit,
+        "branch": branch,
+        "dirty": dirty_output not in {"", "unavailable"},
+        "observability_contract": OBSERVABILITY_CONTRACT,
+    }
+
+
+def record_run_decision(
+    dashboard: dict[str, object],
+    *,
+    stage: str,
+    decision: str,
+    status: str,
+    expected: object,
+    observed: object,
+    reason: str,
+    subject_id: str = "",
+    artifact: str = "",
+    details: Mapping[str, object] | None = None,
+) -> None:
+    """Append one complete, dashboard-safe explanation of a pipeline decision."""
+
+    if status not in OBSERVABILITY_STATUS:
+        raise workflow.WorkflowError(f"Decision trace has invalid status {status!r}.")
+    decisions = dashboard.get("decisions")
+    if not isinstance(decisions, list):
+        raise workflow.WorkflowError("Run dashboard has an invalid decision trace.")
+    decisions.append(
+        {
+            "sequence": len(decisions) + 1,
+            "stage": stage,
+            "decision": decision,
+            "status": status,
+            "expected": str(expected),
+            "observed": str(observed),
+            "reason": reason,
+            "subject_id": subject_id,
+            "artifact": artifact,
+            "details": dict(details or {}),
+        }
     )
 
 
 def new_run_dashboard(run_id: str = "") -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": run_id,
         "outcome": "RUNNING",
         "stopped_at": None,
+        "execution": execution_identity(),
         "evaluator_versions": evaluator_versions(),
         "surface_scouts": [],
+        "decisions": [],
         "checks": [
             {
                 "stage": stage,
@@ -248,6 +325,228 @@ def surface_diagnostics(folder: Path) -> list[dict[str, object]]:
     return diagnostics
 
 
+def record_surface_decisions(
+    dashboard: dict[str, object],
+    diagnostics: Sequence[Mapping[str, object]],
+) -> None:
+    for item in diagnostics:
+        status = str(item.get("status", "UNAVAILABLE"))
+        record_run_decision(
+            dashboard,
+            stage="conversation_discovery",
+            decision="surface scout returned usable evidence",
+            status="PASS" if status == "OBSERVED" else "UNAVAILABLE",
+            expected="OBSERVED with at least one defensible public signal",
+            observed=f"status={status}; signals={item.get('signal_count', 0)}",
+            reason=str(item.get("reason", "No scout reason was recorded.")),
+            subject_id=str(item.get("surface", "unknown-surface")),
+            details=item,
+        )
+
+
+def record_momentum_decisions(
+    dashboard: dict[str, object],
+    candidates: Sequence[Mapping[str, object]],
+) -> None:
+    for item in candidates:
+        total = item.get("total")
+        observed_axes = int(item.get("observed_axes", 0))
+        passes = (
+            type(total) is int
+            and int(total) >= momentum.MIN_AUTHORITY_MOMENTUM
+            and observed_axes >= momentum.MIN_OBSERVED_AXES
+        )
+        record_run_decision(
+            dashboard,
+            stage="conversation_discovery",
+            decision="conversation-momentum qualification",
+            status="PASS" if passes else "REJECTED",
+            expected=(
+                f"total >= {momentum.MIN_AUTHORITY_MOMENTUM} and "
+                f"observed_axes >= {momentum.MIN_OBSERVED_AXES}"
+            ),
+            observed=f"total={total}; observed_axes={observed_axes}",
+            reason=(
+                "candidate cleared the conversation-momentum floor"
+                if passes
+                else "candidate missed the conversation-momentum floor"
+            ),
+            subject_id=str(item.get("id", item.get("topic", "unknown-topic"))),
+            details={
+                "topic": str(item.get("topic", "")),
+                "total": total,
+                "observed_axes": observed_axes,
+                "authority_fit": item.get("authority_fit"),
+            },
+        )
+
+
+def record_topic_admission_decisions(
+    dashboard: dict[str, object],
+    candidates: Sequence[Mapping[str, object]],
+    admitted: Sequence[Mapping[str, object]],
+    route: str,
+) -> None:
+    admitted_topics = {str(item.get("topic", "")) for item in admitted}
+    for item in candidates:
+        topic = str(item.get("topic", ""))
+        selected = topic in admitted_topics
+        record_run_decision(
+            dashboard,
+            stage="topic_admission",
+            decision="topic admitted to evidence verification",
+            status="PASS" if selected else "REJECTED",
+            expected=(
+                "momentum-qualified, retained-inventory-qualified, or "
+                f"authority_fit >= {MIN_AUTHORITY_FIT_FALLBACK} with "
+                f"observed_axes >= {momentum.MIN_OBSERVED_AXES}"
+            ),
+            observed=(
+                f"selected={selected}; route={route}; momentum_total={item.get('total')}; "
+                f"observed_axes={item.get('observed_axes')}; authority_fit={item.get('authority_fit')}"
+            ),
+            reason=(
+                f"admitted through {route}"
+                if selected
+                else f"not selected by the {route} route"
+            ),
+            subject_id=str(item.get("id", topic or "unknown-topic")),
+        )
+
+
+def record_evidence_decisions(
+    dashboard: dict[str, object],
+    signals: Sequence[Mapping[str, object]],
+) -> None:
+    for item in signals:
+        record_run_decision(
+            dashboard,
+            stage="evidence_verification",
+            decision="signal admitted as body-verified evidence",
+            status="PASS",
+            expected="valid timestamp, inspectable source body, canonical URL, and allowed source quality",
+            observed=(
+                f"source_quality={item.get('source_quality')}; "
+                f"published_at={item.get('published_at')}; url={item.get('canonical_url')}"
+            ),
+            reason="signal passed research-item validation and projection",
+            subject_id=str(item.get("id", "unknown-signal")),
+        )
+
+
+def record_topic_value_decisions(
+    dashboard: dict[str, object],
+    folder: Path,
+    candidates: Sequence[Mapping[str, object]],
+) -> Path:
+    path = base.write_private_json(
+        folder / "topic-value-evaluations.json",
+        {
+            "schema_version": 1,
+            "thresholds": {
+                "reader_relevance": 4,
+                "reader_value": 4,
+                "gravity": 2,
+                "evidence_strength": 3,
+                "authority_fit": 3,
+                "minimum_total": topic_value.TOPIC_VALUE_MIN_TOTAL,
+                "required_booleans": [
+                    "brand_strip_pass",
+                    "feed_value_possible",
+                    "supports_authority_goal",
+                ],
+            },
+            "candidates": list(candidates),
+        },
+    )
+    relative = path.relative_to(workflow.REPO_ROOT).as_posix()
+    expected = (
+        "reader_relevance>=4; reader_value>=4; gravity>=2; evidence_strength>=3; "
+        f"authority_fit>=3; total>={topic_value.TOPIC_VALUE_MIN_TOTAL}; "
+        "brand_strip/feed_value/authority_goal=true"
+    )
+    for item in candidates:
+        scores = item.get("scores")
+        observed_scores = dict(scores) if isinstance(scores, Mapping) else {}
+        status = "PASS" if item.get("status") == "PASS" else "REJECTED"
+        record_run_decision(
+            dashboard,
+            stage="topic_value",
+            decision="candidate clears Topic Value",
+            status=status,
+            expected=expected,
+            observed=(
+                f"scores={observed_scores}; total={item.get('total')}; "
+                f"brand_strip={item.get('brand_strip_pass')}; "
+                f"feed_value={item.get('feed_value_possible')}; "
+                f"authority_goal={item.get('supports_authority_goal')}"
+            ),
+            reason=str(item.get("diagnosis", "No Topic Value diagnosis was recorded.")),
+            subject_id=str(item.get("id", "unknown-topic-value-candidate")),
+            artifact=relative,
+            details={
+                "scores": observed_scores,
+                "total": item.get("total"),
+                "normalization_warnings": item.get("normalization_warnings", []),
+            },
+        )
+    return path
+
+
+def record_thesis_decisions(
+    dashboard: dict[str, object],
+    trace_path: Path,
+) -> None:
+    if not trace_path.exists():
+        return
+    payload = base._private_json(trace_path, "Thesis evaluation trace")
+    if not isinstance(payload, Mapping):
+        return
+    cycles = payload.get("cycles")
+    if not isinstance(cycles, Sequence) or isinstance(cycles, (str, bytes)):
+        return
+    relative = trace_path.relative_to(workflow.REPO_ROOT).as_posix()
+    for cycle in cycles:
+        if not isinstance(cycle, Mapping):
+            continue
+        candidates = cycle.get("candidates")
+        if not isinstance(candidates, Sequence) or isinstance(candidates, (str, bytes)):
+            continue
+        for item in candidates:
+            if not isinstance(item, Mapping):
+                continue
+            scores = item.get("scores")
+            score_map = dict(scores) if isinstance(scores, Mapping) else {}
+            qualifies = item.get("qualifies") is True
+            reasons = item.get("rejection_reasons")
+            reason_values = (
+                [str(value) for value in reasons]
+                if isinstance(reasons, Sequence) and not isinstance(reasons, (str, bytes))
+                else []
+            )
+            record_run_decision(
+                dashboard,
+                stage="thesis_search",
+                decision="thesis clears authority bar",
+                status="PASS" if qualifies else "REJECTED",
+                expected=(
+                    f"total >= {base.MIN_TOTAL}/25 and "
+                    f"simplicity >= {base.MIN_SIMPLICITY}/5"
+                ),
+                observed=(
+                    f"cycle={cycle.get('cycle')}; total={item.get('total')}/25; "
+                    f"simplicity={score_map.get('simplicity')}/5; axes={score_map}"
+                ),
+                reason=(
+                    "cleared every thesis threshold"
+                    if qualifies
+                    else "; ".join(reason_values) or "thesis did not qualify"
+                ),
+                subject_id=str(item.get("id", "unknown-thesis")),
+                artifact=relative,
+            )
+
+
 def mark_run_stage(
     dashboard: dict[str, object],
     stage: str,
@@ -265,7 +564,23 @@ def mark_run_stage(
             check["details"] = details
             if status == "FAIL":
                 dashboard["outcome"] = "FAIL"
-                dashboard["stopped_at"] = stage
+                if dashboard.get("stopped_at") is None:
+                    dashboard["stopped_at"] = stage
+            record_run_decision(
+                dashboard,
+                stage=stage,
+                decision=f"{check.get('label', stage)} stage outcome",
+                status=status,
+                expected=details.get("expected", "stage completes without a blocking error"),
+                observed=details.get("observed", reason),
+                reason=reason,
+                artifact=str(
+                    details.get("evaluation_artifact")
+                    or details.get("log_path")
+                    or ""
+                ),
+                details=details,
+            )
             return
     raise workflow.WorkflowError(f"Run dashboard does not recognise stage {stage!r}.")
 
@@ -281,10 +596,31 @@ def persist_run_dashboard(
     dashboard["baseline"] = _recent_run_baseline(folder)
     path = base.write_private_json(folder / "run-dashboard.json", dashboard)
     print("Run dashboard:")
+    execution = dashboard.get("execution")
+    if isinstance(execution, Mapping):
+        print(
+            "  Execution: "
+            f"branch={execution.get('branch')}; commit={execution.get('short_commit')}; "
+            f"observability={execution.get('observability_contract')}"
+        )
     for check in dashboard["checks"]:  # type: ignore[index]
         print(
             f"  {check['label']}: {check['status']} ({check['reason']})"  # type: ignore[index]
         )
+    stopped_at = dashboard.get("stopped_at")
+    if stopped_at:
+        blocker = next(
+            (
+                item
+                for item in dashboard["checks"]  # type: ignore[index]
+                if isinstance(item, Mapping) and item.get("stage") == stopped_at
+            ),
+            None,
+        )
+        if isinstance(blocker, Mapping):
+            print(
+                f"  FIRST BLOCKER: {blocker.get('label')} — {blocker.get('reason')}"
+            )
     print(f"Run dashboard stored: {path.relative_to(workflow.REPO_ROOT)}.")
     return path
 
@@ -310,6 +646,36 @@ def render_eval_dashboard(
             best_post_score = int(score)
             best_post_artifact = str(row.get("artifact_sha256", ""))
     checks: list[dict[str, object]] = []
+    decisions: list[dict[str, object]] = []
+    for sequence, row in enumerate(rows, start=1):
+        evidence = row.get("evidence")
+        evidence_map = dict(evidence) if isinstance(evidence, Mapping) else {}
+        threshold = evidence_map.get("threshold")
+        score = evidence_map.get("score", evidence_map.get("effective_total"))
+        expected = (
+            f"score >= {threshold} under the locked contract"
+            if threshold is not None
+            else "contract returns PASS under the locked policy"
+        )
+        observed = (
+            f"score={score}; evidence={evidence_map}"
+            if score is not None
+            else f"reason={row.get('reason', 'not recorded')}; evidence={evidence_map}"
+        )
+        decisions.append(
+            {
+                "sequence": sequence,
+                "stage": str(row.get("stage", "evaluation")),
+                "decision": str(row.get("contract", "unknown contract")),
+                "status": str(row.get("status", "NOT_EVALUATED")),
+                "expected": expected,
+                "observed": observed,
+                "reason": str(row.get("reason", "No reason was recorded.")),
+                "subject_id": str(row.get("subject_id", "")),
+                "artifact": str(row.get("artifact_sha256", "")),
+                "details": evidence_map,
+            }
+        )
     scorecards: list[dict[str, object]] = []
     for row in rows:
         if str(row.get("contract", "")) != "critic_total":
@@ -378,7 +744,12 @@ def render_eval_dashboard(
         )
         print(f"  {stage} | {label}: {status} ({reason})")
     scorecards.sort(key=lambda item: (int(item["cycle"]), str(item["candidate_id"])))
-    return {"schema_version": 2, "checks": checks, "critic_scorecards": scorecards}
+    return {
+        "schema_version": 3,
+        "checks": checks,
+        "critic_scorecards": scorecards,
+        "decisions": decisions,
+    }
 
 
 def _parse_timestamp(value: str) -> datetime:
@@ -873,11 +1244,15 @@ def command(args: argparse.Namespace) -> int:
         top_five = momentum.attach_authority_fit(top_five, authority_scores)
     except STAGE_EXCEPTIONS as exc:
         run_dashboard["surface_scouts"] = surface_diagnostics(folder)
+        record_surface_decisions(run_dashboard, run_dashboard["surface_scouts"])  # type: ignore[arg-type]
         mark_run_stage(
             run_dashboard,
             "conversation_discovery",
             "FAIL",
             str(exc),
+            expected="all configured scouts return enough valid evidence to rank candidates",
+            observed=f"{type(exc).__name__}: {exc}",
+            exception_type=type(exc).__name__,
         )
         persist_run_dashboard(folder, run_dashboard)
         persist_browser_dashboard(
@@ -887,6 +1262,8 @@ def command(args: argparse.Namespace) -> int:
         )
         raise
     run_dashboard["surface_scouts"] = surface_diagnostics(folder)
+    record_surface_decisions(run_dashboard, run_dashboard["surface_scouts"])  # type: ignore[arg-type]
+    record_momentum_decisions(run_dashboard, top_five)
     mark_run_stage(
         run_dashboard,
         "conversation_discovery",
@@ -939,6 +1316,12 @@ def command(args: argparse.Namespace) -> int:
 
     eligible, discovery_route = select_topic_scope(top_five, inventory)
     if not eligible:
+        record_topic_admission_decisions(
+            run_dashboard,
+            top_five,
+            (),
+            discovery_route,
+        )
         reason = (
             "No topic cleared either the authority conversation-momentum floor or the "
             "evidence-bounded authority-fit fallback."
@@ -953,6 +1336,12 @@ def command(args: argparse.Namespace) -> int:
         raise workflow.WorkflowError(
             f"{reason} No thesis was generated."
         )
+    record_topic_admission_decisions(
+        run_dashboard,
+        top_five,
+        eligible,
+        discovery_route,
+    )
     mark_run_stage(
         run_dashboard,
         "topic_admission",
@@ -980,6 +1369,9 @@ def command(args: argparse.Namespace) -> int:
             "evidence_verification",
             "FAIL",
             str(exc),
+            expected="3-7 research signals pass timestamp, source-body, URL, and source-quality validation",
+            observed=f"{type(exc).__name__}: {exc}",
+            exception_type=type(exc).__name__,
         )
         persist_run_dashboard(folder, run_dashboard)
         persist_browser_dashboard(
@@ -988,6 +1380,7 @@ def command(args: argparse.Namespace) -> int:
             v1_completion._read_jsonl(ledger_path)[ledger_start:],
         )
         raise
+    record_evidence_decisions(run_dashboard, raw_signals)
     mark_run_stage(
         run_dashboard,
         "evidence_verification",
@@ -996,11 +1389,33 @@ def command(args: argparse.Namespace) -> int:
         signal_ids=[str(item["id"]) for item in raw_signals],
     )
 
+    topic_value_trace_path = folder / "topic-value-evaluations.json"
     try:
-        topic_value_candidates = topic_value.invoke_discovery_selector(profile, raw_signals)
+        topic_value_candidates = topic_value.invoke_discovery_selector(
+            profile,
+            raw_signals,
+            observer=lambda candidates: record_topic_value_decisions(
+                run_dashboard,
+                folder,
+                candidates,
+            ),
+        )
         signals = topic_value.project_discovery_signals(raw_signals, topic_value_candidates)
     except STAGE_EXCEPTIONS as exc:
-        mark_run_stage(run_dashboard, "topic_value", "FAIL", str(exc))
+        mark_run_stage(
+            run_dashboard,
+            "topic_value",
+            "FAIL",
+            str(exc),
+            expected="at least one grounded candidate clears every locked Topic Value rule",
+            observed=f"{type(exc).__name__}: {exc}",
+            exception_type=type(exc).__name__,
+            evaluation_artifact=(
+                topic_value_trace_path.relative_to(workflow.REPO_ROOT).as_posix()
+                if topic_value_trace_path.exists()
+                else ""
+            ),
+        )
         persist_run_dashboard(folder, run_dashboard)
         persist_browser_dashboard(
             folder,
@@ -1021,6 +1436,7 @@ def command(args: argparse.Namespace) -> int:
             }
             for item in topic_value_candidates
         ],
+        evaluation_artifact=topic_value_trace_path.relative_to(workflow.REPO_ROOT).as_posix(),
     )
     topic_value_package = base.write_private_json(
         folder / "topic-value.json",
@@ -1060,6 +1476,7 @@ def command(args: argparse.Namespace) -> int:
             trace_path=thesis_trace_path,
         )
     except STAGE_EXCEPTIONS as exc:
+        record_thesis_decisions(run_dashboard, thesis_trace_path)
         trace_details: dict[str, object] = {}
         if thesis_trace_path.exists():
             trace_details["evaluation_artifact"] = thesis_trace_path.relative_to(
@@ -1070,6 +1487,12 @@ def command(args: argparse.Namespace) -> int:
             "thesis_search",
             "FAIL",
             str(exc),
+            expected=(
+                f"at least one thesis scores >= {base.MIN_TOTAL}/25 with "
+                f"simplicity >= {base.MIN_SIMPLICITY}/5"
+            ),
+            observed=f"{type(exc).__name__}: {exc}",
+            exception_type=type(exc).__name__,
             **trace_details,
         )
         persist_run_dashboard(folder, run_dashboard)
@@ -1079,6 +1502,7 @@ def command(args: argparse.Namespace) -> int:
             v1_completion._read_jsonl(ledger_path)[ledger_start:],
         )
         raise
+    record_thesis_decisions(run_dashboard, thesis_trace_path)
     mark_run_stage(
         run_dashboard,
         "thesis_search",
@@ -1164,6 +1588,19 @@ def command(args: argparse.Namespace) -> int:
         print(f"Draft command: {draft}")
     if getattr(args, "generate_post", False):
         selected = draft_commands[0]
+        record_run_decision(
+            run_dashboard,
+            stage="drafting",
+            decision="thesis selected for drafting",
+            status="PASS",
+            expected="highest-ranked thesis that cleared the locked authority bar",
+            observed=(
+                f"candidate={selected[0]['id']}; total={selected[0]['total']}/25; "
+                f"simplicity={selected[0]['scores']['simplicity']}/5"
+            ),
+            reason="highest qualifying thesis selected deterministically",
+            subject_id=str(selected[0]["id"]),
+        )
         guidance = workflow.load_voice_guidance()
         anchors = [
             key for key, value in guidance.items()

@@ -186,6 +186,30 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual(by_stage["thesis_search"]["status"], "FAIL")
         self.assertEqual(by_stage["drafting"]["status"], "NOT_EVALUATED")
 
+    def test_first_blocker_is_not_overwritten_by_a_downstream_failure(self) -> None:
+        dashboard = daily_spine_cli.new_run_dashboard()
+        daily_spine_cli.mark_run_stage(
+            dashboard,
+            "drafting",
+            "FAIL",
+            "ERROR: writer contract mismatch",
+            expected="valid writer output",
+            observed="invalid writer output",
+        )
+        daily_spine_cli.mark_run_stage(
+            dashboard,
+            "final_evals",
+            "FAIL",
+            "Critic was not reached",
+        )
+
+        self.assertEqual(dashboard["stopped_at"], "drafting")
+        self.assertEqual(len(dashboard["decisions"]), 2)
+        first = dashboard["decisions"][0]
+        self.assertEqual(first["expected"], "valid writer output")
+        self.assertEqual(first["observed"], "invalid writer output")
+        self.assertIn("writer contract mismatch", first["reason"])
+
     def test_eval_dashboard_marks_unreached_stages_explicitly(self) -> None:
         dashboard = daily_spine_cli.render_eval_dashboard(
             [
@@ -205,6 +229,32 @@ class SpineCardTests(unittest.TestCase):
             "NOT_EVALUATED",
         )
         self.assertEqual(by_contract["hook_strength"]["category"], "post_quality")
+
+    def test_eval_dashboard_preserves_each_ledger_decision_with_threshold(self) -> None:
+        dashboard = daily_spine_cli.render_eval_dashboard(
+            [
+                {
+                    "stage": "quality-cycle-1",
+                    "contract": "critic_total",
+                    "status": "FAIL",
+                    "reason": "critic-score-21-of-25",
+                    "subject_id": "candidate-1",
+                    "evidence": {"score": 21, "threshold": 22},
+                },
+                {
+                    "stage": "quality-cycle-2",
+                    "contract": "critic_total",
+                    "status": "PASS",
+                    "reason": "critic-score-24-of-25",
+                    "subject_id": "candidate-1",
+                    "evidence": {"score": 24, "threshold": 22},
+                },
+            ]
+        )
+
+        self.assertEqual(len(dashboard["decisions"]), 2)
+        self.assertEqual(dashboard["decisions"][0]["expected"], "score >= 22 under the locked contract")
+        self.assertIn("score=21", dashboard["decisions"][0]["observed"])
 
     def test_eval_dashboard_keeps_best_observed_post_score_across_cycles(self) -> None:
         dashboard = daily_spine_cli.render_eval_dashboard(

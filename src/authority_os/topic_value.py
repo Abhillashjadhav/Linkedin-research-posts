@@ -359,6 +359,7 @@ def invoke_discovery_selector(
     signals: Sequence[Mapping[str, object]],
     *,
     invoker: StageInvoker = _default_invoker,
+    observer: Callable[[Sequence[Mapping[str, object]]], None] | None = None,
 ) -> list[dict[str, object]]:
     target_reader = str(profile.get("target_audience", "")).strip()
     authority_goal = str(profile.get("authority_goal", "")).strip()
@@ -369,6 +370,8 @@ def invoke_discovery_selector(
         count=3,
         invoker=invoker,
     )
+    if observer is not None:
+        observer(candidates)
     blocked = [candidate for candidate in candidates if candidate["status"] != "PASS"]
     passing = [candidate for candidate in candidates if candidate["status"] == "PASS"]
     if not passing:

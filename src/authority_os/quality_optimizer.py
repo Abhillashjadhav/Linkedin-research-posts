@@ -140,6 +140,30 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
             subject_id=candidate.candidate_id,
             artifact_sha256=v1_completion._sha256_text(candidate.text),  # type: ignore[attr-defined]
         )
+        artifact = v1_completion._sha256_text(candidate.text)  # type: ignore[attr-defined]
+        for gate_name, gate_status in sorted(candidate.gates.items()):
+            normalized = str(gate_status)
+            decision_status = (
+                "PASS"
+                if normalized in {"PASS", "NOT_REQUIRED"}
+                else "FAIL"
+                if normalized == "FAIL"
+                else "BLOCKED"
+            )
+            failure_codes = list(candidate.gate_reasons) if decision_status != "PASS" else []
+            v1_completion.record_decision(
+                {
+                    "contract": f"gate_{gate_name}",
+                    "mode": "enforce",
+                    "status": decision_status,
+                    "reason": f"{gate_name}-{normalized.casefold().replace('_', '-')}",
+                    "observed_status": normalized,
+                    "failure_codes": failure_codes,
+                },
+                stage=f"quality-cycle-{cycle}-gates",
+                subject_id=candidate.candidate_id,
+                artifact_sha256=artifact,
+            )
     return attempt
 
 
