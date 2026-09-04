@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+import io
+import os
+import stat
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -105,6 +110,61 @@ def cards() -> list[dict[str, object]]:
 
 
 class SpineCardTests(unittest.TestCase):
+    def test_failed_child_reason_reaches_drafting_dashboard_and_private_log(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            folder = Path(temporary)
+            output = io.StringIO()
+            with redirect_stdout(output):
+                result = daily_spine_cli.run_drafting_child(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import sys; print('ERROR: old'); print('working'); print('ERROR: x'); sys.exit(2)",
+                    ],
+                    cwd=workflow.REPO_ROOT,
+                    folder=folder,
+                )
+            dashboard = daily_spine_cli.new_run_dashboard()
+            daily_spine_cli.record_drafting_stage(
+                dashboard,
+                result,
+                post_evaluated=False,
+            )
+            drafting = next(
+                item for item in dashboard["checks"] if item["stage"] == "drafting"
+            )
+            log = folder / "drafting.log"
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("ERROR: x", drafting["reason"])
+            self.assertIn("ERROR: x", output.getvalue())
+            self.assertEqual(
+                log.read_text(encoding="utf-8"),
+                "ERROR: old\nworking\nERROR: x\n",
+            )
+            self.assertEqual(stat.S_IMODE(os.stat(log).st_mode), 0o600)
+            self.assertEqual(dashboard["drafting"]["captured_tail"][-1], "ERROR: x")
+
+    def test_successful_child_still_marks_drafting_pass(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            result = daily_spine_cli.run_drafting_child(
+                [sys.executable, "-c", "print('completed')"],
+                cwd=workflow.REPO_ROOT,
+                folder=Path(temporary),
+            )
+            dashboard = daily_spine_cli.new_run_dashboard()
+            daily_spine_cli.record_drafting_stage(
+                dashboard,
+                result,
+                post_evaluated=False,
+            )
+        drafting = next(
+            item for item in dashboard["checks"] if item["stage"] == "drafting"
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(drafting["status"], "PASS")
+
     def test_run_dashboard_names_first_failed_stage_and_unreached_downstream(self) -> None:
         dashboard = daily_spine_cli.new_run_dashboard()
         daily_spine_cli.mark_run_stage(
