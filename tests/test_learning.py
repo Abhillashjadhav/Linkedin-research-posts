@@ -174,7 +174,7 @@ class WeeklyLearningTests(unittest.TestCase):
                 "critic_raw_total": 18,
                 "critic_effective_total": 18,
                 "critic_hook_cap_applied": False,
-                "critic_band": "below-critic-bar",
+                "critic_band": "advance-to-gates",
             }
         )
 
