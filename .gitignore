@@ -1,5 +1,6 @@
 # Local/private inputs and databases
 data/private/**
+drafting.log
 *.sqlite
 *.sqlite-*
 *.db

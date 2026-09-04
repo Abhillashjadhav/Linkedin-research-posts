@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+import io
+import os
+import stat
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -105,6 +110,61 @@ def cards() -> list[dict[str, object]]:
 
 
 class SpineCardTests(unittest.TestCase):
+    def test_failed_child_reason_reaches_drafting_dashboard_and_private_log(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            folder = Path(temporary)
+            output = io.StringIO()
+            with redirect_stdout(output):
+                result = daily_spine_cli.run_drafting_child(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import sys; print('ERROR: old'); print('working'); print('ERROR: x'); sys.exit(2)",
+                    ],
+                    cwd=workflow.REPO_ROOT,
+                    folder=folder,
+                )
+            dashboard = daily_spine_cli.new_run_dashboard()
+            daily_spine_cli.record_drafting_stage(
+                dashboard,
+                result,
+                post_evaluated=False,
+            )
+            drafting = next(
+                item for item in dashboard["checks"] if item["stage"] == "drafting"
+            )
+            log = folder / "drafting.log"
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("ERROR: x", drafting["reason"])
+            self.assertIn("ERROR: x", output.getvalue())
+            self.assertEqual(
+                log.read_text(encoding="utf-8"),
+                "ERROR: old\nworking\nERROR: x\n",
+            )
+            self.assertEqual(stat.S_IMODE(os.stat(log).st_mode), 0o600)
+            self.assertEqual(dashboard["drafting"]["captured_tail"][-1], "ERROR: x")
+
+    def test_successful_child_still_marks_drafting_pass(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            result = daily_spine_cli.run_drafting_child(
+                [sys.executable, "-c", "print('completed')"],
+                cwd=workflow.REPO_ROOT,
+                folder=Path(temporary),
+            )
+            dashboard = daily_spine_cli.new_run_dashboard()
+            daily_spine_cli.record_drafting_stage(
+                dashboard,
+                result,
+                post_evaluated=False,
+            )
+        drafting = next(
+            item for item in dashboard["checks"] if item["stage"] == "drafting"
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(drafting["status"], "PASS")
+
     def test_run_dashboard_names_first_failed_stage_and_unreached_downstream(self) -> None:
         dashboard = daily_spine_cli.new_run_dashboard()
         daily_spine_cli.mark_run_stage(
@@ -126,6 +186,30 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual(by_stage["thesis_search"]["status"], "FAIL")
         self.assertEqual(by_stage["drafting"]["status"], "NOT_EVALUATED")
 
+    def test_first_blocker_is_not_overwritten_by_a_downstream_failure(self) -> None:
+        dashboard = daily_spine_cli.new_run_dashboard()
+        daily_spine_cli.mark_run_stage(
+            dashboard,
+            "drafting",
+            "FAIL",
+            "ERROR: writer contract mismatch",
+            expected="valid writer output",
+            observed="invalid writer output",
+        )
+        daily_spine_cli.mark_run_stage(
+            dashboard,
+            "final_evals",
+            "FAIL",
+            "Critic was not reached",
+        )
+
+        self.assertEqual(dashboard["stopped_at"], "drafting")
+        self.assertEqual(len(dashboard["decisions"]), 2)
+        first = dashboard["decisions"][0]
+        self.assertEqual(first["expected"], "valid writer output")
+        self.assertEqual(first["observed"], "invalid writer output")
+        self.assertIn("writer contract mismatch", first["reason"])
+
     def test_eval_dashboard_marks_unreached_stages_explicitly(self) -> None:
         dashboard = daily_spine_cli.render_eval_dashboard(
             [
@@ -145,6 +229,32 @@ class SpineCardTests(unittest.TestCase):
             "NOT_EVALUATED",
         )
         self.assertEqual(by_contract["hook_strength"]["category"], "post_quality")
+
+    def test_eval_dashboard_preserves_each_ledger_decision_with_threshold(self) -> None:
+        dashboard = daily_spine_cli.render_eval_dashboard(
+            [
+                {
+                    "stage": "quality-cycle-1",
+                    "contract": "critic_total",
+                    "status": "FAIL",
+                    "reason": "critic-score-21-of-25",
+                    "subject_id": "candidate-1",
+                    "evidence": {"score": 21, "threshold": 22},
+                },
+                {
+                    "stage": "quality-cycle-2",
+                    "contract": "critic_total",
+                    "status": "PASS",
+                    "reason": "critic-score-24-of-25",
+                    "subject_id": "candidate-1",
+                    "evidence": {"score": 24, "threshold": 22},
+                },
+            ]
+        )
+
+        self.assertEqual(len(dashboard["decisions"]), 2)
+        self.assertEqual(dashboard["decisions"][0]["expected"], "score >= 22 under the locked contract")
+        self.assertIn("score=21", dashboard["decisions"][0]["observed"])
 
     def test_eval_dashboard_keeps_best_observed_post_score_across_cycles(self) -> None:
         dashboard = daily_spine_cli.render_eval_dashboard(

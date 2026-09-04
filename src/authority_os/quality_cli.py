@@ -466,17 +466,22 @@ def command_draft(args: object) -> int:
 
 COMMANDS = dict(legacy_cli.COMMANDS)
 COMMANDS["draft"] = command_draft
+LAST_ERROR_REASON = ""
 
 
 def main(argv: list[str] | None = None) -> int:
+    global LAST_ERROR_REASON
+    LAST_ERROR_REASON = ""
     parser = legacy_cli.build_parser()
     args = parser.parse_args(argv)
     try:
         return COMMANDS[args.command](args)
     except sqlite3.Error:
-        print("ERROR: private research database is unavailable or corrupt.", file=sys.stderr)
+        LAST_ERROR_REASON = "private research database is unavailable or corrupt."
+        print(f"ERROR: {LAST_ERROR_REASON}", file=sys.stderr)
         return 2
     except (workflow.WorkflowError, ValueError, json.JSONDecodeError) as exc:
+        LAST_ERROR_REASON = str(exc)
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

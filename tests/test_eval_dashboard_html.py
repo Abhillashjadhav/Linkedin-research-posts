@@ -9,6 +9,47 @@ from authority_os import eval_dashboard_html
 
 
 class EvalDashboardHtmlTests(unittest.TestCase):
+    def test_empty_scorecard_says_drafting_stopped_before_critic(self) -> None:
+        rendered = eval_dashboard_html.render_dashboard(
+            {
+                "outcome": "FAIL",
+                "checks": [
+                    {
+                        "stage": "drafting",
+                        "label": "High-bar drafting",
+                        "status": "FAIL",
+                        "reason": "ERROR: writer failed",
+                    }
+                ],
+            },
+            {"checks": [], "critic_scorecards": []},
+        )
+        self.assertIn(
+            "Drafting stopped before the Critic ran. See FIRST BLOCKER.",
+            rendered,
+        )
+        self.assertNotIn("The Critic ran but", rendered)
+
+    def test_empty_scorecard_says_critic_returned_no_valid_scorecard(self) -> None:
+        rendered = eval_dashboard_html.render_dashboard(
+            {
+                "outcome": "FAIL",
+                "checks": [
+                    {
+                        "stage": "drafting",
+                        "label": "High-bar drafting",
+                        "status": "PASS",
+                        "reason": "draft candidates reached evaluation",
+                    }
+                ],
+            },
+            {"checks": [], "critic_scorecards": []},
+        )
+        self.assertIn(
+            "The Critic ran but returned no valid 1–5 scorecard.",
+            rendered,
+        )
+
     def test_render_names_first_blocker_and_keeps_missing_checks_visible(self) -> None:
         rendered = eval_dashboard_html.render_dashboard(
             {
@@ -30,6 +71,46 @@ class EvalDashboardHtmlTests(unittest.TestCase):
         self.assertIn("anti-slop failed", rendered)
         self.assertIn("NOT_EVALUATED", rendered)
         self.assertIn("linkedin-test-run", rendered)
+
+    def test_render_shows_execution_identity_and_complete_decision_trace(self) -> None:
+        rendered = eval_dashboard_html.render_dashboard(
+            {
+                "run_id": "linkedin-observed-run",
+                "outcome": "FAIL",
+                "execution": {
+                    "commit": "f6d5fce397ce108d482132edb6c15acc9195dba3",
+                    "branch": "main",
+                    "dirty": False,
+                    "observability_contract": "decision-trace-v1",
+                },
+                "decisions": [
+                    {
+                        "stage": "topic_value",
+                        "decision": "candidate clears Topic Value",
+                        "status": "REJECTED",
+                        "expected": "reader relevance >= 4",
+                        "observed": "reader relevance = 3",
+                        "reason": "reader relevance missed the floor",
+                        "subject_id": "topic-2",
+                        "artifact": "data/private/run/topic-value-evaluations.json",
+                    }
+                ],
+                "checks": [],
+            },
+            {"checks": [], "decisions": []},
+        )
+
+        for expected in (
+            "Exact code that ran",
+            "f6d5fce397ce108d482132edb6c15acc9195dba3",
+            "decision-trace-v1",
+            "Expected rule, observed value, and exact reason",
+            "reader relevance &gt;= 4",
+            "reader relevance = 3",
+            "topic-2",
+            "REJECTED",
+        ):
+            self.assertIn(expected, rendered)
 
     def test_render_escapes_run_content(self) -> None:
         rendered = eval_dashboard_html.render_dashboard(

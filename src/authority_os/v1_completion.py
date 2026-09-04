@@ -259,6 +259,7 @@ def _decision_row(
         "band",
         "hook_cap_applied",
         "finding_count",
+        "observed_status",
     ):
         value = decision.get(key)
         if isinstance(value, (str, int, float, bool)) or value is None:
