@@ -13,6 +13,7 @@ from pathlib import Path
 
 from . import (
     __version__,
+    eval_package,
     learning,
     package as approval_package,
     performance,
@@ -169,6 +170,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to the separate Abhillashjadhav/no-ai-slop eval.md.",
     )
     _add_common(draft)
+
+    eval_parser = subparsers.add_parser(
+        "eval-package",
+        help="Re-run the current Critic and final evals on a frozen package.",
+    )
+    eval_parser.add_argument(
+        "--package",
+        type=_unresolved_path,
+        required=True,
+        help="Repository-local frozen approval package folder.",
+    )
+    eval_parser.add_argument("--strategy-input", type=_path, required=True)
+    eval_parser.add_argument("--evidence-manifest", type=_unresolved_path, required=True)
+    eval_parser.add_argument("--db", type=_unresolved_path, required=True)
+    eval_parser.add_argument("--allow-model-egress", action="store_true")
+    eval_parser.add_argument("--proof-manifest", type=_unresolved_path)
+    eval_parser.add_argument(
+        "--candidate",
+        type=_nonblank,
+        help="Evaluate one exact candidate ID; default is every frozen candidate.",
+    )
 
     research = subparsers.add_parser("research", help="Import or validate research signals.")
     research.add_argument(
@@ -1115,6 +1137,7 @@ COMMANDS = {
     "doctor": command_doctor,
     "privacy-check": command_privacy_check,
     "draft": command_draft,
+    "eval-package": eval_package.command,
     "research": command_research,
     "record-performance": command_record_performance,
     "weekly-review": command_weekly_review,
