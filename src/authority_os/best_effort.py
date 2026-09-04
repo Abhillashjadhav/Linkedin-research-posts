@@ -6,7 +6,7 @@ import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from . import anti_slop, daily_cli, v1_completion, workflow
+from . import acceptance_policy, anti_slop, daily_cli, v1_completion, workflow
 
 
 OUTPUT_ENV = "LINKEDIN_OS_BEST_EFFORT_OUTPUT"
@@ -75,16 +75,22 @@ def _shortfalls(
     total = int(getattr(candidate, "effective_total", 0))
     if total < 24:
         add("target_quality", f"observed {total}/25; target 24/25")
-    if total < 22:
-        add("critic_total", f"observed {total}/25; required at least 22/25")
+    if total < acceptance_policy.ACCEPTABLE_QUALITY_FLOOR:
+        add(
+            "critic_total",
+            f"observed {total}/25; required at least "
+            f"{acceptance_policy.ACCEPTABLE_QUALITY_FLOOR}/25; shortfall "
+            f"{acceptance_policy.ACCEPTABLE_QUALITY_FLOOR - total}",
+        )
 
     axes = getattr(candidate, "axes", {})
     if isinstance(axes, Mapping):
-        for axis in workflow.CRITIC_AXES:
-            value = int(axes.get(axis, 0))
-            required = 5 if axis == "hook_strength" else 4
-            if value < required:
-                add(axis, f"observed {value}/5; required at least {required}/5")
+        for axis, detail in acceptance_policy.axis_shortfalls(axes).items():
+            add(
+                axis,
+                f"observed {detail['observed']}/5; required at least "
+                f"{detail['required']}/5; shortfall {detail['shortfall']}",
+            )
 
     findings = anti_slop.audit(str(getattr(candidate, "text", "")))
     if findings:
@@ -137,13 +143,15 @@ def render(
     ] if isinstance(gates, Mapping) else []
     passed.append("- `privacy` — PASS; private path enforced and file mode is 0o600")
     total = int(getattr(candidate, "effective_total", 0))
-    if total >= 22:
-        passed.append(f"- `critic_total` — PASS; {total}/25 meets the 22/25 floor")
+    if total >= acceptance_policy.ACCEPTABLE_QUALITY_FLOOR:
+        passed.append(
+            f"- `critic_total` — PASS; {total}/25 meets the "
+            f"{acceptance_policy.ACCEPTABLE_QUALITY_FLOOR}/25 floor"
+        )
     axes = getattr(candidate, "axes", {})
     if isinstance(axes, Mapping):
-        for axis in workflow.CRITIC_AXES:
+        for axis, required in acceptance_policy.AXIS_FLOORS.items():
             value = int(axes.get(axis, 0))
-            required = 5 if axis == "hook_strength" else 4
             if value >= required:
                 passed.append(
                     f"- `{axis}` — PASS; {value}/5 meets the {required}/5 floor"

@@ -56,8 +56,9 @@ class BestEffortTests(unittest.TestCase):
             self.assertIn("BEST_EFFORT — NOT READY_FOR_HUMAN_REVIEW", rendered)
             self.assertIn("A grounded candidate that remains private.", rendered)
             self.assertIn("`honesty` — PASS", rendered)
-            self.assertIn("`critic_total` — observed 20/25", rendered)
-            self.assertIn("`hook_strength` — observed 4/5", rendered)
+            self.assertIn("`critic_total` — PASS; 20/25 meets the 18/25 floor", rendered)
+            self.assertIn("`target_quality` — observed 20/25; target 24/25", rendered)
+            self.assertIn("`hook_strength` — PASS; 4/5 meets the 4/5 floor", rendered)
             self.assertEqual(stat.S_IMODE(written.stat().st_mode), 0o600)
             privacy = record.call_args.args[0]
             self.assertEqual(privacy["contract"], "gate_privacy")

@@ -31,6 +31,9 @@ EVAL_CONTRACTS = (
     ("critic_reproducibility", "Critic", "score reproducibility"),
     ("critic_total", "Post quality", "Critic total"),
     ("hook_strength", "Post quality", "hook strength"),
+    ("middle_escalation", "Post quality", "middle escalation"),
+    ("earned_closer", "Post quality", "earned closer"),
+    ("specificity_and_source_quality", "Post quality", "specificity and source quality"),
     ("voice_fidelity", "Post quality", "voice fidelity"),
     ("anti_slop", "Post quality", "anti-AI-slop"),
     ("candidate_acceptance", "Post quality", "candidate acceptance"),
@@ -38,7 +41,18 @@ EVAL_CONTRACTS = (
     ("reader_attention", "Resonance", "reader attention"),
 )
 POST_QUALITY_CONTRACTS = frozenset(
-    {"critic_total", "hook_strength", "voice_fidelity", "anti_slop", "candidate_acceptance", "solution_plausibility", "reader_attention"}
+    {
+        "critic_total",
+        "hook_strength",
+        "middle_escalation",
+        "earned_closer",
+        "specificity_and_source_quality",
+        "voice_fidelity",
+        "anti_slop",
+        "candidate_acceptance",
+        "solution_plausibility",
+        "reader_attention",
+    }
 )
 DISCOVERY_STAGES = (
     ("conversation_discovery", "Conversation discovery"),
@@ -771,7 +785,7 @@ def render_eval_dashboard(
                 "candidate_id": str(row.get("subject_id", "")),
                 "status": str(row.get("status", "NOT_EVALUATED")),
                 "total": int(evidence.get("score", 0)),
-                "threshold": int(evidence.get("threshold", 22)),
+                "threshold": int(evidence.get("threshold", 18)),
                 "axes": {axis: int(axes.get(axis, 0)) for axis in workflow.CRITIC_AXES},
                 "failure_codes": failure_codes,
                 "failed_gates": dict(evidence.get("gates", {})) if isinstance(evidence.get("gates"), Mapping) else {},

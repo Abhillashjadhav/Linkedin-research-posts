@@ -63,6 +63,11 @@ class ProductionBoundaryTests(unittest.TestCase):
             if line.strip() and not line.lstrip().startswith("#")
         ]
         self.assertEqual(active, [])
+        hook_source = (
+            ROOT / "src" / "authority_os" / "hook_stake.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("import wordfreq", hook_source)
+        self.assertNotIn("from wordfreq", hook_source)
 
     def test_ci_runs_aggregate_check_without_schedule_or_write_permission(self) -> None:
         config = (ROOT / ".github" / "workflows" / "test.yml").read_text(

@@ -118,7 +118,7 @@ def render_dashboard(
             for axis in axis_order
             if isinstance(item.get("axes"), Mapping)
         )
-        + f'<td><strong>{int(item.get("total", 0))}/25</strong><small> bar {int(item.get("threshold", 22))}</small></td>'
+        + f'<td><strong>{int(item.get("total", 0))}/25</strong><small> bar {int(item.get("threshold", 18))}</small></td>'
         + f'<td><span class="status {_status(item.get("status")).casefold()}">{_safe(item.get("status"))}</span></td>'
         + f'<td>{_safe(" | ".join(str(value) for value in item.get("failure_codes", [])), "No Critic or gate failure recorded")}</td>'
         + "</tr>"

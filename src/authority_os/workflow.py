@@ -27,6 +27,7 @@ DEFAULT_OUTPUTS = REPO_ROOT / "outputs"
 DEFAULT_PRIVATE_DATA = REPO_ROOT / "data" / "private"
 DEFAULT_SAMPLE_DATA = REPO_ROOT / "data" / "samples"
 DEFAULT_FIXTURE_PROOF = REPO_ROOT / "data" / "samples" / "proof-fixture.json"
+CRITIC_RUBRIC_PATH = REPO_ROOT / "config" / "critic-rubric-v2.json"
 VOICE_ANCHOR_PATHS = {
     "voice_guide": REPO_ROOT / "data" / "voice" / "voice-guide.md",
     "performance_patterns": REPO_ROOT
@@ -2001,20 +2002,29 @@ def invoke_writer(
 
 
 def critic_scoring_system_prompt() -> str:
-    """Load only the recovered score rubric, excluding later binary gates."""
+    """Load only v2's five scored axes, excluding every binary gate."""
 
-    path = REPO_ROOT / ".claude" / "agents" / "critic.md"
     try:
-        content = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise WorkflowError("Critic rubric is unavailable.") from exc
-    start_marker = "## Recovered 25-point rubric"
-    end_marker = "## Binary gates"
-    start = content.find(start_marker)
-    end = content.find(end_marker)
-    if start < 0 or end <= start:
-        raise WorkflowError("Critic rubric boundaries are malformed.")
-    rubric = content[start:end].strip()
+        payload = json.loads(CRITIC_RUBRIC_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise WorkflowError("Critic v2 rubric is unavailable.") from exc
+    if not isinstance(payload, Mapping) or payload.get("schema_version") != 2:
+        raise WorkflowError("Critic v2 rubric is malformed.")
+    axes = payload.get("axes")
+    if not isinstance(axes, Mapping) or set(axes) != set(CRITIC_AXES):
+        raise WorkflowError("Critic v2 rubric axes do not match runtime axes.")
+    lines = [f"# Critic behavioral anchors ({payload.get('rubric_id', 'v2')})"]
+    for axis in CRITIC_AXES:
+        levels = axes.get(axis)
+        if not isinstance(levels, Mapping) or any(
+            not isinstance(levels.get(str(level)), str)
+            or not str(levels[str(level)]).strip()
+            for level in range(1, 6)
+        ):
+            raise WorkflowError(f"Critic v2 axis {axis!r} needs anchors 1-5.")
+        lines.append(f"\n## {axis.replace('_', ' ')}")
+        lines.extend(f"{level}: {levels[str(level)]}" for level in range(1, 6))
+    rubric = "\n".join(lines)
     return (
         f"{rubric}\n\n"
         "Score only. Return one structured response containing a scorecards array with the "
@@ -2072,6 +2082,27 @@ def _critic_candidate_projection(
             }
         )
     return projected
+
+
+def enforce_pre_critic_voice_gate(
+    candidates: Sequence[Mapping[str, object]],
+) -> None:
+    """Reject off-register hook language before any candidate reaches the Critic."""
+
+    from . import hook_stake
+
+    projected = _critic_candidate_projection(candidates)
+    failures: list[str] = []
+    for candidate in projected:
+        hook = hook_stake.hook_of(str(candidate["text"]))
+        words = hook_stake.off_register_words(hook)
+        if words:
+            failures.append(f"{candidate['id']}: {', '.join(words)}")
+    if failures:
+        raise WorkflowError(
+            "Pre-Critic voice gate rejected off-register hook language: "
+            + " | ".join(failures)
+        )
 
 
 def build_critic_prompt(

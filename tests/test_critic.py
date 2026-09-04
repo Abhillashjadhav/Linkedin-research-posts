@@ -566,10 +566,11 @@ class CriticPromptTests(unittest.TestCase):
         self.brief = strategy_brief()
         self.evidence = evidence_records()
 
-    def test_system_prompt_uses_recovered_rubric_but_excludes_later_gates(self) -> None:
+    def test_system_prompt_uses_v2_rubric_but_excludes_binary_gates(self) -> None:
         prompt = workflow.critic_scoring_system_prompt()
         folded = prompt.casefold()
-        self.assertIn("recovered 25-point rubric", folded)
+        self.assertIn("linkedin-authority-critic-v2", folded)
+        self.assertIn("working standard", folded)
         for label in (
             "hook strength",
             "middle escalation",
@@ -579,7 +580,6 @@ class CriticPromptTests(unittest.TestCase):
         ):
             with self.subTest(label=label):
                 self.assertIn(label, folded)
-        self.assertRegex(folded, r"hook 3 or below caps the total at 18")
         for deferred in (
             "binary gates",
             "authority conversion",
@@ -593,6 +593,26 @@ class CriticPromptTests(unittest.TestCase):
         self.assertNotRegex(instructions, r"\bgates?\b")
         self.assertNotRegex(instructions, r"\b(?:ready|drop|proof)\b")
         self.assertNotIn("proof gate", folded)
+
+    def test_pre_critic_voice_gate_scores_both_hook_lines(self) -> None:
+        candidates = candidate_set()
+        candidates[0]["text"] = (
+            "A friend at a frontier AI lab earns nearly a million dollars.\n"
+            "The role pays just shy of that mark.\n\nBody text."
+        )
+        with self.assertRaisesRegex(
+            workflow.WorkflowError,
+            r"candidate-1: shy of",
+        ):
+            workflow.enforce_pre_critic_voice_gate(candidates)
+
+    def test_pre_critic_voice_gate_allows_industry_and_product_names(self) -> None:
+        candidates = candidate_set()
+        candidates[0]["text"] = (
+            "AcmeQuasar built a frontier AI lab.\n"
+            "Its context window needs an eval.\n\nBody text."
+        )
+        workflow.enforce_pre_critic_voice_gate(candidates)
 
     def test_critic_prompt_marks_dynamic_data_untrusted_and_requests_only_scores(self) -> None:
         prompt = workflow.build_critic_prompt(

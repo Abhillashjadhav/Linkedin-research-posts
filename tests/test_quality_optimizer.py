@@ -96,12 +96,23 @@ def attempt_output(*, axes: tuple[int, int, int, int, int], text: str) -> str:
 
 
 class AcceptanceTests(unittest.TestCase):
-    def test_22_with_axis_floor_and_gates_is_acceptable(self) -> None:
+    def test_named_acceptance_constants_match_the_owner_decision(self) -> None:
+        self.assertEqual(quality_optimizer.ACCEPTABLE_QUALITY_FLOOR, 18)
+        self.assertEqual(quality_optimizer.MIN_HOOK_SCORE, 4)
+        self.assertEqual(quality_optimizer.MIN_MIDDLE_ESCALATION_SCORE, 3)
+        self.assertEqual(quality_optimizer.MIN_EARNED_CLOSER_SCORE, 3)
+        self.assertEqual(
+            quality_optimizer.MIN_SPECIFICITY_AND_SOURCE_QUALITY_SCORE,
+            3,
+        )
+        self.assertEqual(quality_optimizer.MIN_VOICE_FIDELITY_SCORE, 4)
+
+    def test_21_with_five_four_four_four_four_advances(self) -> None:
         item = candidate(
-            22,
+            21,
             {
                 "hook_strength": 5,
-                "middle_escalation": 5,
+                "middle_escalation": 4,
                 "earned_closer": 4,
                 "specificity_and_source_quality": 4,
                 "voice_fidelity": 4,
@@ -109,30 +120,79 @@ class AcceptanceTests(unittest.TestCase):
         )
         self.assertTrue(quality_optimizer.candidate_is_acceptable(item))
 
-    def test_22_with_one_three_is_not_acceptable(self) -> None:
+    def test_18_with_hook_five_voice_four_and_other_axes_three_advances(self) -> None:
         item = candidate(
-            22,
+            18,
             {
                 "hook_strength": 5,
-                "middle_escalation": 5,
-                "earned_closer": 5,
-                "specificity_and_source_quality": 4,
-                "voice_fidelity": 3,
+                "middle_escalation": 3,
+                "earned_closer": 3,
+                "specificity_and_source_quality": 3,
+                "voice_fidelity": 4,
             },
         )
-        self.assertFalse(quality_optimizer.candidate_is_acceptable(item))
+        self.assertTrue(quality_optimizer.candidate_is_acceptable(item))
 
-    def test_24_with_failed_gate_is_not_acceptable(self) -> None:
+    def test_voice_below_four_never_advances_even_with_high_total(self) -> None:
+        for score, axes in (
+            (
+                19,
+                {
+                    "hook_strength": 5,
+                    "middle_escalation": 4,
+                    "earned_closer": 4,
+                    "specificity_and_source_quality": 4,
+                    "voice_fidelity": 2,
+                },
+            ),
+            (
+                18,
+                {
+                    "hook_strength": 4,
+                    "middle_escalation": 4,
+                    "earned_closer": 4,
+                    "specificity_and_source_quality": 4,
+                    "voice_fidelity": 2,
+                },
+            ),
+        ):
+            with self.subTest(score=score):
+                self.assertFalse(
+                    quality_optimizer.candidate_is_acceptable(candidate(score, axes))
+                )
+
+    def test_perfect_25_with_failed_honesty_gate_never_advances(self) -> None:
         item = candidate(
-            24,
+            25,
             {
                 "hook_strength": 5,
                 "middle_escalation": 5,
                 "earned_closer": 5,
                 "specificity_and_source_quality": 5,
-                "voice_fidelity": 4,
+                "voice_fidelity": 5,
             },
             gates_pass=False,
+        )
+        self.assertFalse(quality_optimizer.candidate_is_acceptable(item))
+
+    def test_advisory_label_cannot_turn_honesty_into_a_pass(self) -> None:
+        item = candidate(
+            25,
+            {axis: 5 for axis in workflow.CRITIC_AXES},
+        )
+        softened = dict(item.gates)
+        softened["honesty"] = "HUMAN_REVIEW"
+        item = quality_cli.CandidateResult(
+            candidate_id=item.candidate_id,
+            angle=item.angle,
+            text=item.text,
+            axes=item.axes,
+            raw_total=item.raw_total,
+            effective_total=item.effective_total,
+            band=item.band,
+            gates=softened,
+            passes_required_gates=True,
+            gate_reasons=("unsupported-factual-marker",),
         )
         self.assertFalse(quality_optimizer.candidate_is_acceptable(item))
 
@@ -151,18 +211,91 @@ class AcceptanceTests(unittest.TestCase):
         }
         self.assertTrue(
             quality_optimizer._scorecard_is_acceptable(  # type: ignore[attr-defined]
-                scorecard, {"passes_required_gates": True}
+                scorecard,
+                {"passes_required_gates": True, "gates": dict(GATES_PASS)},
             )
         )
         scorecard["voice_fidelity"] = 3
         self.assertFalse(
             quality_optimizer._scorecard_is_acceptable(  # type: ignore[attr-defined]
-                scorecard, {"passes_required_gates": True}
+                scorecard,
+                {"passes_required_gates": True, "gates": dict(GATES_PASS)},
             )
+        )
+
+    def test_package_gate_shape_uses_nested_original_statuses(self) -> None:
+        scorecard = {
+            "hook_strength": 5,
+            "middle_escalation": 3,
+            "earned_closer": 3,
+            "specificity_and_source_quality": 3,
+            "voice_fidelity": 4,
+            "effective_total": 18,
+        }
+        nested = {
+            "passes_required_gates": True,
+            "gates": {
+                name: {"status": status}
+                for name, status in GATES_PASS.items()
+            },
+        }
+        self.assertTrue(
+            quality_optimizer._scorecard_is_acceptable(scorecard, nested)  # type: ignore[attr-defined]
+        )
+        nested["gates"]["honesty"] = {"status": "FAIL"}
+        self.assertFalse(
+            quality_optimizer._scorecard_is_acceptable(scorecard, nested)  # type: ignore[attr-defined]
         )
 
 
 class RepairStateTests(unittest.TestCase):
+    def test_highest_total_with_voice_three_is_rejected_and_recorded(self) -> None:
+        high = candidate(
+            22,
+            {
+                "hook_strength": 5,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 4,
+                "voice_fidelity": 3,
+            },
+            candidate_id="candidate-high",
+        )
+        acceptable = candidate(
+            18,
+            {
+                "hook_strength": 5,
+                "middle_escalation": 3,
+                "earned_closer": 3,
+                "specificity_and_source_quality": 3,
+                "voice_fidelity": 4,
+            },
+            candidate_id="candidate-acceptable",
+        )
+        batch = attempt(high, acceptable)
+        with (
+            patch.object(quality_optimizer, "_ORIGINAL_RUN_ATTEMPT", return_value=batch),
+            patch.object(quality_optimizer.v1_completion, "record_decision") as record,
+        ):
+            observed = quality_optimizer._run_attempt(SimpleNamespace(), None)  # type: ignore[attr-defined]
+
+        qualified = quality_optimizer._qualifying_candidates(  # type: ignore[attr-defined]
+            observed,
+            rejected_openings=set(),
+            package_requested=False,
+            fixture_mode=True,
+        )
+        self.assertEqual([item.candidate_id for item in qualified], ["candidate-acceptable"])
+        voice = next(
+            call.args[0]
+            for call in record.call_args_list
+            if call.args[0]["contract"] == "voice_fidelity"
+            and call.kwargs["subject_id"] == "candidate-high"
+        )
+        self.assertEqual(voice["status"], "FAIL")
+        self.assertEqual(voice["shortfall"], 1)
+        self.assertIn("short-by-1", voice["reason"])
+
     def test_run_attempt_records_every_candidate_critic_scorecard(self) -> None:
         first = candidate(
             24,
@@ -209,12 +342,16 @@ class RepairStateTests(unittest.TestCase):
         ]
         self.assertEqual(len(critic_decisions), 2)
         self.assertEqual(len(gate_decisions), 10)
+        axis_decisions = [
+            decision for decision in recorded if decision["contract"] in workflow.CRITIC_AXES
+        ]
+        self.assertEqual(len(axis_decisions), 10)
         first_decision, second_decision = critic_decisions
         self.assertEqual(first_decision["contract"], "critic_total")
         self.assertEqual(first_decision["cycle"], 2)
         self.assertEqual(first_decision["score"], 24)
         self.assertEqual(first_decision["axes"]["voice_fidelity"], 4)
-        self.assertEqual(second_decision["status"], "FAIL")
+        self.assertEqual(second_decision["status"], "PASS")
         self.assertEqual(second_decision["gates"], {"honesty": "FAIL"})
         self.assertIn("unsupported-factual-marker", second_decision["failure_codes"])
         failed_honesty = next(
@@ -278,7 +415,17 @@ class RepairStateTests(unittest.TestCase):
         )
         self.assertIn("unsupported-factual-marker", repair_seed["gate_reasons"])  # type: ignore[index]
         self.assertEqual(feedback["quality_target"], 24)
-        self.assertEqual(feedback["acceptable_floor"], 22)
+        self.assertEqual(feedback["acceptable_floor"], 18)
+        self.assertEqual(
+            feedback["axis_floors"],
+            {
+                "hook_strength": 4,
+                "middle_escalation": 3,
+                "earned_closer": 3,
+                "specificity_and_source_quality": 3,
+                "voice_fidelity": 4,
+            },
+        )
 
 
 class RepairPromptTests(unittest.TestCase):
@@ -317,7 +464,7 @@ class RepairPromptTests(unittest.TestCase):
 
 
 class FourCycleConvergenceTests(unittest.TestCase):
-    def test_16_to_18_to_21_to_22_returns_final_written_candidate(self) -> None:
+    def test_voice_gate_keeps_18_out_but_21_advances_on_cycle_three(self) -> None:
         responses = [
             attempt_output(
                 axes=(5, 3, 3, 3, 2),
@@ -331,10 +478,6 @@ class FourCycleConvergenceTests(unittest.TestCase):
                 axes=(5, 4, 4, 4, 4),
                 text="Cycle three is close to the review floor.",
             ),
-            attempt_output(
-                axes=(5, 5, 4, 4, 4),
-                text="Cycle four is the final acceptable written candidate.",
-            ),
         ]
 
         def fake_legacy(_args: object) -> int:
@@ -346,7 +489,7 @@ class FourCycleConvergenceTests(unittest.TestCase):
         with (
             patch.object(quality_cli.legacy_cli, "command_draft", fake_legacy),
             patch.object(quality_cli, "MAX_QUALITY_CYCLES", 4),
-            patch.object(quality_cli, "MIN_QUALITY_SCORE", 22),
+            patch.object(quality_cli, "MIN_QUALITY_SCORE", 18),
             patch.object(
                 quality_cli,
                 "_qualifying_candidates",
@@ -370,10 +513,10 @@ class FourCycleConvergenceTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertIn("Quality cycle 1/4 rejected", rendered)
         self.assertIn("Quality cycle 2/4 rejected", rendered)
-        self.assertIn("Quality cycle 3/4 rejected", rendered)
-        self.assertIn("Quality search passed on cycle 4/4", rendered)
-        self.assertIn("score=22/25", rendered)
-        self.assertIn("Cycle four is the final acceptable written candidate.", rendered)
+        self.assertNotIn("Quality cycle 3/4 rejected", rendered)
+        self.assertIn("Quality search passed on cycle 3/4", rendered)
+        self.assertIn("score=21/25", rendered)
+        self.assertIn("Cycle three is close to the review floor.", rendered)
         self.assertNotIn("Cycle one is weak but grounded.", rendered)
         self.assertEqual(responses, [])
 

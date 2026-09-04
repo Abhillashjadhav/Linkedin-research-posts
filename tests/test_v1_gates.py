@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from authority_os import storage, v1_gates, workflow
+from authority_os import acceptance_policy, storage, v1_gates, workflow
 
 
 CANDIDATE_TEXT = (
@@ -41,12 +43,32 @@ class V1ContractTests(unittest.TestCase):
         self.assertEqual(contracts["reader_attention"]["mode"], "shadow")
 
     def test_critic_rubric_has_all_twenty_five_behavioral_anchors(self) -> None:
-        axes = v1_gates.load_critic_rubric()["axes"]
+        rubric = v1_gates.load_critic_rubric()
+        self.assertEqual(rubric["schema_version"], 2)
+        self.assertEqual(rubric["rubric_id"], "linkedin-authority-critic-v2")
+        axes = rubric["axes"]
         self.assertEqual(set(axes), set(workflow.CRITIC_AXES))
-        self.assertEqual(sum(len(levels) for levels in axes.values()), 25)
         self.assertTrue(
-            all(set(levels) == {"1", "2", "3", "4", "5"} for levels in axes.values())
+            all(
+                {"1", "2", "3", "4", "5"}.issubset(levels)
+                for levels in axes.values()
+            )
         )
+
+    def test_critic_rubric_provenance_is_the_v2_file(self) -> None:
+        expected = hashlib.sha256(workflow.CRITIC_RUBRIC_PATH.read_bytes()).hexdigest()
+        self.assertEqual(v1_gates.RUBRIC_PATH, workflow.CRITIC_RUBRIC_PATH)
+        self.assertEqual(v1_gates.critic_rubric_sha256(), expected)
+
+    def test_v2_release_metadata_keeps_all_five_axes_in_acceptance(self) -> None:
+        rubric = v1_gates.load_critic_rubric()
+        release_rule = rubric["release_rule"]
+        self.assertEqual(set(release_rule["scored"]), set(workflow.CRITIC_AXES))
+        self.assertEqual(
+            release_rule["hard_floors"],
+            dict(acceptance_policy.AXIS_FLOORS),
+        )
+        self.assertEqual(rubric["axes"]["earned_closer"]["floor"], 3)
 
     def test_atomic_value_novelty_uses_separate_private_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(
@@ -129,6 +151,15 @@ class V1ContractTests(unittest.TestCase):
             )
             self.assertEqual(validated[0]["raw_total"], 20)
             self.assertTrue((Path(directory) / v1_gates.CRITIC_AUDIT_NAME).is_file())
+            audit = json.loads(
+                (Path(directory) / v1_gates.CRITIC_AUDIT_NAME)
+                .read_text(encoding="utf-8")
+                .splitlines()[0]
+            )
+            self.assertEqual(
+                audit["critic_rubric_sha256"],
+                hashlib.sha256(workflow.CRITIC_RUBRIC_PATH.read_bytes()).hexdigest(),
+            )
             sanitized = {
                 "candidate_id": "candidate-1",
                 **{axis: 4 for axis in workflow.CRITIC_AXES},

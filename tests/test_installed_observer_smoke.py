@@ -7,7 +7,7 @@ import sys
 import textwrap
 import unittest
 
-from authority_os import workflow
+from authority_os import v1_gates, workflow
 
 
 def _run_installed_smoke(script: str) -> dict[str, object]:
@@ -104,6 +104,8 @@ class InstalledObserverSmokeTests(unittest.TestCase):
             import sys
             import tempfile
             from pathlib import Path
+            from types import SimpleNamespace
+            from unittest.mock import patch
             from authority_os import topic_value, v1_gates, workflow
 
             workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
@@ -148,11 +150,87 @@ class InstalledObserverSmokeTests(unittest.TestCase):
                     folder=Path(temporary) / "drafting",
                 )
                 assert drafting.returncode == 0
+
+                critic_candidate = {
+                    "id": "candidate-1",
+                    "angle": "mechanism",
+                    "text": "Most teams need a retry boundary before an agent loop reaches production.",
+                    "claim_ids": ["source-1"],
+                }
+                excerpt = critic_candidate["text"]
+                scorecard = {
+                    "candidate_id": "candidate-1",
+                    **{axis: 4 for axis in workflow.CRITIC_AXES},
+                    "anchors": {
+                        axis: {
+                            "anchor_id": f"{axis}:4",
+                            "evidence": excerpt,
+                            "why_not_higher": "The candidate does not completely meet anchor 5.",
+                            "why_not_lower": "The excerpt exceeds anchor 3.",
+                        }
+                        for axis in workflow.CRITIC_AXES
+                    },
+                }
+                response = SimpleNamespace(
+                    returncode=0,
+                    stdout=json.dumps({"structured_output": {"scorecards": [scorecard]}}),
+                    stderr="",
+                )
+                with (
+                    patch.object(workflow.shutil, "which", return_value="/opt/claude"),
+                    patch.object(workflow.subprocess, "run", return_value=response) as critic_run,
+                ):
+                    brief = workflow.build_strategy_brief(
+                        {
+                            "slug": "agent-reliability",
+                            "why_now": "Recent primary evidence supports a product decision.",
+                            "dominant_take": "Reliability compounds across workflow steps.",
+                            "missing_angle": "Name the decision and what would falsify it.",
+                            "primary_sources": ["https://example.com/retry"],
+                            "source_quality_sufficient": True,
+                            "body_read_sufficient": True,
+                            "recency_sufficient": True,
+                            "stale": False,
+                        },
+                        strategy_inputs={
+                            "target_reader": "Senior AI product leaders",
+                            "reader_problem": "Agent loops reach production without retry boundaries.",
+                            "core_hypothesis": "Bounded retries prevent queue saturation.",
+                            "product_decision": "Set the retry boundary before launch.",
+                            "authority_statement": "Translate reliability into a release decision.",
+                        },
+                        strategy_input_origin="explicit-input",
+                        goal="authority",
+                        output_format="text",
+                    )
+                    scored = workflow.invoke_critic(
+                        [critic_candidate],
+                        brief,
+                        [{
+                            "id": "source-1",
+                            "title": "Retry boundaries for production agents",
+                            "claim": "Bounded retries prevent queue saturation.",
+                            "source": "https://example.com/retry",
+                            "source_quality": "primary",
+                            "body_read": True,
+                        }],
+                        allow_model_egress=True,
+                    )
+                assert critic_run.call_count == 2
+                assert scored[0]["voice_fidelity"] == 4
+                critic_command = critic_run.call_args.args[0]
+                system_prompt = critic_command[critic_command.index("--system-prompt") + 1]
+                assert "linkedin-authority-critic-v2" in system_prompt
+                audit = v1_completion._read_jsonl(state_root / v1_gates.CRITIC_AUDIT_NAME)
+                assert audit[-1]["critic_rubric_sha256"] == v1_gates.critic_rubric_sha256()
                 print(json.dumps({
                     "candidates": len(selected),
                     "stages": [stage for stage, _rows in observer.records],
                     "decision_rows": len(ledger),
                     "drafting_returncode": drafting.returncode,
+                    "critic_calls": critic_run.call_count,
+                    "critic_voice": scored[0]["voice_fidelity"],
+                    "critic_rubric_sha256": audit[-1]["critic_rubric_sha256"],
                 }))
             """
         )
@@ -163,6 +241,9 @@ class InstalledObserverSmokeTests(unittest.TestCase):
                 "stages": ["pre-gate", "post-gate"],
                 "decision_rows": 9,
                 "drafting_returncode": 0,
+                "critic_calls": 2,
+                "critic_voice": 4,
+                "critic_rubric_sha256": v1_gates.critic_rubric_sha256(),
             },
         )
 
