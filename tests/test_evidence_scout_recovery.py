@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from authority_os import daily_spine_cli, workflow
+from authority_os import daily_spine_cli, storage, workflow
 
 
 AS_OF = "2026-09-04T12:00:00Z"
@@ -38,12 +38,12 @@ def research_items(count: int = 3) -> list[dict[str, object]]:
 
 
 class EvidenceScoutRecoveryTests(unittest.TestCase):
-    def test_primary_timeout_retries_inside_one_120_second_budget(self) -> None:
+    def test_targeted_scout_runs_once_without_repeating_discovery(self) -> None:
         expected = workflow.prepare_research_items(research_items())
         with patch.object(
             daily_spine_cli,
             "_invoke_signal_scout",
-            side_effect=[workflow.WorkflowError("Evidence Scout primary timed out."), expected],
+            return_value=expected,
         ) as invoke:
             result = daily_spine_cli.resolve_signal_evidence(
                 None,
@@ -54,16 +54,13 @@ class EvidenceScoutRecoveryTests(unittest.TestCase):
                 db_path=workflow.DEFAULT_DB,
             )
 
-        self.assertEqual(result.route, "live-retry")
-        self.assertEqual(result.attempts, 2)
+        self.assertEqual(result.route, "live-targeted")
+        self.assertEqual(result.attempts, 1)
         self.assertEqual(
             [call.kwargs["timeout"] for call in invoke.call_args_list],
-            [
-                daily_spine_cli.EVIDENCE_PRIMARY_TIMEOUT_SECONDS,
-                daily_spine_cli.EVIDENCE_RETRY_TIMEOUT_SECONDS,
-            ],
+            [daily_spine_cli.EVIDENCE_TIMEOUT_SECONDS],
         )
-        self.assertEqual([call.kwargs["target_count"] for call in invoke.call_args_list], [5, 3])
+        self.assertEqual([call.kwargs["target_count"] for call in invoke.call_args_list], [3])
 
     def test_two_timeouts_use_only_an_exact_scope_verified_cache(self) -> None:
         workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
@@ -87,11 +84,11 @@ class EvidenceScoutRecoveryTests(unittest.TestCase):
                     "items": prepared,
                 },
             )
-            with patch.object(daily_spine_cli.base, "OUTPUT_ROOT", root), patch.object(
+            with patch.object(daily_spine_cli.workflow, "DEFAULT_PRIVATE_DATA", root), patch.object(
                 daily_spine_cli,
                 "_invoke_signal_scout",
                 side_effect=workflow.WorkflowError("Evidence Scout timed out."),
-            ):
+            ) as scout:
                 result = daily_spine_cli.resolve_signal_evidence(
                     None,
                     7,
@@ -102,7 +99,49 @@ class EvidenceScoutRecoveryTests(unittest.TestCase):
                 )
 
         self.assertEqual(result.route, "verified-cache")
+        self.assertEqual(result.attempts, 0)
         self.assertEqual(len(result.items), 3)
+        scout.assert_not_called()
+
+    def test_exact_database_urls_are_reused_without_refreshing_provenance(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            root = Path(temporary)
+            database = root / "authority.sqlite"
+            storage.initialise(database)
+            fetched_at = "2026-09-02T08:00:00Z"
+            prepared = workflow.prepare_research_items(
+                research_items(), fetched_at=fetched_at
+            )
+            storage.insert_research_items(
+                database, prepared, evidence_origin="private-import"
+            )
+            candidates = [
+                {
+                    "topic": "Agent reliability boundaries",
+                    "representative_urls": [
+                        item["canonical_url"] for item in prepared
+                    ],
+                }
+            ]
+            with patch.object(
+                daily_spine_cli, "_invoke_signal_scout"
+            ) as scout:
+                result = daily_spine_cli.resolve_signal_evidence(
+                    None,
+                    7,
+                    AS_OF,
+                    candidates,
+                    folder=root / "current",
+                    db_path=database,
+                )
+
+        self.assertEqual(result.route, "verified-database")
+        self.assertEqual(result.attempts, 0)
+        self.assertEqual(
+            {item["fetched_at"] for item in result.items}, {fetched_at}
+        )
+        scout.assert_not_called()
 
     def test_scope_mismatch_does_not_reuse_cached_bodies(self) -> None:
         workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
@@ -124,13 +163,13 @@ class EvidenceScoutRecoveryTests(unittest.TestCase):
                     "items": workflow.prepare_research_items(research_items()),
                 },
             )
-            with patch.object(daily_spine_cli.base, "OUTPUT_ROOT", root), patch.object(
+            with patch.object(daily_spine_cli.workflow, "DEFAULT_PRIVATE_DATA", root), patch.object(
                 daily_spine_cli,
                 "_invoke_signal_scout",
                 side_effect=workflow.WorkflowError("Evidence Scout timed out."),
             ):
                 with self.assertRaisesRegex(
-                    workflow.WorkflowError, "no exact-scope body-verified evidence"
+                    workflow.WorkflowError, "Targeted Evidence Scout timed out"
                 ):
                     daily_spine_cli.resolve_signal_evidence(
                         None,
@@ -163,13 +202,13 @@ class EvidenceScoutRecoveryTests(unittest.TestCase):
                     "items": workflow.prepare_research_items(research_items()),
                 },
             )
-            with patch.object(daily_spine_cli.base, "OUTPUT_ROOT", root), patch.object(
+            with patch.object(daily_spine_cli.workflow, "DEFAULT_PRIVATE_DATA", root), patch.object(
                 daily_spine_cli,
                 "_invoke_signal_scout",
                 side_effect=workflow.WorkflowError("Evidence Scout timed out."),
             ):
                 with self.assertRaisesRegex(
-                    workflow.WorkflowError, "no exact-scope body-verified evidence"
+                    workflow.WorkflowError, "Targeted Evidence Scout timed out"
                 ):
                     daily_spine_cli.resolve_signal_evidence(
                         "Topic B",
@@ -201,13 +240,13 @@ class EvidenceScoutRecoveryTests(unittest.TestCase):
                     "items": prepared,
                 },
             )
-            with patch.object(daily_spine_cli.base, "OUTPUT_ROOT", root), patch.object(
+            with patch.object(daily_spine_cli.workflow, "DEFAULT_PRIVATE_DATA", root), patch.object(
                 daily_spine_cli,
                 "_invoke_signal_scout",
                 side_effect=workflow.WorkflowError("Evidence Scout timed out."),
             ):
                 with self.assertRaisesRegex(
-                    workflow.WorkflowError, "no exact-scope body-verified evidence"
+                    workflow.WorkflowError, "Targeted Evidence Scout timed out"
                 ):
                     daily_spine_cli.resolve_signal_evidence(
                         None,

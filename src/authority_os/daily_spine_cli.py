@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -33,9 +34,9 @@ MAX_SPINE_FIT_REASON_CHARS = 320
 MIN_AUTHORITY_FIT_FALLBACK = 20
 MIN_COMBINED_INVENTORY_SCORE = 40
 CANDIDATE_INVENTORY = base.OUTPUT_ROOT / "candidate-inventory.json"
-EVIDENCE_PRIMARY_TIMEOUT_SECONDS = 75
-EVIDENCE_RETRY_TIMEOUT_SECONDS = 45
+EVIDENCE_TIMEOUT_SECONDS = 180
 EVIDENCE_CACHE_NAME = "evidence-research.json"
+ADMITTED_SCOPE_NAME = "admitted-topics.json"
 MIN_VERIFIED_EVIDENCE = 3
 MAX_VERIFIED_EVIDENCE = 7
 EVAL_CONTRACTS = (
@@ -101,6 +102,16 @@ class EvidenceResolution:
     route: str
     attempts: int
     scope_fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryResume:
+    source_folder: Path
+    as_of: str
+    top_five: tuple[dict[str, object], ...]
+    eligible: tuple[dict[str, object], ...]
+    route: str
+    surface_scouts: tuple[dict[str, object], ...]
 
 
 def run_drafting_child(
@@ -370,6 +381,187 @@ def surface_diagnostics(folder: Path) -> list[dict[str, object]]:
             }
         )
     return diagnostics
+
+
+def _dashboard_stage(
+    dashboard: Mapping[str, object], stage: str
+) -> Mapping[str, object]:
+    checks = dashboard.get("checks")
+    if not isinstance(checks, Sequence) or isinstance(checks, (str, bytes)):
+        raise workflow.WorkflowError("Resume dashboard has an invalid stage list.")
+    for item in checks:
+        if isinstance(item, Mapping) and item.get("stage") == stage:
+            return item
+    raise workflow.WorkflowError(f"Resume dashboard does not contain {stage!r}.")
+
+
+def _mapping_sha256(value: Mapping[str, object]) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def load_discovery_resume(
+    source: Path,
+    *,
+    days: int,
+    requested_topic: str | None,
+    profile: Mapping[str, object],
+) -> DiscoveryResume:
+    """Restore the successful discovery boundary without running its scouts again."""
+
+    folder = base._under_private(source)
+    dashboard = base._private_json(folder / "run-dashboard.json", "Resume dashboard")
+    momentum_payload = base._private_json(folder / "momentum.json", "Resume momentum")
+    if not isinstance(dashboard, Mapping) or dashboard.get("schema_version") != 2:
+        raise workflow.WorkflowError("Resume dashboard has an unsupported schema.")
+    if not isinstance(momentum_payload, Mapping) or momentum_payload.get("schema_version") != 1:
+        raise workflow.WorkflowError("Resume momentum has an unsupported schema.")
+    if momentum_payload.get("days") != days:
+        raise workflow.WorkflowError("Resume run must use the same discovery window.")
+    prior_topic = momentum_payload.get("topic")
+    if prior_topic != requested_topic:
+        raise workflow.WorkflowError("Resume run must use the same requested topic.")
+    as_of = momentum_payload.get("created_at")
+    if not isinstance(as_of, str):
+        raise workflow.WorkflowError("Resume momentum is missing its timestamp.")
+    workflow.parse_published_at(as_of)
+
+    conversation = _dashboard_stage(dashboard, "conversation_discovery")
+    admission = _dashboard_stage(dashboard, "topic_admission")
+    evidence = _dashboard_stage(dashboard, "evidence_verification")
+    if conversation.get("status") != "PASS" or admission.get("status") != "PASS":
+        raise workflow.WorkflowError(
+            "Resume requires completed conversation discovery and topic admission."
+        )
+    if evidence.get("status") != "FAIL":
+        raise workflow.WorkflowError(
+            "Resume source must have stopped at evidence verification."
+        )
+    for downstream in ("topic_value", "thesis_search", "drafting", "final_evals"):
+        if _dashboard_stage(dashboard, downstream).get("status") != "NOT_EVALUATED":
+            raise workflow.WorkflowError(
+                "Resume source continued beyond evidence verification."
+            )
+
+    candidates = momentum_payload.get("candidates")
+    if not isinstance(candidates, Sequence) or isinstance(candidates, (str, bytes)):
+        raise workflow.WorkflowError("Resume momentum candidates are invalid.")
+    top_five = [dict(item) for item in candidates if isinstance(item, Mapping)]
+
+    details = admission.get("details")
+    if not isinstance(details, Mapping):
+        raise workflow.WorkflowError("Resume topic admission details are unavailable.")
+    admitted_topics = details.get("admitted_topics")
+    route = details.get("route")
+    if (
+        not isinstance(admitted_topics, Sequence)
+        or isinstance(admitted_topics, (str, bytes))
+        or not admitted_topics
+        or not isinstance(route, str)
+        or not route
+    ):
+        raise workflow.WorkflowError("Resume topic admission scope is invalid.")
+    if route not in {
+        "momentum-qualified",
+        "rolling seven-day inventory",
+        "authority-fit fallback",
+    }:
+        raise workflow.WorkflowError("Resume topic admission route is invalid.")
+
+    scope_path = folder / ADMITTED_SCOPE_NAME
+    recorded_scope_fingerprint: object = None
+    if scope_path.is_symlink():
+        raise workflow.WorkflowError("Resume admitted topic scope must not be a symlink.")
+    if scope_path.exists():
+        if not scope_path.is_file():
+            raise workflow.WorkflowError("Resume admitted topic scope is not a file.")
+        scope_payload = base._private_json(scope_path, "Admitted topic scope")
+        if (
+            not isinstance(scope_payload, Mapping)
+            or scope_payload.get("schema_version") != 1
+            or scope_payload.get("created_at") != as_of
+            or scope_payload.get("days") != days
+            or scope_payload.get("topic") != requested_topic
+            or scope_payload.get("route") != route
+        ):
+            raise workflow.WorkflowError("Resume admitted topic scope is inconsistent.")
+        profile_digest = scope_payload.get("profile_sha256")
+        if (
+            not isinstance(profile_digest, str)
+            or profile_digest != _mapping_sha256(profile)
+        ):
+            raise workflow.WorkflowError("Resume authority profile has changed.")
+        recorded_scope_fingerprint = scope_payload.get("scope_fingerprint")
+        if not isinstance(recorded_scope_fingerprint, str):
+            raise workflow.WorkflowError("Resume admitted topic fingerprint is missing.")
+        scoped = scope_payload.get("candidates")
+        if not isinstance(scoped, Sequence) or isinstance(scoped, (str, bytes)):
+            raise workflow.WorkflowError("Resume admitted topic candidates are invalid.")
+        pool = [dict(item) for item in scoped if isinstance(item, Mapping)]
+    elif route == "rolling seven-day inventory":
+        if not CANDIDATE_INVENTORY.is_file() or CANDIDATE_INVENTORY.is_symlink():
+            raise workflow.WorkflowError(
+                "Legacy rolling-inventory resume needs its original candidate inventory."
+            )
+        inventory_payload = base._private_json(
+            CANDIDATE_INVENTORY, "Candidate inventory"
+        )
+        if (
+            not isinstance(inventory_payload, Mapping)
+            or inventory_payload.get("schema_version") != 1
+            or inventory_payload.get("updated_at") != as_of
+            or inventory_payload.get("window_days") != days
+        ):
+            raise workflow.WorkflowError(
+                "Legacy candidate inventory no longer matches the failed run."
+            )
+        inventory = inventory_payload.get("candidates")
+        if not isinstance(inventory, Sequence) or isinstance(inventory, (str, bytes)):
+            raise workflow.WorkflowError("Legacy candidate inventory is invalid.")
+        pool = [dict(item) for item in inventory if isinstance(item, Mapping)]
+    else:
+        pool = list(top_five)
+    by_topic = {
+        " ".join(str(item.get("topic", "")).casefold().split()): item
+        for item in pool
+        if isinstance(item.get("topic"), str)
+    }
+    if len(by_topic) != len(pool):
+        raise workflow.WorkflowError("Resume topic scope contains duplicate topic names.")
+    eligible: list[dict[str, object]] = []
+    for topic in admitted_topics:
+        key = " ".join(str(topic).casefold().split())
+        candidate = by_topic.get(key)
+        if candidate is None:
+            raise workflow.WorkflowError(
+                f"Resume scope is missing admitted topic {str(topic)!r}."
+            )
+        urls = candidate.get("representative_urls")
+        if not isinstance(urls, Sequence) or isinstance(urls, (str, bytes)) or not urls:
+            raise workflow.WorkflowError("Resume topic has no representative URLs.")
+        eligible.append(dict(candidate))
+
+    if (
+        recorded_scope_fingerprint is not None
+        and recorded_scope_fingerprint
+        != evidence_scope_fingerprint(eligible, requested_topic=requested_topic)
+    ):
+        raise workflow.WorkflowError("Resume admitted topic fingerprint has changed.")
+
+    surfaces = dashboard.get("surface_scouts")
+    surface_rows = (
+        tuple(dict(item) for item in surfaces if isinstance(item, Mapping))
+        if isinstance(surfaces, Sequence) and not isinstance(surfaces, (str, bytes))
+        else ()
+    )
+    return DiscoveryResume(
+        source_folder=folder,
+        as_of=as_of,
+        top_five=tuple(top_five),
+        eligible=tuple(eligible),
+        route=route,
+        surface_scouts=surface_rows,
+    )
 
 
 def record_surface_decisions(
@@ -1381,23 +1573,52 @@ def _invoke_signal_scout(
     topic: str | None,
     days: int,
     as_of: str,
-    candidate_topics: Sequence[str],
+    admitted_candidates: Sequence[Mapping[str, object]],
     *,
-    timeout: int = EVIDENCE_PRIMARY_TIMEOUT_SECONDS,
-    target_count: int = 5,
-    stage_label: str = "Evidence Scout primary",
+    timeout: int = EVIDENCE_TIMEOUT_SECONDS,
+    target_count: int = 3,
+    stage_label: str = "Evidence Scout",
 ) -> list[dict[str, object]]:
-    ranked_scope = "\n- ".join(candidate_topics)
+    scope_lines: list[str] = []
+    lead_urls: dict[str, set[str]] = {}
+    for index, candidate in enumerate(admitted_candidates, start=1):
+        candidate_topic = str(candidate.get("topic", "")).strip()
+        raw_urls = candidate.get("representative_urls", [])
+        if not isinstance(raw_urls, Sequence) or isinstance(raw_urls, (str, bytes)):
+            raise workflow.WorkflowError("Evidence lead URLs are invalid.")
+        urls: list[str] = []
+        for value in raw_urls:
+            try:
+                urls.append(workflow.canonicalise_url(str(value)))
+            except ValueError as exc:
+                raise workflow.WorkflowError("Evidence lead URL is invalid.") from exc
+        if not candidate_topic or not urls:
+            raise workflow.WorkflowError("Evidence verification needs topic-and-URL leads.")
+        lead_id = f"lead-{index}"
+        lead_urls[lead_id] = set(urls)
+        scope_lines.append(f"[{lead_id}] {candidate_topic}: {', '.join(urls)}")
+    ranked_scope = "\n- ".join(scope_lines)
     prompt = f"""Find {target_count} defensible GenAI product signals published during the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, evaluations, reliability, enterprise AI and AI product management'}.
-Only investigate these momentum-qualified topic candidates unless another source is needed to verify the same underlying claim:
+Discovery is already complete. Start from the supplied topic-and-URL leads below; do not search for or rank new topics. Read the linked bodies. When a supplied social or aggregation URL cannot support the factual claim, find only the primary or reputable source needed to verify that same claim:
 - {ranked_scope}
-Search broadly and read each source body. Prefer official engineering/research blogs, documentation, papers, repositories, government and standards sources. Collect enough body evidence for a later selector to answer: what concretely changed, who in the target audience would care, what capability/decision/utility the reader receives, how consequential it is, and what inspectable evidence supports it. Return concise evidence summaries, not copied prose, topic rankings, theses, or post drafts. Public social pages may nominate a claim, but factual evidence must come from the normal primary/reputable source rules. Never access authenticated LinkedIn/X pages, email, private data, local files, credentials or authenticated services."""
+For every returned item, copy the supplied lead_id and the exact supplied lead_url that nominated the claim. The item's url may be the stronger primary source used to verify it. Prefer official engineering/research blogs, documentation, papers, repositories, government and standards sources. Collect enough body evidence for a later selector to answer: what concretely changed, who in the target audience would care, what capability/decision/utility the reader receives, how consequential it is, and what inspectable evidence supports it. Return concise evidence summaries, not copied prose, topic rankings, theses, or post drafts. Public social pages may nominate a claim, but factual evidence must come from the normal primary/reputable source rules. Never access authenticated LinkedIn/X pages, email, private data, local files, credentials or authenticated services."""
+    schema = json.loads(json.dumps(base._schema("research")))
+    item_schema = schema["properties"]["items"]["items"]
+    item_schema["properties"]["lead_id"] = {
+        "type": "string",
+        "enum": sorted(lead_urls),
+    }
+    item_schema["properties"]["lead_url"] = {
+        "type": "string",
+        "enum": sorted({url for values in lead_urls.values() for url in values}),
+    }
+    item_schema["required"].extend(["lead_id", "lead_url"])
     result = base.invoke_structured(
         config=base.SCOUT_MODEL,
         role_prompt=base._role("scout"),
         task_prompt=prompt,
-        schema=base._schema("research"),
+        schema=schema,
         timeout=timeout,
         web_search=True,
         stage_label=stage_label,
@@ -1405,7 +1626,37 @@ Search broadly and read each source body. Prefer official engineering/research b
     items = result.get("items")
     if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
         raise workflow.WorkflowError("Scout must return an items list.")
-    return _validate_body_verified_evidence(items, days=days, as_of=as_of)
+    bound: list[dict[str, object]] = []
+    bindings: list[tuple[str, str]] = []
+    for item in items:
+        if not isinstance(item, Mapping):
+            raise workflow.WorkflowError("Evidence Scout item is invalid.")
+        lead_id = item.get("lead_id")
+        lead_url = item.get("lead_url")
+        if (
+            not isinstance(lead_id, str)
+            or not isinstance(lead_url, str)
+            or lead_id not in lead_urls
+        ):
+            raise workflow.WorkflowError("Evidence Scout item has no admitted lead identity.")
+        try:
+            canonical_lead_url = workflow.canonicalise_url(lead_url)
+        except ValueError as exc:
+            raise workflow.WorkflowError("Evidence Scout lead URL is invalid.") from exc
+        if canonical_lead_url not in lead_urls[lead_id]:
+            raise workflow.WorkflowError(
+                "Evidence Scout item does not match its admitted topic-and-URL lead."
+            )
+        cleaned = dict(item)
+        cleaned.pop("lead_id", None)
+        cleaned.pop("lead_url", None)
+        bound.append(cleaned)
+        bindings.append((lead_id, canonical_lead_url))
+    prepared = _validate_body_verified_evidence(bound, days=days, as_of=as_of)
+    for item, (lead_id, lead_url) in zip(prepared, bindings, strict=True):
+        item["admitted_lead_id"] = lead_id
+        item["admitted_lead_url"] = lead_url
+    return prepared
 
 
 def _timed_out(exc: Exception) -> bool:
@@ -1422,8 +1673,8 @@ def _cached_evidence_for_scope(
 ) -> list[dict[str, object]]:
     candidates: list[tuple[float, Path, str]] = []
     paths = (
-        (base.OUTPUT_ROOT.glob(f"*/*/{EVIDENCE_CACHE_NAME}"), "snapshot"),
-        (base.OUTPUT_ROOT.glob("*/*/theses.json"), "legacy-theses"),
+        (workflow.DEFAULT_PRIVATE_DATA.rglob(EVIDENCE_CACHE_NAME), "snapshot"),
+        (workflow.DEFAULT_PRIVATE_DATA.rglob("theses.json"), "legacy-theses"),
     )
     for collection, kind in paths:
         for path in collection:
@@ -1433,7 +1684,7 @@ def _cached_evidence_for_scope(
                 candidates.append((path.stat().st_mtime, path, kind))
             except OSError:
                 continue
-    for _modified, path, kind in sorted(candidates, reverse=True)[:40]:
+    for _modified, path, kind in sorted(candidates, reverse=True):
         try:
             payload = base._private_json(
                 path,
@@ -1475,16 +1726,32 @@ def _cached_evidence_for_scope(
             not isinstance(raw_items, Sequence)
             or isinstance(raw_items, (str, bytes))
             or not isinstance(fetched_at, str)
+            or any(not isinstance(item, Mapping) for item in raw_items)
         ):
             continue
+        raw_records = [dict(item) for item in raw_items]
         try:
             prepared = _validate_body_verified_evidence(
-                [dict(item) for item in raw_items if isinstance(item, Mapping)],
+                raw_records,
                 days=days,
                 as_of=as_of,
                 fetched_at=fetched_at,
                 require_stored_hash=kind == "snapshot",
             )
+            if kind == "snapshot":
+                for raw, item in zip(raw_records, prepared, strict=True):
+                    fetched_at_value = raw.get("fetched_at")
+                    if not isinstance(fetched_at_value, str):
+                        raise workflow.WorkflowError(
+                            "Verified evidence cache is missing fetch provenance."
+                        )
+                    workflow.parse_published_at(fetched_at_value)
+                    item["fetched_at"] = fetched_at_value
+                    if isinstance(raw.get("admitted_lead_id"), str) and isinstance(
+                        raw.get("admitted_lead_url"), str
+                    ):
+                        item["admitted_lead_id"] = raw["admitted_lead_id"]
+                        item["admitted_lead_url"] = raw["admitted_lead_url"]
         except workflow.WorkflowError:
             continue
         if kind == "legacy-theses":
@@ -1507,6 +1774,58 @@ def _cached_evidence_for_scope(
     return []
 
 
+def _database_evidence_for_scope(
+    *,
+    admitted_candidates: Sequence[Mapping[str, object]],
+    days: int,
+    as_of: str,
+    db_path: Path,
+) -> list[dict[str, object]]:
+    """Reuse exact admitted URLs whose verified bodies already exist privately."""
+
+    if not db_path.is_file() or db_path.is_symlink():
+        return []
+    admitted_urls: set[str] = set()
+    for candidate in admitted_candidates:
+        urls = candidate.get("representative_urls", [])
+        if not isinstance(urls, Sequence) or isinstance(urls, (str, bytes)):
+            continue
+        for value in urls:
+            try:
+                admitted_urls.add(workflow.canonicalise_url(str(value)))
+            except ValueError:
+                continue
+    if not admitted_urls:
+        return []
+    try:
+        stored = storage.list_research_items_by_urls(
+            db_path,
+            sorted(admitted_urls),
+            evidence_origin="private-import",
+        )
+    except (OSError, ValueError, workflow.WorkflowError):
+        return []
+    exact = stored[:MAX_VERIFIED_EVIDENCE]
+    if len(exact) < MIN_VERIFIED_EVIDENCE:
+        return []
+    try:
+        prepared = _validate_body_verified_evidence(
+            exact,
+            days=days,
+            as_of=as_of,
+            require_stored_hash=True,
+        )
+        for raw, item in zip(exact, prepared, strict=True):
+            fetched_at = raw.get("fetched_at")
+            if not isinstance(fetched_at, str):
+                return []
+            workflow.parse_published_at(fetched_at)
+            item["fetched_at"] = fetched_at
+        return prepared
+    except workflow.WorkflowError:
+        return []
+
+
 def resolve_signal_evidence(
     topic: str | None,
     days: int,
@@ -1515,45 +1834,13 @@ def resolve_signal_evidence(
     *,
     folder: Path,
     db_path: Path,
+    attempt_trace: list[dict[str, object]] | None = None,
 ) -> EvidenceResolution:
-    candidate_topics = [str(item["topic"]) for item in admitted_candidates]
+    trace = attempt_trace if attempt_trace is not None else []
     fingerprint = evidence_scope_fingerprint(
         admitted_candidates,
         requested_topic=topic,
     )
-    try:
-        items = _invoke_signal_scout(
-            topic,
-            days,
-            as_of,
-            candidate_topics,
-            timeout=EVIDENCE_PRIMARY_TIMEOUT_SECONDS,
-            target_count=5,
-            stage_label="Evidence Scout primary",
-        )
-        return EvidenceResolution(tuple(items), "live-primary", 1, fingerprint)
-    except workflow.WorkflowError as exc:
-        if not _timed_out(exc):
-            raise
-        print(
-            "Evidence Scout: primary attempt timed out; retrying once within the "
-            "120-second stage budget.",
-            flush=True,
-        )
-    try:
-        items = _invoke_signal_scout(
-            topic,
-            days,
-            as_of,
-            candidate_topics,
-            timeout=EVIDENCE_RETRY_TIMEOUT_SECONDS,
-            target_count=3,
-            stage_label="Evidence Scout retry",
-        )
-        return EvidenceResolution(tuple(items), "live-retry", 2, fingerprint)
-    except workflow.WorkflowError as exc:
-        if not _timed_out(exc):
-            raise
     cached = _cached_evidence_for_scope(
         scope_fingerprint=fingerprint,
         days=days,
@@ -1562,15 +1849,100 @@ def resolve_signal_evidence(
         db_path=db_path,
     )
     if cached:
+        trace.append(
+            {
+                "route": "verified-cache",
+                "status": "PASS",
+                "signal_count": len(cached),
+                "live_call_started": False,
+            }
+        )
         print(
-            f"Evidence Scout: both live attempts timed out; using {len(cached)} "
-            "exact-scope body-verified signal(s) still inside the requested window.",
+            f"Evidence Scout: reusing {len(cached)} exact-scope body-verified "
+            "signal(s); no live evidence search was started.",
             flush=True,
         )
-        return EvidenceResolution(tuple(cached), "verified-cache", 2, fingerprint)
+        return EvidenceResolution(tuple(cached), "verified-cache", 0, fingerprint)
+    trace.append(
+        {
+            "route": "verified-cache",
+            "status": "MISS",
+            "signal_count": 0,
+            "live_call_started": False,
+        }
+    )
+    stored = _database_evidence_for_scope(
+        admitted_candidates=admitted_candidates,
+        days=days,
+        as_of=as_of,
+        db_path=db_path,
+    )
+    if stored:
+        trace.append(
+            {
+                "route": "verified-database",
+                "status": "PASS",
+                "signal_count": len(stored),
+                "live_call_started": False,
+            }
+        )
+        print(
+            f"Evidence Scout: reusing {len(stored)} body-verified signal(s) by "
+            "exact admitted URL; no live evidence search was started.",
+            flush=True,
+        )
+        return EvidenceResolution(tuple(stored), "verified-database", 0, fingerprint)
+    trace.append(
+        {
+            "route": "verified-database",
+            "status": "MISS",
+            "signal_count": 0,
+            "live_call_started": False,
+        }
+    )
+    started = time.monotonic()
+    try:
+        items = _invoke_signal_scout(
+            topic,
+            days,
+            as_of,
+            admitted_candidates,
+            timeout=EVIDENCE_TIMEOUT_SECONDS,
+            target_count=3,
+            stage_label="Evidence Scout targeted verification",
+        )
+        trace.append(
+            {
+                "route": "live-targeted",
+                "status": "PASS",
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+                "timeout_seconds": EVIDENCE_TIMEOUT_SECONDS,
+                "target_count": 3,
+                "signal_count": len(items),
+                "model": base.SCOUT_MODEL.trace(),
+                "live_call_started": True,
+            }
+        )
+        return EvidenceResolution(tuple(items), "live-targeted", 1, fingerprint)
+    except workflow.WorkflowError as exc:
+        trace.append(
+            {
+                "route": "live-targeted",
+                "status": "TIMEOUT" if _timed_out(exc) else "FAIL",
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+                "timeout_seconds": EVIDENCE_TIMEOUT_SECONDS,
+                "target_count": 3,
+                "signal_count": 0,
+                "model": base.SCOUT_MODEL.trace(),
+                "reason": str(exc),
+                "live_call_started": True,
+            }
+        )
+        if not _timed_out(exc):
+            raise
     raise workflow.WorkflowError(
-        "Evidence Scout timed out after two bounded attempts and no exact-scope "
-        "body-verified evidence remained inside the requested window."
+        "Targeted Evidence Scout timed out after one bounded attempt. Discovery "
+        "artifacts were preserved; resume this run without repeating discovery."
     )
 
 
@@ -1588,9 +1960,25 @@ def command(args: argparse.Namespace) -> int:
     )
     ledger_start = len(v1_completion._read_jsonl(ledger_path))
     profile = base.validate_profile(base._private_json(args.profile, "Authority profile"))
-    as_of = args.as_of or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
-        "+00:00", "Z"
+    resume = (
+        load_discovery_resume(
+            args.resume_from,
+            days=args.days,
+            requested_topic=args.topic,
+            profile=profile,
+        )
+        if getattr(args, "resume_from", None) is not None
+        else None
     )
+    as_of = resume.as_of if resume is not None else (
+        args.as_of
+        or datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+    if resume is not None and args.as_of is not None and args.as_of != resume.as_of:
+        raise workflow.WorkflowError("Resume run must retain its original --as-of value.")
     workflow.parse_published_at(as_of)
 
     folder = base._under_private(
@@ -1598,17 +1986,26 @@ def command(args: argparse.Namespace) -> int:
         or base.OUTPUT_ROOT / as_of[:10] / as_of[11:19].replace(":", "")
     )
     base.legacy_cli._ensure_owner_only_directory(folder)
+    if resume is not None and folder.resolve() == resume.source_folder.resolve():
+        raise workflow.WorkflowError(
+            "Resume output must be different from the preserved source run."
+        )
     run_dashboard = new_run_dashboard(run_id)
 
     try:
-        momentum_candidates = momentum.invoke_scout(args.topic, args.days, as_of)
-        ranked = momentum.rank_candidates(
-            momentum_candidates,
-            minimum=momentum.MIN_AUTHORITY_MOMENTUM,
-        )
-        top_five = ranked[: momentum.MOMENTUM_TOP_K]
-        authority_scores = momentum.score_authority_fit(top_five, profile)
-        top_five = momentum.attach_authority_fit(top_five, authority_scores)
+        if resume is not None:
+            top_five = [dict(item) for item in resume.top_five]
+            momentum_candidates = list(top_five)
+            ranked = list(top_five)
+        else:
+            momentum_candidates = momentum.invoke_scout(args.topic, args.days, as_of)
+            ranked = momentum.rank_candidates(
+                momentum_candidates,
+                minimum=momentum.MIN_AUTHORITY_MOMENTUM,
+            )
+            top_five = ranked[: momentum.MOMENTUM_TOP_K]
+            authority_scores = momentum.score_authority_fit(top_five, profile)
+            top_five = momentum.attach_authority_fit(top_five, authority_scores)
     except STAGE_EXCEPTIONS as exc:
         run_dashboard["surface_scouts"] = surface_diagnostics(folder)
         record_surface_decisions(run_dashboard, run_dashboard["surface_scouts"])  # type: ignore[arg-type]
@@ -1628,16 +2025,29 @@ def command(args: argparse.Namespace) -> int:
             v1_completion._read_jsonl(ledger_path)[ledger_start:],
         )
         raise
-    run_dashboard["surface_scouts"] = surface_diagnostics(folder)
+    run_dashboard["surface_scouts"] = (
+        [dict(item) for item in resume.surface_scouts]
+        if resume is not None
+        else surface_diagnostics(folder)
+    )
     record_surface_decisions(run_dashboard, run_dashboard["surface_scouts"])  # type: ignore[arg-type]
     record_momentum_decisions(run_dashboard, top_five)
     mark_run_stage(
         run_dashboard,
         "conversation_discovery",
         "PASS",
-        "conversation candidates were collected and ranked",
+        (
+            "conversation candidates and rankings were resumed from the preserved run"
+            if resume is not None
+            else "conversation candidates were collected and ranked"
+        ),
         signal_count=len(momentum_candidates),
         ranked_count=len(ranked),
+        resumed_from=(
+            resume.source_folder.relative_to(workflow.REPO_ROOT).as_posix()
+            if resume is not None
+            else None
+        ),
         observed_scouts=sum(
             1 for item in run_dashboard["surface_scouts"]  # type: ignore[index]
             if isinstance(item, Mapping) and item.get("status") == "OBSERVED"
@@ -1648,11 +2058,14 @@ def command(args: argparse.Namespace) -> int:
             if isinstance(item, Mapping)
         ),
     )
-    inventory_path, inventory = update_candidate_inventory(
-        top_five,
-        as_of=as_of,
-        days=args.days,
-    )
+    if resume is None:
+        inventory_path, inventory = update_candidate_inventory(
+            top_five,
+            as_of=as_of,
+            days=args.days,
+        )
+    else:
+        inventory_path, inventory = CANDIDATE_INVENTORY, []
 
     momentum_package = base.write_private_json(
         folder / "momentum.json",
@@ -1669,19 +2082,36 @@ def command(args: argparse.Namespace) -> int:
             "candidates": top_five,
             "publishing_status": "DISABLED",
             "human_selection_required": True,
+            "resumed_from": (
+                resume.source_folder.relative_to(workflow.REPO_ROOT).as_posix()
+                if resume is not None
+                else None
+            ),
         },
     )
-    momentum.print_top(top_five)
+    if resume is None:
+        momentum.print_top(top_five)
+    else:
+        print(f"Resumed {len(top_five)} previously ranked topic candidate(s).")
     print(
         f"Momentum evidence stored: "
         f"{momentum_package.relative_to(workflow.REPO_ROOT)}."
     )
-    print(
-        f"Rolling candidate inventory: {len(inventory)} qualified unused topic(s) at "
-        f"{inventory_path.relative_to(workflow.REPO_ROOT)}."
-    )
+    if resume is None:
+        print(
+            f"Rolling candidate inventory: {len(inventory)} qualified unused topic(s) at "
+            f"{inventory_path.relative_to(workflow.REPO_ROOT)}."
+        )
+    else:
+        print(
+            "Resume: conversation discovery and topic admission were not executed again."
+        )
 
-    eligible, discovery_route = select_topic_scope(top_five, inventory)
+    if resume is None:
+        eligible, discovery_route = select_topic_scope(top_five, inventory)
+    else:
+        eligible = [dict(item) for item in resume.eligible]
+        discovery_route = resume.route
     if not eligible:
         record_topic_admission_decisions(
             run_dashboard,
@@ -1705,7 +2135,7 @@ def command(args: argparse.Namespace) -> int:
         )
     record_topic_admission_decisions(
         run_dashboard,
-        top_five,
+        eligible if resume is not None else top_five,
         eligible,
         discovery_route,
     )
@@ -1716,13 +2146,41 @@ def command(args: argparse.Namespace) -> int:
         f"{len(eligible)} topic(s) admitted through {discovery_route}",
         route=discovery_route,
         admitted_topics=[str(item["topic"]) for item in eligible],
+        resumed_from=(
+            resume.source_folder.relative_to(workflow.REPO_ROOT).as_posix()
+            if resume is not None
+            else None
+        ),
     )
     print(
         f"Discovery route: {discovery_route}; {len(eligible)} topic(s) admitted "
         "to evidence verification."
     )
 
+    base.write_private_json(
+        folder / ADMITTED_SCOPE_NAME,
+        {
+            "schema_version": 1,
+            "created_at": as_of,
+            "topic": args.topic,
+            "days": args.days,
+            "route": discovery_route,
+            "candidates": eligible,
+            "profile_sha256": _mapping_sha256(profile),
+            "scope_fingerprint": evidence_scope_fingerprint(
+                eligible,
+                requested_topic=args.topic,
+            ),
+            "resumed_from": (
+                resume.source_folder.relative_to(workflow.REPO_ROOT).as_posix()
+                if resume is not None
+                else None
+            ),
+        },
+    )
+
     db = base._under_private(args.db)
+    evidence_attempts: list[dict[str, object]] = []
     try:
         evidence_resolution = resolve_signal_evidence(
             args.topic,
@@ -1731,6 +2189,16 @@ def command(args: argparse.Namespace) -> int:
             eligible,
             folder=folder,
             db_path=db,
+            attempt_trace=evidence_attempts,
+        )
+        evidence_attempt_path = base.write_private_json(
+            folder / "evidence-attempts.json",
+            {
+                "schema_version": 1,
+                "created_at": as_of,
+                "scope_fingerprint": evidence_resolution.scope_fingerprint,
+                "attempts": evidence_attempts,
+            },
         )
         items = list(evidence_resolution.items)
         raw_signals = base.project_signals(items)
@@ -1755,6 +2223,14 @@ def command(args: argparse.Namespace) -> int:
             db, items, evidence_origin="private-import"
         )
     except STAGE_EXCEPTIONS as exc:
+        evidence_attempt_path = base.write_private_json(
+            folder / "evidence-attempts.json",
+            {
+                "schema_version": 1,
+                "created_at": as_of,
+                "attempts": evidence_attempts,
+            },
+        )
         mark_run_stage(
             run_dashboard,
             "evidence_verification",
@@ -1763,6 +2239,10 @@ def command(args: argparse.Namespace) -> int:
             expected="3-7 research signals pass timestamp, source-body, URL, and source-quality validation",
             observed=f"{type(exc).__name__}: {exc}",
             exception_type=type(exc).__name__,
+            attempt_trace=evidence_attempt_path.relative_to(
+                workflow.REPO_ROOT
+            ).as_posix(),
+            attempts=evidence_attempts,
         )
         persist_run_dashboard(folder, run_dashboard)
         persist_browser_dashboard(
@@ -1781,6 +2261,7 @@ def command(args: argparse.Namespace) -> int:
         acquisition_route=evidence_resolution.route,
         live_attempts=evidence_resolution.attempts,
         evidence_snapshot=evidence_snapshot.relative_to(workflow.REPO_ROOT).as_posix(),
+        attempt_trace=evidence_attempt_path.relative_to(workflow.REPO_ROOT).as_posix(),
         database_inserted=inserted,
         database_duplicates=duplicates,
     )
@@ -2154,6 +2635,14 @@ def command(args: argparse.Namespace) -> int:
 
 def parser() -> argparse.ArgumentParser:
     result = base.parser()
+    result.add_argument(
+        "--resume-from",
+        type=Path,
+        help=(
+            "Resume a run that stopped at evidence verification without repeating "
+            "conversation discovery or topic admission."
+        ),
+    )
     result.add_argument(
         "--week-slot",
         type=int,

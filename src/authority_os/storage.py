@@ -1400,6 +1400,36 @@ def list_research_items_by_identity(
     return [by_identity[pair] for pair in pairs if pair in by_identity]
 
 
+def list_research_items_by_urls(
+    db_path: Path | str,
+    urls: Sequence[str],
+    *,
+    evidence_origin: str = "private-import",
+) -> list[dict[str, object]]:
+    """Return exact canonical-URL matches without scanning unrelated bodies."""
+
+    if evidence_origin not in EVIDENCE_ORIGINS:
+        raise ValueError(
+            f"invalid evidence origin; expected one of {sorted(EVIDENCE_ORIGINS)}"
+        )
+    canonical_urls = tuple(
+        dict.fromkeys(workflow.canonicalise_url(str(value)) for value in urls)
+    )
+    if not 1 <= len(canonical_urls) <= 64:
+        raise ValueError("one to 64 distinct evidence URLs are required")
+    placeholders = ", ".join("?" for _ in canonical_urls)
+    with closing(connect(db_path)) as connection:
+        rows = connection.execute(
+            f"""
+            SELECT * FROM research_items
+            WHERE evidence_origin = ? AND canonical_url IN ({placeholders})
+            """,
+            (evidence_origin, *canonical_urls),
+        )
+        by_url = {str(row["canonical_url"]): dict(row) for row in rows}
+    return [by_url[url] for url in canonical_urls if url in by_url]
+
+
 def normalise_performance_timestamp(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must be a timezone-aware timestamp")
