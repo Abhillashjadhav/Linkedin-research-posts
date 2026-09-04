@@ -1,0 +1,505 @@
+{
+  "metadata": {
+    "contract_id": "linkedin-post-contract",
+    "schema_version": 1,
+    "version": "1.0.0",
+    "status": "APPROVED",
+    "purpose": "One product and runtime contract for discovery, evidence, selection, drafting, evaluation, repair, packaging, and release.",
+    "hash_algorithm": "sha256",
+    "source_of_truth_after_approval": true
+  },
+  "product_outcome": {
+    "primary_outcome": "Produce one directly publishable LinkedIn post that reads as clearly human, gives a product or AI practitioner a useful decision, and makes no unsupported claim.",
+    "owner_edit_required": false,
+    "publishing_is_automatic": false,
+    "runtime_slo_seconds": 480,
+    "release_success": {
+      "required_consecutive_live_runs": 3,
+      "successful_run_definition": "A run finishes within the runtime SLO, produces the post and source comment, passes every hard gate and the final Critic acceptance rule, and records complete contract provenance."
+    }
+  },
+  "definitions": {
+    "body_read": "The relevant content of the linked source was accessed and used. A title, search snippet, social preview, or quoted headline alone is not body-read evidence.",
+    "credible_source": "A public source whose body can be inspected and whose publisher is accountable for the claim. Primary and official sources are preferred. Reputable reporting with attributable sourcing may qualify. Social posts and community threads can identify momentum but cannot be the sole factual proof.",
+    "claim_support": "The selected evidence actually supports the central factual claim at the level of scope, causality, severity, certainty, and specificity used in the post.",
+    "narrowing": "Remove unsupported detail or move to a true, evidence-supported parent category. Narrowing may not add severity, prevalence, causality, scope, materiality, or certainty.",
+    "atomic_idea": "The one transferable product judgment or decision made by the post, not merely the broad subject or company name.",
+    "reader_stake": "The opening makes clear why the target reader should care now.",
+    "hard_gate": "A binary requirement that cannot be traded against a high score.",
+    "selector": "A rule that ranks or chooses among eligible inputs; it is not final post acceptance.",
+    "diagnostic": "A signal used for repair and observability; it cannot independently veto publication.",
+    "human_choice": "A decision requested only when the workflow cannot resolve a material evidence or product ambiguity safely."
+  },
+  "workflow": {
+    "stage_order": [
+      "conversation_discovery",
+      "topic_admission",
+      "evidence_verification",
+      "topic_value",
+      "thesis_selection",
+      "claim_support",
+      "drafting",
+      "critic",
+      "deterministic_checks",
+      "packaging"
+    ],
+    "stage_classes": {
+      "conversation_discovery": "selector",
+      "topic_admission": "selector",
+      "evidence_verification": "hard_gate",
+      "topic_value": "selector_and_hard_gate",
+      "thesis_selection": "selector_with_hard_checks",
+      "claim_support": "hard_gate_or_human_choice",
+      "pre_writer_resonance": "diagnostic",
+      "drafting": "generator",
+      "critic": "scored_acceptance",
+      "deterministic_checks": "hard_gate",
+      "post_critic_resonance": "diagnostic",
+      "packaging": "artifact_gate"
+    }
+  },
+  "discovery": {
+    "cadence": "daily",
+    "window_days": 7,
+    "candidate_count": 10,
+    "retained_count": 5,
+    "ranking_axes": [
+      "conversation_breadth",
+      "engagement_strength",
+      "acceleration",
+      "cross_platform_confirmation",
+      "freshness"
+    ],
+    "axis_range": [1, 5],
+    "minimum_observed_axes": 4,
+    "authority_momentum_floor": 14,
+    "reach_momentum_floor": 20,
+    "unknown_observation_policy": "UNKNOWN, never fabricated zero",
+    "acceleration_definition": "Observed percentage growth across a comparable 24-72 hour interval; otherwise UNKNOWN.",
+    "freshness_scores": {
+      "up_to_24_hours": 5,
+      "up_to_48_hours": 4,
+      "up_to_72_hours": 3,
+      "up_to_120_hours": 2,
+      "up_to_168_hours": 1,
+      "older": 0
+    },
+    "reuse_before_search": [
+      "exact-scope verified run artifact",
+      "eligible verified records already stored locally",
+      "one targeted live verification attempt"
+    ],
+    "resume_rule": "Resume from the first failed or incomplete stage. Never rerun a completed stage when its input fingerprint and contract hash are unchanged.",
+    "published_reuse": {
+      "scope": "published_atomic_idea",
+      "rule": "Exclude an already-published atomic idea deterministically. A broad domain may be reused only for a materially different atomic idea.",
+      "decision_status": "RESOLVED"
+    }
+  },
+  "evidence": {
+    "minimum_credible_sources": 1,
+    "maximum_selected_sources": 7,
+    "preferred_source_order": [
+      "primary_or_official",
+      "reputable_secondary_reporting"
+    ],
+    "social_source_role": "discovery_only_unless_the_social_post_is_itself_the_claimed_event",
+    "body_read_required": true,
+    "credibility_is_binary": true,
+    "credible_source_test": [
+      "public URL is inspectable",
+      "relevant body content was accessed",
+      "publisher is accountable or reporting is attributable",
+      "source supports the intended factual use"
+    ],
+    "date_policy": {
+      "exact_date": "Use internally when available.",
+      "month_only": "Allowed when exact date is unavailable; show uncertainty and do not award an exact freshness score.",
+      "window_eligibility": "Month-only evidence may qualify only when the possible month overlaps the requested seven-day window."
+    },
+    "cross_stage_identity": "canonical_source_url",
+    "product_facing_internal_ids": false,
+    "content_hash_in_cross_stage_contract": false,
+    "topic_string_used_for_retrieval": false,
+    "citation_output": {
+      "retain_selected_urls_through_drafting": true,
+      "first_comment_requires_selected_url": true,
+      "show_internal_source_labels_to_reader": false
+    },
+    "legacy_lexical_similarity_0_18": "DELETED"
+  },
+  "topic_value": {
+    "class": "selector_and_hard_gate",
+    "axes": {
+      "reader_relevance": {"floor": 4, "meaning": "Useful to the target reader."},
+      "reader_value": {"floor": 4, "meaning": "Delivers capability discovery, a decision change, or immediate utility."},
+      "gravity": {"floor": 2, "meaning": "The consequence is more than narrow novelty; high gravity is valuable but not mandatory."},
+      "evidence_strength": {"floor": 3, "meaning": "The central situation is inspectable through credible body-read evidence."},
+      "authority_fit": {"floor": 3, "meaning": "The author can add a useful product judgment rather than repeat news."}
+    },
+    "axis_range": [1, 5],
+    "minimum_total": 18,
+    "hard_checks": {
+      "brand_strip_pass": "The atomic value survives removal of the brand name.",
+      "feed_value_possible": "The reader receives the core value without clicking away.",
+      "supports_authority_goal": "The situation supports the configured authority goal."
+    },
+    "selection_rule": "Retain every passing situation. A weaker sibling cannot veto a passing candidate."
+  },
+  "thesis": {
+    "axes": {
+      "audience_fit": "Useful to the target audience.",
+      "distinctiveness": "Adds a real judgment, trade-off, counterexample, or decision surface rather than a generic news summary.",
+      "decision_strength": "Makes a concrete choice or recommendation.",
+      "proof_fit": "Uses evidence or author proof naturally and honestly.",
+      "simplicity": "The atomic idea works for a non-specialist."
+    },
+    "axis_range": [1, 5],
+    "current_live_rule": {
+      "minimum_total": 23,
+      "minimum_simplicity": 4,
+      "maximum_cycles": 3
+    },
+    "role": "selector_not_publication_acceptance",
+    "auto_selection": "When post generation is requested, choose the highest-ranked eligible thesis deterministically. Otherwise present the ranked eligible set.",
+    "author_proof": {
+      "rule": "Required only when the thesis makes an author-owned capability, result, customer, or implementation claim. Evidence-led incident and analysis posts may use NOT_REQUIRED.",
+      "decision_status": "RESOLVED"
+    },
+    "qualification_rule": "Use the five thesis axes to rank candidates, not as a second publication threshold. Require the selected thesis to pass audience relevance, claim support, simplicity, and non-duplication checks.",
+    "decision_status": "RESOLVED"
+  },
+  "claim_support": {
+    "class": "hard_gate",
+    "question": "Does the selected evidence support the intended central claim?",
+    "supported": "Continue.",
+    "unsupported": {
+      "choices": ["NARROW", "MORE_EVIDENCE", "STOP"],
+      "attended_run": "Ask the human with the unsupported wording and evidence shown.",
+      "unattended_run": "NARROW once, independently recheck support, then try MORE_EVIDENCE once if time remains. Stop and ask only if neither works.",
+      "decision_status": "RESOLVED"
+    },
+    "narrowing_rules": {
+      "may_remove_incidental_precision": true,
+      "may_use_true_parent_category": true,
+      "may_add_severity_scope_causality_certainty_or_materiality": false,
+      "support_must_be_rechecked": true,
+      "example": "The test simulated two failures may become the test identified key failures only when the evidence supports that broader parent category. It may not become major or critical failures without support."
+    }
+  },
+  "resonance": {
+    "pre_writer": {
+      "current_live_rule": {
+        "decision_axes": {
+          "recognition": 4,
+          "attention_trigger": 3,
+          "situation_specificity": 4,
+          "payoff": 4
+        },
+        "minimum_total": 16,
+        "total_out_of": 20,
+        "proof_value": "recorded_but_not_counted"
+      },
+      "role": "diagnostic_and_repair_feedback",
+      "claim_support_remains_separate_hard_gate": true,
+      "decision_status": "RESOLVED"
+    },
+    "post_critic": {
+      "current_live_rule": {
+        "axis_floors": {
+          "stop_power": 4,
+          "five_second_comprehension": 4,
+          "payoff_distance": 3,
+          "proof_proximity": 3
+        },
+        "shareability_floor": null,
+        "minimum_total": 20,
+        "total_out_of": 25,
+        "required_booleans": ["feed_value", "value_before_ask"]
+      },
+      "role": "diagnostic_and_repair_feedback",
+      "decision_status": "RESOLVED"
+    }
+  },
+  "writing": {
+    "style_target": "Clearly human, sharp conversational product leader: direct, empathetic, emotionally perceptive, and capable of wit. Exact imitation of the owner's speech is not required.",
+    "directly_publishable": true,
+    "consultant_register": "prohibited",
+    "presentation_register": "prohibited",
+    "wit": "Allowed when it sharpens the point; never required or forced.",
+    "emotional_reality": "Name empathy, frustration, helplessness, tension, or relief when naturally supported by the situation. Do not manufacture emotion for effect.",
+    "personal_experience": {
+      "invented_experience": "prohibited",
+      "invented_emotion": "prohibited",
+      "first_person_judgment": "allowed",
+      "technically_plausible_analysis": "Allowed only as a question, conditional, recommendation, or proposed test; never presented as an observed personal fact."
+    },
+    "plain_language": {
+      "median_word_frequency_zipf_reference": 5.72,
+      "words_below_zipf_3_reference_percent": 2.7,
+      "industry_terms_allowed_when_helpful": ["eval", "agentic", "context window", "frontier AI lab", "inference", "token", "RAG"],
+      "prohibited_register_examples": ["shy of", "delve", "myriad", "testament", "underscore", "crucible", "paradigm", "nuanced", "albeit", "hitherto", "veritable"]
+    },
+    "cadence": {
+      "sentence_length_mean_reference": 12.5,
+      "sentence_length_sd_reference": 11.7,
+      "sentence_length_max_observed_reference": 150,
+      "rule": "Sentence length must vary naturally. Uniform rhythm is an AI fingerprint."
+    },
+    "contractions_per_100_words_reference": 1.5,
+    "hook": {
+      "score_both_first_lines": true,
+      "reader_stake_required": true,
+      "line_one": "Lead with the strongest supported recognizable name or company and the strongest supported number, loss, scale, or incident when available.",
+      "line_two": "Establish the reader's immediate consequence, decision, risk, opportunity, or useful tension.",
+      "supported_names_are_not_removed": true,
+      "strongest_truthful_alternative": "When a recognizable name, company, number, loss, scale, or incident is unavailable or is not the strongest supported attention element, use the strongest truthful supported alternative.",
+      "never_invent_scale_loss_incident_or_number": true,
+      "line_two_must_not_become_explanatory_or_consultant_register": true
+    }
+  },
+  "critic": {
+    "class": "scored_acceptance",
+    "axis_order": ["hook_strength", "middle_escalation", "earned_closer", "specificity_and_source_quality", "voice_fidelity"],
+    "axis_range": [1, 5],
+    "total_formula": "sum_of_five_axes",
+    "total_out_of": 25,
+    "minimum_total": 18,
+    "optimization_target": null,
+    "legacy_24_or_25_approval_path": "DELETED",
+    "legacy_hook_total_cap": "DELETED",
+    "axis_floors": {
+      "hook_strength": 4,
+      "middle_escalation": 3,
+      "earned_closer": 3,
+      "specificity_and_source_quality": 3,
+      "voice_fidelity": 4
+    },
+    "axes": {
+      "hook_strength": {
+        "type": "outcome_gate",
+        "1": "No concrete situation. Abstract claim or throat-clearing.",
+        "2": "Names a real event, company, or situation, but gives the reader no immediate reason to care.",
+        "3": "Concrete and relevant, but the reader stake arrives after the first two lines or remains generic; the opening may also spend its strongest position on setup.",
+        "4": "WORKING STANDARD. Across the first two lines, line 1 leads with the strongest supported recognizable name or company and supported number, loss, scale, or incident available; line 2 immediately states the consequence, risk, opportunity, challenge, problem, or decision for the reader. If no name or number is available, use the strongest supported concrete fact without inventing one.",
+        "5": "Across the first two lines, line 1 uses the strongest supported recognizable name or company plus the most material supported number, loss, scale, or incident available, and line 2 connects it to a sharp, surprising reader consequence. Bigger claims earn this score only when the evidence supports them; never inflate or invent either line."
+      },
+      "middle_escalation": {
+        "type": "outcome_gate",
+        "1": "The body is mostly a list, specification, architecture walkthrough, summary, repetition, or disconnected observations; understanding does not deepen and technical detail is not translated into why it matters.",
+        "2": "There is some useful detail, but the body is flat, jargon-heavy, or repetitive and adds little understandable mechanism, trade-off, consequence, or decision depth.",
+        "3": "The body forms a coherent explanation and adds at least one meaningful mechanism, implication, or trade-off, but progression is uneven or some technical detail still makes the reader work too hard.",
+        "4": "Each major beat advances the reader from situation to only the necessary mechanism and then to a concrete human or team consequence, trade-off, or decision with little filler and no unexplained jargon.",
+        "5": "The body is tightly sequenced and unusually easy to follow: every paragraph adds one necessary layer of mechanism, consequence, trade-off, or decision; technical concepts are translated into plain-language impact and removing a major beat would materially weaken the argument."
+      },
+      "earned_closer": {
+        "type": "outcome_gate",
+        "owner_note": "Retained by owner decision despite inverted historical measurement; reconsider only after a held-out set exists.",
+        "1": "The ending is a generic CTA, generic question, slogan, or unrelated kicker that is not earned by the body.",
+        "2": "The ending mostly restates the post or uses familiar engagement bait such as a generic invitation for opinions.",
+        "3": "The ending is relevant and understandable, but predictable; it summarizes or suggests an action without sharply crystallizing the post's value.",
+        "4": "The ending delivers a specific takeaway, decision, implication, or question that follows naturally from the evidence, human stake, and argument.",
+        "5": "The ending concisely crystallizes the post's atomic value or decision in language a reader could carry into work, leaving a credible implication or question that feels inevitable rather than manufactured."
+      },
+      "specificity_and_source_quality": {
+        "type": "outcome_gate",
+        "1": "The post is largely abstract or generic, and consequential factual claims are difficult to inspect or depend on weak, social-only, title-only, or unsupported evidence.",
+        "2": "Some concrete details exist, but the central situation or claim remains weakly inspectable, generic, or only partially supported by the supplied evidence.",
+        "3": "The reader can picture the core situation and inspect the main claim through supplied evidence, but mechanism detail, source quality, precision, or translation to an understandable consequence is incomplete.",
+        "4": "The post contains a concrete situation and enough mechanism to explain it, and consequential factual claims are supported by body-read credible evidence without false precision; technical nouns alone do not count as specificity.",
+        "5": "The situation is highly concrete and strongly inspectable through primary or reputable evidence, artifacts, measured results, or clear mechanisms; every consequential factual detail is traceable, numbers appear only when they materially help, and specificity makes the post easier rather than denser."
+      },
+      "voice_fidelity": {
+        "type": "values_gate",
+        "1": "Uniform sentence rhythm, stacked adjectives, no contractions, tidy parallel structure, or invented emotion and first-person experience. It reads as competent copy nobody actually said.",
+        "2": "The subject is relevant, but the prose is formulaic or presentation-driven. It uses polished connective tissue, high-flown words, forced wit, or generic declarations of empathy instead of sounding emotionally observant and spoken.",
+        "3": "Human-readable, but passages flatten into a consultant memo or presentation: legalistic qualifications, abstract noun stacks, tidy parallel requirements, executive-summary language, or a summary-style ending. It still carries a visible AI fingerprint.",
+        "4": "WORKING STANDARD. Clearly human, conversational product-leader writing, not an imitation of the owner. Sentence lengths swing, contractions appear naturally, plain words carry the argument, and judgment is direct. When the evidence supports it, the writing notices the real human feeling or consequence - frustration, empathy, uncertainty, helplessness, wasted effort, or relief - without inventing emotion or experience. It avoids consultant, presentation, and explanatory register, including in line 2.",
+        "5": "Distinctive, memorable human writing. It is exceptionally sharp and may be witty, but wit is never required or forced. It is emotionally perceptive where the truth supports that reading, technically credible without sounding like a specification, and confident without hiding uncertainty. Plain words do the work; industry vocabulary is used only where it helps, and no feeling or lived experience is fabricated."
+      }
+    },
+    "big_name_bonus": "DELETED",
+    "score_only_boundary": true
+  },
+  "hard_gates": {
+    "honesty": {
+      "scope": "candidate",
+      "allowed_statuses": ["PASS"],
+      "rule": "No invented fact, incident, number, causal claim, result, customer, credential, consequence, or personal experience."
+    },
+    "citation": {
+      "scope": "candidate_and_package",
+      "allowed_statuses": ["PASS"],
+      "rule": "Consequential factual claims are supported by selected body-read URLs, and at least one selected URL is emitted in the source comment."
+    },
+    "proof": {
+      "scope": "candidate",
+      "allowed_statuses": ["PASS", "NOT_REQUIRED"],
+      "rule": "Required for author-owned capability, result, implementation, customer, or opportunity claims; otherwise NOT_REQUIRED."
+    },
+    "privacy": {
+      "scope": "artifact_write",
+      "allowed_statuses": ["PASS"],
+      "rule": "No private evidence, secret, credential, restricted path, or non-public personal data is emitted."
+    },
+    "relevance": {
+      "scope": "candidate",
+      "allowed_statuses": ["PASS"],
+      "rule": "The post preserves the selected atomic thesis and is useful to the configured target reader."
+    },
+    "claim_support": {
+      "scope": "pre_writer_and_candidate",
+      "allowed_statuses": ["PASS"],
+      "rule": "The central claim remains within the selected evidence."
+    },
+    "reader_stake": {
+      "scope": "hook",
+      "allowed_statuses": ["PASS"],
+      "rule": "The first two lines establish a recognizable consequence, decision, risk, opportunity, or useful tension for the target reader."
+    }
+  },
+  "deterministic_checks": {
+    "anti_slop": {
+      "role": "hard_gate_for_exact_enumerated_findings_only",
+      "rule": "Objective structural and phrase findings must be repaired. Broad judgments such as consultant-like or human-sounding belong to voice_fidelity, not a second hidden style veto.",
+      "decision_status": "RESOLVED"
+    },
+    "off_register_hook_terms": {
+      "role": "hard_gate",
+      "rule": "Reject only the exact frozen prohibited-register list. Capitalized proper names and approved industry vocabulary are not flagged."
+    },
+    "placeholders": {
+      "role": "hard_gate",
+      "rule": "No XX, TODO, citation placeholder, source-* token, or unfinished field may appear in a directly publishable package."
+    }
+  },
+  "repair": {
+    "maximum_quality_cycles": 4,
+    "candidates_per_cycle": 3,
+    "retain_best_grounded_candidate": true,
+    "repair_only_failed_axes_and_gates": true,
+    "preserve_passing_axes": true,
+    "never_lower_a_floor_during_a_run": true,
+    "never_change_the_locked_thesis_without_a_recorded_claim_support_decision": true,
+    "campaign_and_single_post_use_same_policy": true,
+    "on_exhaustion": "Write best-effort-post.md, all candidate texts, exact scorecards, shortfalls, gate reasons, and the next safe action. Do not publish."
+  },
+  "acceptance": {
+    "formula": "critic_total_at_least_18 AND every_axis_floor_met AND every_hard_gate_passed AND deterministic_checks_passed AND package_complete",
+    "model_reported_status_is_authoritative": false,
+    "python_computes_acceptance": true,
+    "model_scores_and_evidence_are_inputs": true,
+    "no_score_can_waive_a_hard_gate": true,
+    "no_secondary_scorecard_can_veto_after_acceptance": true
+  },
+  "packaging": {
+    "required_artifacts": [
+      "post.md",
+      "source-comment.md",
+      "evaluation.json",
+      "run-dashboard.json",
+      "eval-dashboard.json",
+      "eval-dashboard.html"
+    ],
+    "blocked_run_best_effort_artifact_required": true,
+    "package_status": "READY_FOR_MANUAL_PUBLISH only when acceptance passes",
+    "automatic_publish": false
+  },
+  "runtime": {
+    "global_deadline_seconds": 480,
+    "deadline_behavior": "Stop safely, persist the current checkpoint, record TIME_BUDGET_EXCEEDED, and print one resume command.",
+    "stage_retries_share_global_budget": true,
+    "completed_stage_reuse": true,
+    "quality_cycle_resume": true,
+    "network_search_after_verified_evidence_exists": "Only for an explicit MORE_EVIDENCE decision or expired/ineligible evidence."
+  },
+  "observability": {
+    "required_on_every_stage": [
+      "contract_id",
+      "contract_version",
+      "contract_sha256",
+      "stage",
+      "class",
+      "status",
+      "reason_codes",
+      "shortfalls",
+      "elapsed_seconds",
+      "attempt_count",
+      "input_artifact_fingerprint",
+      "output_artifact_paths"
+    ],
+    "dashboard_rules": [
+      "Show the first blocker.",
+      "Show every score and per-axis shortfall.",
+      "Show hard gates separately from scored axes.",
+      "Show diagnostics without labelling them blockers.",
+      "Mark skipped stages NOT_EVALUATED.",
+      "Always link the best candidate text, even when blocked.",
+      "Show whether evidence was reused or searched live.",
+      "Show total runtime against the 480-second SLO."
+    ]
+  },
+  "change_control": {
+    "single_file_rule": "All executable thresholds, axes, anchors, gate modes, retry limits, and runtime/release rules originate here.",
+    "generated_consumers": ["Python constants", "model prompt projections", "schemas", "dashboard labels", "tests", "documentation"],
+    "prohibited": [
+      "duplicated numeric acceptance literals outside generated fixtures",
+      "prompt text that changes a gate or score definition",
+      "runtime overlays that add an unregistered blocker",
+      "model-written PASS or BLOCKED status overriding Python computation"
+    ],
+    "required_for_change": [
+      "owner decision recorded",
+      "contract version incremented",
+      "contract SHA changed",
+      "all generated consumers refreshed",
+      "installed-runtime semantic contract tests pass",
+      "three consecutive live runs pass before release"
+    ]
+  },
+  "resolved_decisions": [
+    {
+      "id": "OD-1",
+      "question": "Should pre-Writer and post-Critic Resonance scores remain independent blockers?",
+      "resolution": "No. Use both as diagnostics and targeted repair feedback. Keep claim support, feed value, and reader stake as explicit hard gates.",
+      "decision_status": "RESOLVED",
+      "why": "Their 16/20 and 20/25 rules overlap the final Critic and caused surprise vetoes."
+    },
+    {
+      "id": "OD-2",
+      "question": "What should qualify a thesis before drafting?",
+      "resolution": "Use the five thesis axes to rank candidates, not as a second publication threshold. Require the selected thesis to pass audience relevance, claim support, simplicity, and non-duplication checks.",
+      "decision_status": "RESOLVED",
+      "current_behavior": "23/25 plus simplicity at least 4, up to three cycles.",
+      "why": "The thesis axes differ from the final Critic axes, so copying 18/25 automatically would be arbitrary."
+    },
+    {
+      "id": "OD-3",
+      "question": "What should an unattended run do when the central claim is unsupported?",
+      "resolution": "Automatically NARROW once, independently recheck support, then try MORE_EVIDENCE once if time remains. Stop and ask only if neither works.",
+      "decision_status": "RESOLVED",
+      "why": "This preserves evidence safety without forcing routine QA back onto the owner."
+    },
+    {
+      "id": "OD-4",
+      "question": "How broad is the no-reuse rule after publication?",
+      "resolution": "Exclude the published atomic idea, not the entire broad domain.",
+      "decision_status": "RESOLVED",
+      "why": "A blanket topic ban would prevent materially new product judgments about recurring companies or technologies."
+    },
+    {
+      "id": "OD-5",
+      "question": "Can reputable secondary reporting be the one credible source?",
+      "resolution": "Yes, when its body is available, sourcing is attributable, and it directly supports the claim. Prefer a primary source when available.",
+      "decision_status": "RESOLVED",
+      "why": "Many real incidents have no useful primary incident report, while social-only evidence remains insufficient."
+    },
+    {
+      "id": "OD-6",
+      "question": "Should anti-slop be an independent hard veto?",
+      "resolution": "Yes only for a short frozen list of objective structural or phrase violations. Human quality and consultant register stay inside the voice score.",
+      "decision_status": "RESOLVED",
+      "why": "This catches deterministic defects without creating a second subjective voice judge."
+    }
+  ]
+}
