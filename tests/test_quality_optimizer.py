@@ -219,15 +219,31 @@ class RepairStateTests(unittest.TestCase):
             )
 
         self.assertEqual(result.candidates, (first, second))
-        self.assertEqual(record.call_count, 2)
-        first_decision = record.call_args_list[0].args[0]
-        second_decision = record.call_args_list[1].args[0]
+        recorded = [call.args[0] for call in record.call_args_list]
+        critic_decisions = [
+            decision for decision in recorded if decision["contract"] == "critic_total"
+        ]
+        gate_decisions = [
+            decision for decision in recorded if str(decision["contract"]).startswith("gate_")
+        ]
+        self.assertEqual(len(critic_decisions), 2)
+        self.assertEqual(len(gate_decisions), 10)
+        first_decision, second_decision = critic_decisions
+        self.assertEqual(first_decision["contract"], "critic_total")
         self.assertEqual(first_decision["mode"], "shadow")
         self.assertEqual(first_decision["status"], "PASS")
         self.assertEqual(first_decision["cycle"], 2)
         self.assertEqual(first_decision["band"], "advance-to-gates")
         self.assertIs(first_decision["hook_cap_applied"], False)
         self.assertEqual(second_decision["gates"], {"honesty": "FAIL"})
+        self.assertIn("unsupported-factual-marker", second_decision["failure_codes"])
+        failed_honesty = next(
+            decision
+            for decision in gate_decisions
+            if decision["contract"] == "gate_honesty" and decision["status"] == "FAIL"
+        )
+        self.assertEqual(failed_honesty["observed_status"], "FAIL")
+        self.assertIn("unsupported-factual-marker", failed_honesty["failure_codes"])
 
     def test_best_so_far_survives_a_later_score_regression(self) -> None:
         state = quality_optimizer.RepairState()
@@ -395,6 +411,11 @@ class DiagnosticCriticFlowTests(unittest.TestCase):
         output = io.StringIO()
         with (
             patch.object(quality_optimizer, "_ORIGINAL_COMMAND_DRAFT", exhaust),
+            patch.object(
+                quality_optimizer.best_effort,
+                "write",
+                return_value=workflow.REPO_ROOT / "data/private/run/best-effort-post.md",
+            ) as write,
             redirect_stdout(output),
         ):
             result = quality_optimizer._command_draft(SimpleNamespace())  # type: ignore[attr-defined]
@@ -402,9 +423,10 @@ class DiagnosticCriticFlowTests(unittest.TestCase):
         self.assertEqual(result, 1)
         rendered = output.getvalue()
         self.assertIn("best overall=candidate-1 score=24/25", rendered)
-        self.assertIn("The retained best overall candidate.", rendered)
-        self.assertIn("Content package: data/private/content-packages/best", rendered)
-        self.assertIn("NEEDS_HUMAN_REVIEW", rendered)
+        self.assertNotIn("The retained best overall candidate.", rendered)
+        self.assertIn("best-effort-post.md", rendered)
+        self.assertIn("BEST_EFFORT", rendered)
+        write.assert_called_once()
 
 
 if __name__ == "__main__":

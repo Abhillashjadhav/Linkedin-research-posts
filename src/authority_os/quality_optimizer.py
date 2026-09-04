@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Iterator, Mapping, Sequence
 
+from . import best_effort
 from . import package as approval_package
 from . import quality_cli, social_media_gate_policy, v1_completion, workflow
 
@@ -62,10 +63,21 @@ class RepairState:
     best: quality_cli.CandidateResult | None = None
     best_attempt: quality_cli.AttemptResult | None = None
     cycle_best_scores: list[int] = field(default_factory=list)
+    observed: list[
+        tuple[int, quality_cli.CandidateResult, quality_cli.AttemptResult]
+    ] = field(default_factory=list)
 
-    def observe(self, attempt: quality_cli.AttemptResult) -> quality_cli.CandidateResult:
+    def observe(
+        self,
+        attempt: quality_cli.AttemptResult,
+        cycle: int | None = None,
+    ) -> quality_cli.CandidateResult:
         if not attempt.candidates:
             raise workflow.WorkflowError("Quality repair needs at least one candidate.")
+        observed_cycle = cycle or len(self.cycle_best_scores) + 1
+        self.observed.extend(
+            (observed_cycle, candidate, attempt) for candidate in attempt.candidates
+        )
         current = max(attempt.candidates, key=_candidate_rank)
         self.cycle_best_scores.append(current.effective_total)
         if self.best is None or _candidate_rank(current) > _candidate_rank(self.best):
@@ -73,6 +85,16 @@ class RepairState:
             self.best_attempt = attempt
         assert self.best is not None
         return self.best
+
+    def best_safe(
+        self,
+    ) -> tuple[int, quality_cli.CandidateResult, quality_cli.AttemptResult] | None:
+        eligible = [
+            item
+            for item in self.observed
+            if not best_effort.blocking_failures(item[1])
+        ]
+        return max(eligible, key=lambda item: _candidate_rank(item[1])) if eligible else None
 
 
 _ACTIVE_STATE: RepairState | None = None
@@ -115,6 +137,30 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
             subject_id=candidate.candidate_id,
             artifact_sha256=v1_completion._sha256_text(candidate.text),  # type: ignore[attr-defined]
         )
+        artifact = v1_completion._sha256_text(candidate.text)  # type: ignore[attr-defined]
+        for gate_name, gate_status in sorted(candidate.gates.items()):
+            normalized = str(gate_status)
+            decision_status = (
+                "PASS"
+                if normalized in {"PASS", "NOT_REQUIRED"}
+                else "FAIL"
+                if normalized == "FAIL"
+                else "BLOCKED"
+            )
+            failure_codes = list(candidate.gate_reasons) if decision_status != "PASS" else []
+            v1_completion.record_decision(
+                {
+                    "contract": f"gate_{gate_name}",
+                    "mode": "enforce",
+                    "status": decision_status,
+                    "reason": f"{gate_name}-{normalized.casefold().replace('_', '-')}",
+                    "observed_status": normalized,
+                    "failure_codes": failure_codes,
+                },
+                stage=f"quality-cycle-{cycle}-gates",
+                subject_id=candidate.candidate_id,
+                artifact_sha256=artifact,
+            )
     return attempt
 
 
@@ -145,7 +191,7 @@ def _quality_feedback(
     attempt: quality_cli.AttemptResult, cycle: int
 ) -> dict[str, object]:
     state = _state()
-    seed = state.observe(attempt)
+    seed = state.observe(attempt, cycle)
     current_best = max(attempt.candidates, key=_candidate_rank)
     previous_best = max(state.cycle_best_scores[:-1], default=0)
     delta = current_best.effective_total - previous_best if previous_best else None
@@ -438,25 +484,46 @@ def _command_draft(args: object) -> int:
             if (
                 str(exc).startswith("No candidate cleared the locked ")
                 and state is not None
-                and state.best is not None
-                and state.best_attempt is not None
-                and candidate_is_acceptable(state.best)
             ):
-                best = state.best
+                selected = state.best_safe()
+                if selected is None:
+                    failed = sorted(
+                        {
+                            gate
+                            for _cycle, candidate, _attempt in state.observed
+                            for gate in best_effort.blocking_failures(candidate)
+                        }
+                    )
+                    print(
+                        "Best-effort artifact not written: hard gate(s) failed: "
+                        + (", ".join(failed) or "candidate safety was not established")
+                    )
+                    raise
+                cycle, best, attempt = selected
+                try:
+                    path = best_effort.write(
+                        best,
+                        attempt,
+                        cycle=cycle,
+                        failure_reason=str(exc),
+                    )
+                except (OSError, workflow.WorkflowError) as write_exc:
+                    print(
+                        "Best-effort artifact not written: privacy gate failed: "
+                        f"{write_exc}"
+                    )
+                    raise exc from write_exc
                 print(
                     f"Quality search exhausted; best overall={best.candidate_id} "
                     f"score={best.effective_total}/25; "
                     f"hook={best.axes.get('hook_strength', 0)}/5; "
                     "required_gates=pass."
                 )
-                print("Best overall candidate retained for human review:")
-                print(best.text)
-                for line in state.best_attempt.package_lines:
-                    print(line)
                 print(
-                    "Fallback review status: NEEDS_HUMAN_REVIEW; a downstream acceptance "
-                    "gate failed, so publishing remains disabled."
+                    "Best-effort artifact: "
+                    f"{path.relative_to(workflow.REPO_ROOT)}"
                 )
+                print("Fallback status: BEST_EFFORT; publishing remains disabled.")
                 return 1
             if str(exc).startswith("No candidate cleared the locked "):
                 raise workflow.WorkflowError(

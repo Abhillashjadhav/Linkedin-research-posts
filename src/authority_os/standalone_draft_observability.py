@@ -6,7 +6,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from . import daily_cli, daily_spine_cli, eval_dashboard_html, v1_completion, workflow
+from . import daily_cli, daily_spine_cli, eval_dashboard_html, quality_cli, v1_completion, workflow
 
 
 def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
@@ -20,6 +20,7 @@ def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
     ledger_path = v1_completion.STATE_ROOT / v1_completion.DECISION_LEDGER_NAME
     ledger_start = len(v1_completion._read_jsonl(ledger_path))
     result = command(argv)
+    failure_reason = quality_cli.LAST_ERROR_REASON or "draft command returned no failure reason"
     rows = v1_completion._read_jsonl(ledger_path)[ledger_start:]
 
     folder = workflow.DEFAULT_PRIVATE_DATA / "draft-runs" / run_id
@@ -44,7 +45,11 @@ def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
         run_dashboard,
         "drafting",
         "PASS" if result == 0 or post_evaluated else "FAIL",
-        "draft candidates reached evaluation" if result == 0 or post_evaluated else "drafting stopped before a valid Critic 1-5 scorecard was recorded",
+        (
+            "draft candidates reached evaluation"
+            if result == 0 or post_evaluated
+            else f"drafting exited {result}: {failure_reason}"
+        ),
         return_code=result,
     )
     if failed:
@@ -68,14 +73,14 @@ def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
             run_dashboard,
             "final_evals",
             "FAIL",
-            "drafting failed although every recorded eval passed; an unobserved gate remains",
+            f"drafting failed after recorded evals passed: {failure_reason}",
         )
     elif result != 0:
         daily_spine_cli.mark_run_stage(
             run_dashboard,
             "final_evals",
             "FAIL",
-            "draft command exited before a valid Critic 1-5 scorecard was recorded",
+            f"draft command stopped before a valid Critic 1-5 scorecard: {failure_reason}",
         )
     else:
         daily_spine_cli.mark_run_stage(
