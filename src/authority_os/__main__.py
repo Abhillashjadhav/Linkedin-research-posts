@@ -152,6 +152,19 @@ def build_parser() -> argparse.ArgumentParser:
         type=_path,
         help="Path to the separate Abhillashjadhav/no-ai-slop eval.md.",
     )
+    draft.add_argument(
+        "--human-writer-skill",
+        type=_path,
+        help="Path to PM Human Writer's human-product-writer SKILL.md.",
+    )
+    draft.add_argument(
+        "--voice-profile",
+        type=_unresolved_path,
+        help=(
+            "Owner-only voice profile under data/private; requires "
+            "--human-writer-skill and is never serialized."
+        ),
+    )
     _add_common(draft)
 
     research = subparsers.add_parser("research", help="Import or validate research signals.")

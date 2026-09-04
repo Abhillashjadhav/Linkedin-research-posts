@@ -122,6 +122,45 @@ def candidate_set(
 
 
 class VoiceGuidanceTests(unittest.TestCase):
+    def test_private_voice_profile_loads_owner_only_file_without_path_leak(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            path = Path(temporary) / "voice-profile.yaml"
+            path.write_text(
+                "voice_profile_version: 1\n"
+                "profile_status: provisional\n"
+                "profile_name: Synthetic writer\n",
+                encoding="utf-8",
+            )
+            path.chmod(0o600)
+            profile, provenance = workflow.load_private_voice_profile(path)
+
+        self.assertIn("profile_name: Synthetic writer", profile)
+        self.assertEqual(provenance["profile_status"], "provisional")
+        self.assertRegex(provenance["profile_sha256"], r"^[0-9a-f]{64}$")
+        self.assertNotIn(str(path), json.dumps(provenance))
+
+    def test_private_voice_profile_rejects_public_permissions_and_outside_path(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            path = Path(temporary) / "voice-profile.yaml"
+            path.write_text(
+                "voice_profile_version: 1\nprofile_status: calibrated\n",
+                encoding="utf-8",
+            )
+            path.chmod(0o644)
+            with self.assertRaisesRegex(workflow.WorkflowError, "0600"):
+                workflow.load_private_voice_profile(path)
+        with tempfile.TemporaryDirectory() as temporary:
+            outside = Path(temporary) / "voice-profile.yaml"
+            outside.write_text(
+                "voice_profile_version: 1\nprofile_status: provisional\n",
+                encoding="utf-8",
+            )
+            outside.chmod(0o600)
+            with self.assertRaisesRegex(workflow.WorkflowError, "allowed local data"):
+                workflow.load_private_voice_profile(outside)
+
     def test_default_guidance_loads_both_reconstructed_nonempty_anchors(self) -> None:
         guidance = workflow.load_voice_guidance()
         self.assertEqual(

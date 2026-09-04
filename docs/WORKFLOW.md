@@ -2,7 +2,7 @@
 
 ## Current implemented flow
 
-The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, voice-grounded Writer drafting, post-draft Narrative Editor, five-axis Critic scoring, five deterministic local gates, integrated and separate anti-slop stages, a scored first comment, Artifact Editor, SVG rendering, Visual QA, an explicit local human-review package, package-linked manual performance checkpoints, and an evidence-thresholded private weekly review. Legacy ordinary drafting retains its established fixture and package behaviour. `draft --run-spec` selects the complete trace-first campaign coordinator; neither path approves, schedules, or publishes.
+The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, voice-grounded Writer drafting, post-draft Narrative Editor, five-axis Critic scoring, five deterministic local gates, integrated and separate anti-slop stages, an optional private PM Human Writer voice pass, a scored first comment, Artifact Editor, SVG rendering, Visual QA, an explicit local human-review package, package-linked manual performance checkpoints, and an evidence-thresholded private weekly review. Legacy ordinary drafting retains its established fixture and package behaviour. `draft --run-spec` selects the complete trace-first campaign coordinator; neither path approves, schedules, or publishes.
 
 ### Trace-first campaign order
 
@@ -15,16 +15,19 @@ files as documentation:
 4. invoke Critic on survivors and calculate totals and the hook cap locally;
 5. run authority, proof, honesty, citation, relevance, and integrated anti-slop gates;
 6. regenerate the complete candidate set with bounded diagnostics when nothing clears 24/25, hook 4/5, and every gate (maximum four cycles);
-7. invoke the separate `Abhillashjadhav/no-ai-slop` `SKILL.md` plus `eval.md` and re-run Critic and deterministic gates after any change;
-8. write and score the first comment, then run deterministic evidence checks, integrated anti-slop, and the same separate artisanal edit;
-9. invoke Artifact Editor only after text is locked, render the plan as SVG, and invoke Visual QA with deterministic layout metadata;
-10. persist machine-readable and human-readable traces for executed days ending
+7. invoke the separate `Abhillashjadhav/no-ai-slop` `SKILL.md` plus `eval.md`;
+8. when configured, invoke PM Human Writer with an owner-only profile beneath `data/private/`, then re-run Critic and deterministic gates after either editor changes the post;
+9. write and score the first comment, then run deterministic evidence checks, integrated anti-slop, and the same separate artisanal edit;
+10. invoke Artifact Editor only after text is locked, render the plan as SVG, and invoke Visual QA with deterministic layout metadata;
+11. persist machine-readable and human-readable traces for executed days ending
     in `READY_FOR_HUMAN_REVIEW` or `BLOCKED`; preserved published days can carry
     a report-only out-of-scope status without changing their historical trace.
 
 Model judgment never calculates totals, substitutes for a deterministic gate,
 or mutates publication state. Every invocation records runtime, model, and
-reasoning. Publishing remains disabled and human approval remains unrecorded.
+reasoning. Publishing remains disabled and human approval remains unrecorded. The private
+voice profile is treated as untrusted style guidance, never as evidence or task
+instructions. Its contents and path are excluded from persisted traces.
 
 ### Research ledger
 
