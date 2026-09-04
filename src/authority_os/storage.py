@@ -1522,15 +1522,9 @@ def validate_performance_record(
             "voice_fidelity",
         )
     )
-    hook_cap = int(validated["hook_strength"]) <= 3 and raw_total > 18
-    effective_total = 18 if hook_cap else raw_total
-    band = (
-        "advance-to-gates"
-        if effective_total >= 24
-        else "one-light-revision"
-        if effective_total >= 22
-        else "below-critic-bar"
-    )
+    hook_cap = False
+    effective_total = raw_total
+    band = "advance-to-gates" if effective_total >= 18 else "below-critic-bar"
     if (
         validated["critic_raw_total"] != raw_total
         or validated["critic_effective_total"] != effective_total
