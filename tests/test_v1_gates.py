@@ -213,6 +213,37 @@ class V1ContractTests(unittest.TestCase):
         self.assertIn("atomic_value", schema["properties"])
         self.assertIn("atomic_value", schema["required"])
 
+    def test_discovery_selector_forwards_observer_to_observable_base_selector(self) -> None:
+        observer = mock.Mock()
+        invoker = mock.Mock()
+        candidates = [{"id": "topic-value-1"}]
+        with (
+            mock.patch.object(
+                v1_gates,
+                "_ORIGINAL_DISCOVERY_SELECTOR",
+                return_value=candidates,
+            ) as selector,
+            mock.patch.object(
+                v1_gates,
+                "_evaluate_topic_candidates",
+                return_value=candidates,
+            ),
+        ):
+            result = v1_gates._discovery_selector_v1(
+                {"target_audience": "AI product leaders"},
+                [{"id": "signal-1"}],
+                invoker=invoker,
+                observer=observer,
+            )
+
+        self.assertEqual(result, candidates)
+        selector.assert_called_once_with(
+            {"target_audience": "AI product leaders"},
+            [{"id": "signal-1"}],
+            invoker=invoker,
+            observer=observer,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
