@@ -208,6 +208,66 @@ class SingleTopicSelectionTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(len(calls), 2)
 
+    def test_explicit_narrowing_replaces_writer_strategy_but_keeps_evidence(self) -> None:
+        observed: list[tuple[dict[str, object], list[dict[str, object]]]] = []
+        narrowed_selector = {
+            **selector(),
+            "narrowed_to_evidence": True,
+            "evidence_bounded_thesis": (
+                "Simultaneous-loss tests show whether the release gate handles overlapping disruption."
+            ),
+            "evidence_bounded_product_decision": (
+                "Require a simultaneous-loss test before release."
+            ),
+        }
+
+        def original_writer_prompt(*args: object, **kwargs: object) -> str:
+            supplied_brief = kwargs["brief"]
+            supplied_evidence = kwargs["evidence"]
+            assert isinstance(supplied_brief, dict)
+            assert isinstance(supplied_evidence, list)
+            observed.append((supplied_brief, supplied_evidence))
+            return "writer prompt"
+
+        with (
+            patch.object(workflow, "build_writer_prompt", side_effect=original_writer_prompt),
+            patch.object(
+                integrated_cli.topic_value,
+                "invoke_campaign_selector",
+                return_value=topic_result(),
+            ),
+            patch.object(
+                integrated_cli.resonance,
+                "invoke_selector",
+                return_value=narrowed_selector,
+            ) as resonance_select,
+        ):
+            with integrated_cli._single_topic_selection_prompt(narrow_to_evidence=True):
+                workflow.build_writer_prompt(
+                    brief=brief(),
+                    evidence=evidence(),
+                    voice_guidance={
+                        "provenance": "reconstructed-style-guidance",
+                        "voice": "x",
+                    },
+                    proof=None,
+                )
+
+        self.assertEqual(
+            resonance_select.call_args.kwargs["narrow_to_evidence"],
+            True,
+        )
+        supplied_brief, supplied_evidence = observed[0]
+        self.assertEqual(
+            supplied_brief["core_hypothesis"],
+            narrowed_selector["evidence_bounded_thesis"],
+        )
+        self.assertEqual(
+            supplied_brief["product_decision"],
+            narrowed_selector["evidence_bounded_product_decision"],
+        )
+        self.assertEqual(supplied_evidence, evidence())
+
     def test_single_topic_craft_candidate_is_rejected_when_feed_value_fails(self) -> None:
         candidate = SimpleNamespace(candidate_id="candidate-1", text="A polished post")
         integrated_cli._active_single_selector = selector()

@@ -61,6 +61,11 @@ def performance_context(*, package_created_at: str = "2026-07-16T00:00:00Z") -> 
 
 
 class MinimalCliTests(unittest.TestCase):
+    def test_draft_parser_accepts_explicit_evidence_narrowing(self) -> None:
+        args = cli.build_parser().parse_args(["draft", "--narrow-to-evidence"])
+
+        self.assertTrue(args.narrow_to_evidence)
+
     def test_single_entry_point_is_executable(self) -> None:
         self.assertTrue(CLI.is_file())
         self.assertTrue(os.access(CLI, os.X_OK))

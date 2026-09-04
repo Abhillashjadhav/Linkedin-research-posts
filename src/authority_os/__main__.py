@@ -113,6 +113,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     draft.add_argument(
+        "--narrow-to-evidence",
+        action="store_true",
+        help=(
+            "Keep the selected topic and evidence identities, but narrow the thesis and "
+            "product decision to claims directly supported by that evidence."
+        ),
+    )
+    draft.add_argument(
         "--allow-model-egress",
         action="store_true",
         help=(
