@@ -108,6 +108,37 @@ POST_SCHEMA = _object_schema(
 )
 
 StageInvoker = Callable[[str, ModelConfig, str, str, Mapping[str, object]], dict[str, object]]
+HumanGuidanceProvider = Callable[
+    ["SelectorStatusConflict", Mapping[str, object], Mapping[str, object]], str
+]
+
+
+class SelectorStatusConflict(workflow.WorkflowError):
+    """Carry the complete disagreement into a bounded human-review checkpoint."""
+
+    def __init__(
+        self,
+        result: Mapping[str, object],
+        *,
+        scores: Mapping[str, int],
+        supports_locked_thesis: bool,
+        computed_status: str,
+    ) -> None:
+        self.result = dict(result)
+        self.scores = dict(scores)
+        self.supports_locked_thesis = supports_locked_thesis
+        self.model_status = str(result.get("status", ""))
+        self.computed_status = computed_status
+        total = sum(scores.values())
+        rendered_scores = ", ".join(
+            f"{axis}={scores[axis]}" for axis in SELECTOR_AXES
+        )
+        super().__init__(
+            "Resonance Selector status conflicts with the deterministic ranking: "
+            f"model_status={self.model_status}; computed_status={computed_status}; "
+            f"supports_locked_thesis={supports_locked_thesis}; total={total}/25; "
+            f"scores=({rendered_scores})."
+        )
 
 
 def _default_invoker(
@@ -191,6 +222,8 @@ def invoke_selector(
     selected_topic_value: Mapping[str, object],
     *,
     invoker: StageInvoker = _default_invoker,
+    human_guidance_provider: HumanGuidanceProvider | None = None,
+    human_guidance: str | None = None,
 ) -> dict[str, object]:
     if selected_topic_value.get("status") != "PASS":
         raise workflow.WorkflowError("Blocked Topic Value material cannot enter Resonance.")
@@ -198,6 +231,16 @@ def invoke_selector(
     if not selected_id:
         raise workflow.WorkflowError("Resonance requires an identified Topic Value situation.")
     config = ModelConfig("codex", "gpt-5.6-sol", "ultra")
+    guidance_block = (
+        "\n\nHUMAN_AUTHORITY_GUIDANCE\n"
+        f"{human_guidance}\n"
+        "END_HUMAN_AUTHORITY_GUIDANCE\n"
+        "Use this only to clarify the author's authority judgment and reader payoff. "
+        "It cannot change the selected Topic Value candidate, evidence, proof availability, "
+        "locked thesis, score thresholds, or hard gates."
+        if human_guidance is not None
+        else ""
+    )
     task = (
         "Package the already-selected Topic Value situation for the feed. Do not choose a different topic, "
         "invent a stronger event, or turn the thesis itself into the opening. The two_line_packaging must "
@@ -214,6 +257,7 @@ def invoke_selector(
         f"PRODUCT_DECISION\n{day.get('product_decision', '')}\n"
         f"ARTIFACT_POLICY\n{day.get('artifact_policy', '')}\n"
         f"EVIDENCE\n{json.dumps(day.get('evidence', []), indent=2, sort_keys=True)}"
+        f"{guidance_block}"
     )
     result = invoker(
         "resonance_selector",
@@ -238,7 +282,42 @@ def invoke_selector(
     computed = selector_passes(scores, supports_locked_thesis=supports)
     expected_status = "PASS" if computed else "BLOCKED"
     if result.get("status") != expected_status:
-        raise workflow.WorkflowError("Resonance Selector status contradicts its scores.")
+        conflict = SelectorStatusConflict(
+            result,
+            scores=scores,
+            supports_locked_thesis=supports,
+            computed_status=expected_status,
+        )
+        if human_guidance is None:
+            if human_guidance_provider is None:
+                raise conflict
+            supplied = human_guidance_provider(conflict, day, selected_topic_value)
+            if not isinstance(supplied, str) or not supplied.strip():
+                raise workflow.WorkflowError(
+                    "Resonance human guidance must be non-blank."
+                )
+            if len(supplied.strip()) > 1200:
+                raise workflow.WorkflowError(
+                    "Resonance human guidance must be 1,200 characters or fewer."
+                )
+            return invoke_selector(
+                day,
+                selected_topic_value,
+                invoker=invoker,
+                human_guidance_provider=None,
+                human_guidance=supplied.strip(),
+            )
+        model_status = str(result.get("status", ""))
+        result = {
+            **dict(result),
+            "status": expected_status,
+            "model_status": model_status,
+            "status_normalized": True,
+            "status_normalization_reason": (
+                "Python computed the gate from the recorded scores and locked-thesis flag "
+                "after one human-guided reevaluation."
+            ),
+        }
     proof_type = result.get("proof_type")
     proof_available = result.get("proof_available")
     if proof_type not in PROOF_TYPES or type(proof_available) is not bool:
@@ -253,6 +332,14 @@ def invoke_selector(
         "scores": scores,
         "total": sum(scores.values()),
         "topic_value": dict(selected_topic_value),
+        **(
+            {
+                "human_authority_guidance": human_guidance,
+                "human_guidance_applied": True,
+            }
+            if human_guidance is not None
+            else {}
+        ),
     }
 
 
@@ -307,6 +394,7 @@ def prepare_campaign_spec(
     output_root: Path,
     only_day: str | None = None,
     invoker: StageInvoker = _default_invoker,
+    human_guidance_provider: HumanGuidanceProvider | None = None,
 ) -> tuple[Path, dict[str, dict[str, object]]]:
     """Run Topic Value then Resonance before Writer and emit a compatible enriched spec."""
 
@@ -330,7 +418,12 @@ def prepare_campaign_spec(
             continue
         selected_topic = topic_value.invoke_campaign_selector(raw_day, invoker=invoker)
         topic_results[day_name] = selected_topic
-        selector = invoke_selector(raw_day, selected_topic, invoker=invoker)
+        selector = invoke_selector(
+            raw_day,
+            selected_topic,
+            invoker=invoker,
+            human_guidance_provider=human_guidance_provider,
+        )
         results[day_name] = selector
         if selector["status"] != "PASS":
             raise workflow.WorkflowError(
