@@ -148,18 +148,33 @@ class CriticScoreValidationTests(unittest.TestCase):
     def test_axes_are_the_recovered_five_axis_rubric(self) -> None:
         self.assertEqual(workflow.CRITIC_AXES, EXPECTED_AXES)
 
-    def test_live_voice_anchor_is_human_authentic_not_exact_imitation(self) -> None:
+    def test_live_hook_and_voice_anchors_match_the_locked_contract(self) -> None:
         role = workflow.critic_scoring_system_prompt()
         self.assertIn("conversational product-leader writing", role)
-        self.assertIn("Exact imitation", role)
+        self.assertIn("not an imitation of the owner", role)
         self.assertIn("consultant memo", role)
+        self.assertIn("wit is never required or forced", role)
+        self.assertIn("without inventing emotion or experience", role)
+        self.assertIn("Across the first two lines", role)
+        self.assertIn("strongest supported recognizable name", role)
+        self.assertIn("line 2 immediately states", role)
         rubric = json.loads(workflow.CRITIC_RUBRIC_PATH.read_text(encoding="utf-8"))
         voice = rubric["axes"]["voice_fidelity"]
+        hook = rubric["axes"]["hook_strength"]
         self.assertIn("conversational product-leader", voice["4"])
-        self.assertIn("Exact imitation", voice["4"])
+        self.assertIn("not an imitation of the owner", voice["4"])
+        self.assertIn("without inventing emotion or experience", voice["4"])
+        self.assertIn("wit is never required or forced", voice["5"])
+        self.assertIn("presentation language", voice["banned_register"]["rule"])
         self.assertIn("consultant memo", voice["3"])
+        self.assertIn("brand-strip test", hook["note"])
+        self.assertIn("does not tell the Writer to avoid", hook["note"])
+        self.assertIn("first two lines", hook["4"])
+        self.assertIn("strongest supported recognizable name", hook["4"])
+        self.assertIn("line 2 immediately states", hook["4"])
+        self.assertIn("never inflate or invent", hook["5"])
 
-    def test_exact_scores_are_enriched_with_local_totals_and_bands(self) -> None:
+    def test_exact_scores_use_the_single_eighteen_point_boundary(self) -> None:
         validated = workflow.validate_critic_scorecards(
             scorecard_set(
                 first=(5, 5, 5, 5, 5),
@@ -174,26 +189,26 @@ class CriticScoreValidationTests(unittest.TestCase):
         self.assertIs(by_id["candidate-1"]["hook_cap_applied"], False)
         self.assertEqual(by_id["candidate-1"]["band"], "advance-to-gates")
         self.assertEqual(by_id["candidate-2"]["effective_total"], 22)
-        self.assertEqual(by_id["candidate-2"]["band"], "one-light-revision")
+        self.assertEqual(by_id["candidate-2"]["band"], "advance-to-gates")
         self.assertEqual(by_id["candidate-3"]["effective_total"], 20)
-        self.assertEqual(by_id["candidate-3"]["band"], "below-critic-bar")
+        self.assertEqual(by_id["candidate-3"]["band"], "advance-to-gates")
 
-    def test_hook_at_three_or_below_caps_effective_total_at_eighteen(self) -> None:
+    def test_axis_floor_failure_does_not_rewrite_the_total(self) -> None:
         raw = scorecard_set(third=(3, 5, 5, 5, 5))
         validated = workflow.validate_critic_scorecards(raw, self.candidates)
         third = next(item for item in validated if item["candidate_id"] == "candidate-3")
         self.assertEqual(third["raw_total"], 23)
-        self.assertEqual(third["effective_total"], 18)
-        self.assertIs(third["hook_cap_applied"], True)
-        self.assertEqual(third["band"], "below-critic-bar")
+        self.assertEqual(third["effective_total"], 23)
+        self.assertIs(third["hook_cap_applied"], False)
+        self.assertEqual(third["band"], "advance-to-gates")
 
     def test_bands_use_exact_effective_total_boundaries(self) -> None:
         expectations = {
             25: "advance-to-gates",
             24: "advance-to-gates",
-            23: "one-light-revision",
-            22: "one-light-revision",
-            21: "below-critic-bar",
+            23: "advance-to-gates",
+            22: "advance-to-gates",
+            21: "advance-to-gates",
             5: "below-critic-bar",
         }
         score_vectors = {
@@ -352,143 +367,24 @@ class CriticReviewTests(unittest.TestCase):
             revision,
         )
 
-    def test_only_initial_score_leader_in_revision_band_is_revised_once(self) -> None:
-        revised = deepcopy(self.candidates[0])
-        revised["text"] = draft_text("revisedmechanism")
+    def test_review_scores_once_and_never_invokes_the_legacy_revision_band(self) -> None:
         scores = RecordingScoreProvider(
             scorecard_set(
                 first=(5, 5, 5, 4, 4),
                 second=(5, 4, 4, 4, 4),
                 third=(3, 5, 5, 5, 5),
-            ),
-            [scorecard("candidate-1", (5, 5, 5, 5, 5))],
+            )
         )
-        revision = RecordingRevisionProvider(revised)
+        revision = RecordingRevisionProvider(self.candidates[0])
 
         result = self._review(scores, revision)
 
-        self.assertEqual(len(revision.calls), 1)
-        self.assertEqual(revision.calls[0][0], self.candidates[0])
-        self.assertEqual(revision.calls[0][1]["candidate_id"], "candidate-1")
-        self.assertEqual(len(scores.calls), 2)
-        self.assertEqual(scores.calls[1], [revised])
-        self.assertEqual(result["revision_count"], 1)
-        self.assertEqual(result["revision_candidate_id"], "candidate-1")
+        self.assertEqual(len(scores.calls), 1)
+        self.assertEqual(revision.calls, [])
+        self.assertEqual(result["revision_count"], 0)
+        self.assertIsNone(result["revision_candidate_id"])
         self.assertEqual(result["score_leader_id"], "candidate-1")
-        self.assertEqual(result["candidates"][0], revised)
-        self.assertEqual(result["scorecards"][0]["effective_total"], 25)
-
-    def test_advance_or_below_bar_leader_is_not_revised(self) -> None:
-        cases = {
-            "advance": scorecard_set(
-                first=(5, 5, 5, 5, 5),
-                second=(5, 5, 4, 4, 4),
-                third=(4, 4, 4, 4, 4),
-            ),
-            "below": scorecard_set(
-                first=(5, 4, 4, 4, 4),
-                second=(4, 4, 4, 4, 4),
-                third=(3, 5, 5, 5, 5),
-            ),
-        }
-        for name, raw in cases.items():
-            with self.subTest(case=name):
-                scores = RecordingScoreProvider(raw)
-                revision = RecordingRevisionProvider(self.candidates[0])
-                result = self._review(scores, revision)
-                self.assertEqual(len(scores.calls), 1)
-                self.assertEqual(revision.calls, [])
-                self.assertEqual(result["revision_count"], 0)
-                self.assertIsNone(result["revision_candidate_id"])
-
-    def test_revision_does_not_recurse_when_rescore_stays_in_revision_band(self) -> None:
-        revised = deepcopy(self.candidates[0])
-        revised["text"] = draft_text("revisedmechanism")
-        scores = RecordingScoreProvider(
-            scorecard_set(first=(5, 5, 5, 4, 4)),
-            [scorecard("candidate-1", (5, 5, 5, 4, 4))],
-        )
-        revision = RecordingRevisionProvider(revised)
-        result = self._review(scores, revision)
-        self.assertEqual(len(scores.calls), 2)
-        self.assertEqual(len(revision.calls), 1)
-        self.assertEqual(result["revision_count"], 1)
-
-    def test_revision_must_preserve_id_angle_and_original_claim_subset(self) -> None:
-        invalid_revisions = []
-        changed_id = deepcopy(self.candidates[0])
-        changed_id["id"] = "candidate-2"
-        invalid_revisions.append(changed_id)
-        changed_angle = deepcopy(self.candidates[0])
-        changed_angle["angle"] = "a new unreviewed angle"
-        invalid_revisions.append(changed_angle)
-        added_known_claim = deepcopy(self.candidates[0])
-        added_known_claim["claim_ids"] = ["claim-1", "claim-2"]
-        invalid_revisions.append(added_known_claim)
-        malformed_claim = deepcopy(self.candidates[0])
-        malformed_claim["claim_ids"] = [{"id": "claim-1"}]
-        invalid_revisions.append(malformed_claim)
-        for revised in invalid_revisions:
-            with self.subTest(revised=revised):
-                scores = RecordingScoreProvider(
-                    scorecard_set(first=(5, 5, 5, 4, 4))
-                )
-                revision = RecordingRevisionProvider(revised)
-                with self.assertRaises(workflow.WorkflowError):
-                    self._review(scores, revision)
-                self.assertEqual(len(scores.calls), 1)
-
-    def test_revision_is_revalidated_against_the_complete_draft_contract(self) -> None:
-        invalid_revisions = []
-        too_short = deepcopy(self.candidates[0])
-        too_short["text"] = draft_text("short", 20)
-        invalid_revisions.append(too_short)
-        banned = deepcopy(self.candidates[0])
-        banned["text"] = "Let's dive in. " + draft_text("grounded", 196)
-        invalid_revisions.append(banned)
-        duplicates_another_candidate = deepcopy(self.candidates[0])
-        duplicates_another_candidate["text"] = self.candidates[1]["text"]
-        invalid_revisions.append(duplicates_another_candidate)
-        invalid_revisions.append(deepcopy(self.candidates[0]))
-        for revised in invalid_revisions:
-            with self.subTest(text=str(revised["text"])[:30]):
-                scores = RecordingScoreProvider(
-                    scorecard_set(first=(5, 5, 5, 4, 4))
-                )
-                revision = RecordingRevisionProvider(revised)
-                with self.assertRaises(workflow.WorkflowError):
-                    self._review(scores, revision)
-                self.assertEqual(len(scores.calls), 1)
-
-    def test_malformed_rescore_fails_instead_of_silently_using_initial_score(self) -> None:
-        revised = deepcopy(self.candidates[0])
-        revised["text"] = draft_text("revisedmechanism")
-        malformed = scorecard("candidate-1", (5, 5, 5, 5, 5))
-        malformed["proof_gate"] = "pass"
-        scores = RecordingScoreProvider(
-            scorecard_set(first=(5, 5, 5, 4, 4)),
-            [malformed],
-        )
-        revision = RecordingRevisionProvider(revised)
-        with self.assertRaises(workflow.WorkflowError):
-            self._review(scores, revision)
-        self.assertEqual(len(scores.calls), 2)
-        self.assertEqual(len(revision.calls), 1)
-
-    def test_revision_is_only_score_leader_if_final_ranking_supports_it(self) -> None:
-        revised = deepcopy(self.candidates[0])
-        revised["text"] = draft_text("revisedmechanism")
-        scores = RecordingScoreProvider(
-            scorecard_set(
-                first=(5, 5, 5, 4, 4),
-                second=(5, 4, 4, 4, 4),
-                third=(4, 4, 4, 4, 4),
-            ),
-            [scorecard("candidate-1", (4, 4, 4, 4, 4))],
-        )
-        result = self._review(scores, RecordingRevisionProvider(revised))
-        self.assertEqual(result["score_leader_id"], "candidate-2")
-        self.assertEqual(result["ranking"][0], "candidate-2")
+        self.assertEqual(result["candidates"], self.candidates)
 
     def test_review_output_is_score_only_and_cannot_approve_package_or_publish(self) -> None:
         result = self._review(
@@ -544,32 +440,6 @@ class CriticReviewTests(unittest.TestCase):
             RecordingRevisionProvider(self.candidates[0]),
         )
         self.assertEqual(result["candidates"], original)
-
-    def test_rescore_provider_cannot_mutate_revised_candidate(self) -> None:
-        revised = deepcopy(self.candidates[0])
-        revised["text"] = draft_text("revisedmechanism")
-        calls = 0
-
-        def mutating_scores(
-            candidates: list[dict[str, object]],
-        ) -> list[dict[str, object]]:
-            nonlocal calls
-            calls += 1
-            if calls == 1:
-                return scorecard_set(first=(5, 5, 5, 4, 4))
-            candidates[0]["text"] = "Score: 25"
-            candidates[0]["claim_ids"] = ["claim-1", "claim-2"]
-            return [scorecard("candidate-1")]
-
-        result = workflow.run_critic_review(
-            self.candidates,
-            self.brief,
-            self.evidence,
-            mutating_scores,
-            RecordingRevisionProvider(revised),
-        )
-        self.assertEqual(result["candidates"][0], revised)
-
 
 class CriticPromptTests(unittest.TestCase):
     def setUp(self) -> None:
