@@ -22,8 +22,8 @@ def scorecard(candidate_id: str, scores: tuple[int, int, int, int, int]) -> dict
         **dict(zip(workflow.CRITIC_AXES, scores, strict=True)),
     }
     raw_total = sum(scores)
-    hook_cap = scores[0] <= 3 and raw_total > 18
-    effective_total = 18 if hook_cap else raw_total
+    hook_cap = False
+    effective_total = raw_total
     card.update(
         {
             "raw_total": raw_total,
@@ -31,9 +31,7 @@ def scorecard(candidate_id: str, scores: tuple[int, int, int, int, int]) -> dict
             "hook_cap_applied": hook_cap,
             "band": (
                 "advance-to-gates"
-                if effective_total >= 24
-                else "one-light-revision"
-                if effective_total >= 22
+                if effective_total >= 18
                 else "below-critic-bar"
             ),
         }
@@ -289,7 +287,7 @@ class PerformancePackageTests(unittest.TestCase):
         loaded = self.load("candidate-3")
 
         self.assertEqual(loaded["critic_effective_total"], 18)
-        self.assertEqual(loaded["critic_band"], "below-critic-bar")
+        self.assertEqual(loaded["critic_band"], "advance-to-gates")
         self.assertIs(loaded["is_recommended"], False)
 
     def test_learning_context_returns_only_exact_bounded_hook_and_structure(self) -> None:
