@@ -86,6 +86,72 @@ class V1CompletionTests(unittest.TestCase):
         self.assertEqual(rows[0]["subject_id"], "candidate-2")
         self.assertEqual(rows[0]["artifact_sha256"], artifact)
 
+    def test_topic_gate_decisions_are_recorded_before_enforced_failure_raises(self) -> None:
+        candidate = {
+            "id": "topic-1",
+            "atomic_value": "Use explicit handoff checkpoints to locate agent workflow failures.",
+        }
+        decisions = {
+            "atomic_value_novelty": {
+                "contract": "atomic_value_novelty",
+                "mode": "enforce",
+                "status": "FAIL",
+                "reason": "atomic-value-too-similar-to-v1-history",
+            },
+            "research_trust": {
+                "contract": "research_trust",
+                "mode": "enforce",
+                "status": "PASS",
+                "reason": "body-read-non-social-source-present",
+            },
+            "claim_body_support": {
+                "contract": "claim_body_support",
+                "mode": "shadow",
+                "status": "PASS",
+                "reason": "claim-has-body-binding-signal",
+            },
+        }
+        with (
+            mock.patch.object(
+                v1_completion,
+                "_BASE_TOPIC_EVALUATOR",
+                v1_completion.v1_gates._evaluate_topic_candidates,
+            ),
+            mock.patch.object(
+                v1_completion.v1_gates,
+                "evaluate_atomic_novelty",
+                return_value=decisions["atomic_value_novelty"],
+            ),
+            mock.patch.object(
+                v1_completion.v1_gates,
+                "evaluate_research_trust",
+                return_value=decisions["research_trust"],
+            ),
+            mock.patch.object(
+                v1_completion.v1_gates,
+                "evaluate_claim_body_support",
+                return_value=decisions["claim_body_support"],
+            ),
+        ):
+            with self.assertRaisesRegex(
+                workflow.WorkflowError,
+                "atomic_value_novelty failed",
+            ):
+                v1_completion._topic_evaluator_v1([candidate], [])
+
+        rows = v1_completion._read_jsonl(
+            self.root / v1_completion.DECISION_LEDGER_NAME
+        )
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(
+            {row["contract"]: row["status"] for row in rows},
+            {
+                "atomic_value_novelty": "FAIL",
+                "research_trust": "PASS",
+                "claim_body_support": "PASS",
+            },
+        )
+
     def test_inherited_run_id_groups_parent_and_child_decisions(self) -> None:
         run_id = v1_completion.begin_run("linkedin-one-run")
         self.assertEqual(run_id, "linkedin-one-run")
