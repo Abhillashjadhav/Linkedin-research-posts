@@ -237,6 +237,28 @@ Live or private drafting requires both an explicit private strategy file and exp
 
 Opportunity drafting additionally requires a validated public-safe proof manifest under ignored `data/private/`. Artifact contents and private paths are not sent to the model.
 
+## Re-evaluate and progressively repair a frozen candidate
+
+Use the existing package, strategy, and evidence when research is already complete. The
+first iteration scores the frozen candidate unchanged. If it passes, the editor is never
+called. Otherwise, at most three bounded edits follow, for four scored iterations total:
+
+```bash
+./bin/linkedin-os eval-package \
+  --package outputs/YYYY-MM-DD/topic-slug \
+  --candidate candidate-2 \
+  --strategy-input data/private/strategy.json \
+  --evidence-manifest data/private/evidence.json \
+  --db data/private/authority_os.sqlite \
+  --allow-model-egress \
+  --repair
+```
+
+Every accepted edit keeps the same candidate ID, angle, and claim IDs. It may not lower
+the total, any individual Critic axis, or any passing hard gate, and it may not introduce
+a new deterministic finding. A rejected edit never replaces the retained best candidate.
+Discovery, research, thesis selection, and the original Writer are not rerun.
+
 ## Safety model
 
 - Publishing, scheduling, messaging, and authenticated browser automation are absent.
