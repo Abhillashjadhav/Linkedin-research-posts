@@ -338,6 +338,53 @@ make check
 - Structural citation checks reduce unsupported claims but cannot prove factual truth.
 - Performance learning depends on manually recorded observations.
 
+## Send completed evaluations to the shared dashboard
+
+The existing LinkedIn dashboard remains the source report. The optional shared
+Evals connection copies redacted evaluation facts after a run finishes; it does
+not restart research, drafting, repair, or model calls. Delivery and quality
+warnings remain separate, and missing checks remain `NOT_EVALUATED`.
+
+Install the shared Evals wheel and start its local dashboard with distinct
+producer, viewer, and reviewer credentials. Then run the following **in a separate
+terminal**, using the matching Evals checkout and an operator-created private
+version context:
+
+```bash
+pm-evals linkedin \
+  --repo /absolute/path/to/Linkedin-research-posts \
+  --context /absolute/path/to/private-monitoring-context.json \
+  --settings /absolute/path/to/production-engineering-os/adapters/linkedin-os.settings.json \
+  --outbox /absolute/path/to/private-evals-outbox \
+  --url http://127.0.0.1:8000 \
+  --allow-monitoring-export \
+  --allow-delivery \
+  --once
+```
+
+Set `PM_EVALS_INGEST_TOKEN` in that terminal to the dashboard server's producer
+credential. See `products/pm-evals-web/QUICKSTART.md` in the matching
+`production-engineering-os` checkout for installation and the complete context
+file. Version labels describe the configuration that produced the saved results;
+they do not select a new model or change LinkedIn's acceptance rules.
+
+The worker reads completed dashboard packages under `data/private`, calls only
+the consented local `export-monitoring --run-folder` operation, and writes private
+context/export records. The native exporter still performs no network activity.
+The separate worker sends redacted statuses, scores, opaque identities, modes,
+and evidence digests; it does not send draft prose, source bodies, URLs, or prompts.
+
+Check one saved run against the shared dashboard first. Then remove `--once` to
+continue collection while the worker runs. Stop that process to stop collection;
+LinkedIn generation continues independently. Retry and quarantine status stays in
+the separate Evals outbox. The local server is not a public sharing deployment.
+
+To compare runs, the owner must first define what counts as the same case and
+input. Put that run's explicit identity and selected earlier run in its private
+`monitoring-identity.json` before first collection, following the shared
+quickstart. Without comparable evidence, the dashboard reports comparison as
+unavailable. It does not guess identity or mark absent tool evidence as passing.
+
 ## Contributing
 
 Keep publishing disabled, preserve the private-data boundary, add deterministic regression tests for safety changes, and state evidence limitations explicitly.
