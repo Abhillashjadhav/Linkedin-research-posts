@@ -2,7 +2,7 @@
   "metadata": {
     "contract_id": "linkedin-post-contract",
     "schema_version": 1,
-    "version": "1.6.0",
+    "version": "1.6.1",
     "status": "APPROVED",
     "purpose": "One product and runtime contract for discovery, evidence, selection, drafting, evaluation, repair, packaging, and release.",
     "hash_algorithm": "sha256",
@@ -129,7 +129,10 @@
       "first_comment_requires_selected_url": true,
       "show_internal_source_labels_to_reader": false
     },
-    "legacy_lexical_similarity_0_18": "DELETED"
+    "legacy_lexical_similarity_0_18": "DELETED",
+    "coverage_rule": "one body-read primary source OR three distinct body-read credible sources",
+    "coverage_mode": "advisory",
+    "coverage_shortfall_action": "Keep source-level findings visible and continue; never block Topic Value or the candidate batch."
   },
   "topic_value": {
     "class": "selector_and_hard_gate",

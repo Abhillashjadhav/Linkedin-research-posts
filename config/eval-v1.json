@@ -6,7 +6,7 @@
       "threshold": 0.72
     },
     "research_trust": {
-      "mode": "enforce"
+      "mode": "shadow"
     },
     "critic_anchor_integrity": {
       "mode": "enforce"

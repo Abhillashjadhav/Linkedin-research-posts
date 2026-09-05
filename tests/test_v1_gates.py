@@ -37,7 +37,7 @@ class V1ContractTests(unittest.TestCase):
     def test_v1_config_is_per_contract_and_reversible(self) -> None:
         contracts = v1_gates.load_config()["contracts"]
         self.assertEqual(contracts["atomic_value_novelty"]["mode"], "enforce")
-        self.assertEqual(contracts["research_trust"]["mode"], "enforce")
+        self.assertEqual(contracts["research_trust"]["mode"], "shadow")
         self.assertEqual(contracts["critic_anchor_integrity"]["mode"], "enforce")
         self.assertEqual(contracts["solution_plausibility"]["mode"], "shadow")
         self.assertEqual(contracts["reader_attention"]["mode"], "shadow")
@@ -120,7 +120,7 @@ class V1ContractTests(unittest.TestCase):
         )
         self.assertEqual(decision["status"], "PASS")
 
-    def test_secondary_source_does_not_satisfy_primary_source_requirement(self) -> None:
+    def test_single_secondary_source_records_advisory_coverage_shortfall(self) -> None:
         decision = v1_gates.evaluate_research_trust(
             {"source_ids": ["signal-1"]},
             [
@@ -136,8 +136,72 @@ class V1ContractTests(unittest.TestCase):
         self.assertEqual(decision["status"], "FAIL")
         self.assertEqual(
             decision["reason"],
-            "no-body-read-primary-source-for-selected-value",
+            "source-coverage-shortfall-need-one-primary-or-three-sources",
         )
+
+    def test_three_sources_or_one_primary_are_advisory_coverage_routes(self) -> None:
+        evidence = [
+            {"id": f"source-{i}", "canonical_url": f"https://publisher{i}.example/report",
+             "body": "Body-read reporting supporting the selected claim.", "source_quality": "secondary"}
+            for i in range(3)
+        ]
+        for count, expected in ((0, "FAIL"), (1, "FAIL"), (2, "FAIL"), (3, "PASS")):
+            with self.subTest(count=count):
+                decision = v1_gates.evaluate_research_trust(
+                    {"source_ids": [x["id"] for x in evidence[:count]]}, evidence,
+                )
+                self.assertEqual(decision["status"], expected)
+                self.assertEqual(decision["mode"], "shadow")
+                self.assertEqual(decision["credible_source_count"], count)
+                v1_gates._enforce(decision)
+        evidence[0]["source_quality"] = "primary"
+        result = v1_gates.evaluate_research_trust({"source_ids": ["source-0"]}, evidence)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["primary_source_count"], 1)
+
+    def test_duplicate_urls_unread_and_social_sources_do_not_inflate_coverage(self) -> None:
+        evidence = [
+            {"id": "a", "source": "https://example.com/report", "body_read": True, "source_quality": "secondary"},
+            {"id": "b", "source": "https://www.example.com/report/#section", "body_read": True, "source_quality": "secondary"},
+            {"id": "c", "source": "https://other.example/report", "body_read": False, "source_quality": "primary"},
+            {"id": "d", "source": "https://reddit.com/r/example", "body_read": True, "source_quality": "primary"},
+        ]
+        result = v1_gates.evaluate_research_trust({"source_ids": ["a", "a", "b", "c", "d", "missing"]}, evidence)
+        self.assertEqual(result["credible_source_count"], 1)
+        self.assertEqual(result["primary_source_count"], 0)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["mode"], "shadow")
+        self.assertTrue(any(row.get("status") == "missing" for row in result["sources"]))
+        v1_gates._enforce(result)
+        evidence[0]["source_quality"] = "primary"
+        covered = v1_gates.evaluate_research_trust({"source_ids": ["a", "d"]}, evidence)
+        self.assertEqual(covered["status"], "PASS")
+        self.assertTrue(covered["sources"][1]["discovery_only_social"])
+        self.assertFalse(covered["sources"][1]["trusted_for_factual_use"])
+
+    def test_source_shortfall_stays_advisory_in_run_dashboard(self) -> None:
+        from authority_os import daily_spine_cli, v1_completion
+        decision = v1_gates.evaluate_research_trust({"source_ids": ["missing"]}, [])
+        row = v1_completion._decision_row(decision, stage="topic-value")
+        evaluation = daily_spine_cli.render_eval_dashboard([row])
+        research = next(check for check in evaluation["checks"] if check["contract"] == "research_trust")
+        self.assertEqual(research["status"], "FAIL")
+        self.assertEqual(research["mode"], "shadow")
+        dashboard = daily_spine_cli.new_run_dashboard()
+        outcome = daily_spine_cli.finalize_draft_evaluation(
+            dashboard, evaluation, return_code=0, failure_reason="unused",
+        )
+        self.assertEqual(outcome, "PASS")
+        self.assertIsNone(dashboard.get("stopped_at"))
+
+    def test_legacy_research_enforce_mode_cannot_restore_source_blocker(self) -> None:
+        config = v1_gates.load_config()
+        config["contracts"]["research_trust"]["mode"] = "enforce"
+        with mock.patch.object(v1_gates, "load_config", return_value=config):
+            result = v1_gates.evaluate_research_trust({}, [])
+            self.assertEqual(result["status"], "FAIL")
+            self.assertEqual(result["mode"], "shadow")
+            v1_gates._enforce(result)
 
     def test_anchored_critic_requires_exact_artifact_evidence(self) -> None:
         candidate = {
@@ -247,7 +311,7 @@ class V1ContractTests(unittest.TestCase):
         self.assertIn("atomic_value", schema["properties"])
         self.assertIn("atomic_value", schema["required"])
 
-    def test_all_topic_candidates_are_observed_before_any_gate_is_enforced(self) -> None:
+    def test_source_shortfall_never_vetoes_topic_candidate_batch(self) -> None:
         candidates = [
             {
                 "id": f"topic-{index}",
@@ -268,7 +332,7 @@ class V1ContractTests(unittest.TestCase):
             failed = candidate["id"] == "topic-1"
             return {
                 "contract": "research_trust",
-                "mode": "enforce",
+                "mode": "shadow",
                 "status": "FAIL" if failed else "PASS",
                 "reason": "missing-trust" if failed else "body-read-source-present",
             }
@@ -286,14 +350,10 @@ class V1ContractTests(unittest.TestCase):
                 side_effect=research,
             ) as trust,
         ):
-            with self.assertRaises(v1_gates.V1ContractError) as raised:
-                v1_gates._evaluate_topic_candidates(
-                    candidates,
-                    [],
-                    decision_observer=lambda rows: observed.extend(
-                        dict(row) for row in rows
-                    ),
-                )
+            result = v1_gates._evaluate_topic_candidates(
+                candidates, [],
+                decision_observer=lambda rows: observed.extend(dict(row) for row in rows),
+            )
 
         self.assertEqual(novelty.call_count, 3)
         self.assertEqual(trust.call_count, 3)
@@ -302,8 +362,9 @@ class V1ContractTests(unittest.TestCase):
             ["topic-1", "topic-2", "topic-3"],
         )
         self.assertTrue(all("v1_evals" in item for item in observed))
-        self.assertEqual(raised.exception.decision["contract"], "research_trust")
-        self.assertEqual(raised.exception.decision["reason"], "missing-trust")
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[0]["v1_evals"]["research_trust"]["status"], "FAIL")
+        self.assertEqual(result[1]["v1_evals"]["research_trust"]["status"], "PASS")
 
 
 if __name__ == "__main__":

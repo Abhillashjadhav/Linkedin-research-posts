@@ -117,6 +117,9 @@ def contract_mode(name: str) -> str:
     settings = contracts.get(name)
     if not isinstance(settings, Mapping) or settings.get("mode") not in MODES:
         raise workflow.WorkflowError(f"Unknown V1 contract {name!r}.")
+    # Source coverage is advisory even with a legacy enforce configuration.
+    if name == "research_trust" and settings["mode"] == "enforce":
+        return "shadow"
     return str(settings["mode"])
 
 
@@ -319,41 +322,48 @@ def evaluate_research_trust(
         return _decision("research_trust", False, "candidate-has-no-source-ids")
     by_id = _evidence_by_id(evidence)
     audit: list[dict[str, object]] = []
-    trusted_count = 0
-    for source_id in sources:
-        item = by_id.get(str(source_id))
+    credible_urls: set[str] = set()
+    primary_urls: set[str] = set()
+    social_mislabelled = False
+    for source_id in dict.fromkeys(str(value) for value in sources):
+        item = by_id.get(source_id)
         if item is None:
-            audit.append({"source_id": str(source_id), "status": "missing"})
+            audit.append({"source_id": source_id, "status": "missing"})
             continue
-        source_url = item.get("canonical_url", item.get("source", ""))
+        source_url = item.get("canonical_url") or item.get("source", "")
         host = _hostname(source_url)
         body = item.get("body")
         body_read = bool(isinstance(body, str) and body.strip()) or item.get("body_read") is True
         quality = str(item.get("source_quality", "")).casefold()
         social = _is_social(host)
-        trusted = bool(host and body_read and not social and quality == "primary")
-        trusted_count += int(trusted)
-        audit.append(
-            {
-                "source_id": str(source_id),
-                "host": host,
-                "source_quality": quality,
-                "body_read": body_read,
-                "discovery_only_social": social,
-                "trusted_for_factual_use": trusted,
-            }
-        )
-        if social and quality in {"primary", "mixed"}:
-            return _decision(
-                "research_trust",
-                False,
-                "social-source-cannot-be-laundered-as-primary-factual-evidence",
-                sources=audit,
-            )
+        credible = bool(host and body_read and not social and quality in {"primary", "secondary", "mixed"})
+        if credible:
+            parsed = urlsplit(str(source_url).strip())
+            url_key = parsed._replace(scheme=parsed.scheme.casefold(), netloc=host, fragment="").geturl().rstrip("/")
+            credible_urls.add(url_key)
+            if quality == "primary":
+                primary_urls.add(url_key)
+        social_mislabelled = social_mislabelled or (social and quality in {"primary", "mixed"})
+        audit.append({
+            "source_id": source_id,
+            "host": host,
+            "source_quality": quality,
+            "body_read": body_read,
+            "discovery_only_social": social,
+            "trusted_for_factual_use": credible,
+        })
+    covered = bool(primary_urls) or len(credible_urls) >= 3
+    reason = (
+        "body-read-primary-source-present" if primary_urls
+        else "three-body-read-sources-present" if covered
+        else "social-source-cannot-be-laundered-as-primary-factual-evidence" if social_mislabelled
+        else "source-coverage-shortfall-need-one-primary-or-three-sources"
+    )
     return _decision(
-        "research_trust",
-        trusted_count >= 1,
-        "body-read-primary-source-present" if trusted_count else "no-body-read-primary-source-for-selected-value",
+        "research_trust", covered, reason,
+        primary_source_count=len(primary_urls),
+        credible_source_count=len(credible_urls),
+        coverage_rule="one-primary-or-three-sources",
         sources=audit,
     )
 
@@ -394,7 +404,7 @@ def _evaluate_topic_candidates(
         assert isinstance(novelty, Mapping)
         assert isinstance(research, Mapping)
         _enforce(novelty)
-        _enforce(research)
+        # Research coverage findings stay visible and never veto the batch.
     return evaluated
 
 
