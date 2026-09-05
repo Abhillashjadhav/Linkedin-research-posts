@@ -670,7 +670,7 @@ class InstalledObserverSmokeTests(unittest.TestCase):
             },
         )
 
-    def test_installed_failure_observes_all_candidates_before_raise(self) -> None:
+    def test_installed_source_warning_observes_all_candidates_and_continues(self) -> None:
         result = _run_installed_smoke(
             """
             import json
@@ -688,31 +688,24 @@ class InstalledObserverSmokeTests(unittest.TestCase):
                 v1_completion.begin_run("installed-observer-failure")
                 v1_completion.install()
 
-                def research(candidate, _evidence):
-                    failed = candidate["id"] == "topic-1"
-                    return {
-                        "contract": "research_trust",
-                        "mode": "enforce",
-                        "status": "FAIL" if failed else "PASS",
-                        "reason": "missing-trust" if failed else "body-read-source-present",
-                    }
+                original_research = v1_gates.evaluate_research_trust
+                def research(candidate, evidence):
+                    if candidate["id"] == "topic-1":
+                        candidate = {**candidate, "source_ids": ["missing-source"]}
+                    return original_research(candidate, evidence)
 
                 v1_gates.evaluate_research_trust = research
                 observer = Observer()
-                try:
-                    topic_value.invoke_discovery_selector(
-                        {
-                            "target_audience": "Senior AI product leaders",
-                            "authority_goal": "Practical production judgment",
-                        },
-                        signals(),
-                        invoker=lambda *_args, **_kwargs: {"candidates": candidates()},
-                        observer=observer,
-                    )
-                except v1_gates.V1ContractError as exc:
-                    blocked = exc.decision
-                else:
-                    raise AssertionError("enforced research-trust failure did not raise")
+                selected = topic_value.invoke_discovery_selector(
+                    {
+                        "target_audience": "Senior AI product leaders",
+                        "authority_goal": "Practical production judgment",
+                    },
+                    signals(),
+                    invoker=lambda *_args, **_kwargs: {"candidates": candidates()},
+                    observer=observer,
+                )
+                assert len(selected) == 3
 
                 assert [stage for stage, _rows in observer.records] == [
                     "pre-gate",
@@ -722,7 +715,9 @@ class InstalledObserverSmokeTests(unittest.TestCase):
                 post_gate = observer.records[1][1]
                 assert all("research_trust" in row["v1_evals"] for row in post_gate)
                 failed = next(row for row in post_gate if row["id"] == "topic-1")
-                assert failed["v1_evals"]["research_trust"] == blocked
+                advisory = failed["v1_evals"]["research_trust"]
+                assert advisory["status"] == "FAIL"
+                assert advisory["mode"] == "shadow"
                 ledger = v1_completion._read_jsonl(
                     state_root / v1_completion.DECISION_LEDGER_NAME
                 )
@@ -731,16 +726,18 @@ class InstalledObserverSmokeTests(unittest.TestCase):
                     "pre_gate_candidates": len(observer.records[0][1]),
                     "post_gate_candidates": len(post_gate),
                     "decision_rows": len(ledger),
-                    "blocked_contract": blocked["contract"],
-                    "blocked_reason": blocked["reason"],
+                    "advisory_contract": advisory["contract"],
+                    "advisory_reason": advisory["reason"],
+                    "continued_candidates": len(selected),
                 }))
             """
         )
         self.assertEqual(result["pre_gate_candidates"], 3)
         self.assertEqual(result["post_gate_candidates"], 3)
         self.assertEqual(result["decision_rows"], 6)
-        self.assertEqual(result["blocked_contract"], "research_trust")
-        self.assertEqual(result["blocked_reason"], "missing-trust")
+        self.assertEqual(result["advisory_contract"], "research_trust")
+        self.assertEqual(result["advisory_reason"], "source-coverage-shortfall-need-one-primary-or-three-sources")
+        self.assertEqual(result["continued_candidates"], 3)
 
 
 if __name__ == "__main__":

@@ -66,7 +66,9 @@ seven-day private inventory, and selects the highest qualifying thesis before
 continuing through the existing high-bar drafting workflow. A clearly labelled
 authority-fit fallback may nominate a well-evidenced topic when current
 conversation momentum is insufficient; it never relabels that topic as
-trending. Publication remains disabled.
+trending. Research coverage is satisfied by one body-read primary source or three distinct
+body-read credible sources. Coverage shortfalls remain visible advisories and never
+stop Topic Value or the candidate batch. Publication remains disabled.
 
 If a run stops at Evidence verification, resume from its preserved run folder
 without repeating conversation discovery or topic admission:
