@@ -68,7 +68,14 @@ def export_completed_dashboard(
             "Context and both dashboards must identify the same run."
         )
     saved_contract = evaluation.get("acceptance_contract")
+    saved_versions = run.get("evaluator_versions")
+    saved_versions = saved_versions if isinstance(saved_versions, dict) else {}
+    if not isinstance(saved_contract, dict):
+        # Daily runs save this alongside run metadata; frozen eval packages
+        # save it inside the eval dashboard. Never substitute installed policy.
+        saved_contract = saved_versions.get("acceptance")
     saved_contract = saved_contract if isinstance(saved_contract, dict) else {}
+    total_floor = saved_contract.get("minimum_total", saved_contract.get("floor"))
     axis_floors = saved_contract.get("axis_floors")
     axis_floors = axis_floors if isinstance(axis_floors, dict) else {}
     rows: list[dict[str, object]] = []
@@ -85,13 +92,13 @@ def export_completed_dashboard(
     for score in evaluation.get("critic_scorecards", []):
         if not isinstance(score, dict):
             raise workflow.WorkflowError("Invalid scorecard.")
-        # Selection/acceptance describes the whole attempt, not each score.
-        # Preserve it separately so a rejected revision cannot relabel good axes.
+        # This is an attempt status in eval packages and a total-check status
+        # in daily runs. Preserve the raw status without naming it acceptance.
         rows.append(
             {
                 "run_id": context["run_id"],
                 "recorded_at": context["observed_at"],
-                "contract": "critic_candidate_status",
+                "contract": "critic_scorecard_status",
                 "status": score.get("status", "NOT_EVALUATED"),
                 "subject_id": score.get("candidate_id", "unknown"),
                 "mode": "diagnostic",
@@ -105,7 +112,7 @@ def export_completed_dashboard(
         values = {"critic_total": score.get("total"), **dict(score.get("axes") or {})}
         for name, value in values.items():
             threshold = (
-                score.get("threshold", saved_contract.get("minimum_total"))
+                score.get("threshold", total_floor)
                 if name == "critic_total"
                 else axis_floors.get(name)
             )
@@ -214,7 +221,7 @@ def export_completed_dashboard(
         json.dumps(
             [
                 evaluation.get("rubric"),
-                evaluation.get("acceptance_contract"),
+                saved_contract,
                 context["rubric_version"],
                 context["evaluator_version"],
             ],
@@ -255,7 +262,7 @@ def export_completed_dashboard(
             (
                 "critic-total",
                 score.get("effective_total"),
-                saved_contract.get("minimum_total"),
+                total_floor,
             ),
         ]
         for axis in workflow.CRITIC_AXES:
