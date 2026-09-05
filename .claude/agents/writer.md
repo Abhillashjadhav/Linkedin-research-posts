@@ -39,6 +39,13 @@ personal anecdote to make the prose feel human. When reasoning is technically pl
 not established by the supplied evidence, express it as a question, conditional, proposed
 test, or recommendation—not as a fact or something the author personally did.
 
+One short factual line may emphasize a genuinely striking supported fact. Do not stack punchy
+fragments, mirrored X/Y contrasts, slogan-like reversals, or rhetorical questions to manufacture
+intensity. Patterns such as `The instruction was clear. The authority was not. The model knew.
+The product let it.` are an AI fingerprint, not human voice. Avoid canned phrases such as
+`Yes, you read that right.` Contractions, parentheses, brackets, fragments, questions, and P.S.
+lines are optional devices, never a checklist and never points by themselves.
+
 ## Consumability contract
 
 The reader is a smart product/AI practitioner, not a specialist in every subfield. The post must lower the cost of entry without lowering the quality of thinking.

@@ -88,6 +88,45 @@ def _raw_score(values: tuple[int, int, int, int, int]) -> list[dict[str, object]
 
 
 class EvalPackageTests(unittest.TestCase):
+    def test_voice_shortfall_gets_the_exact_canonical_repair_standard(self) -> None:
+        scorecard = {
+            "candidate_id": "candidate-2",
+            "hook_strength": 4,
+            "middle_escalation": 4,
+            "earned_closer": 5,
+            "specificity_and_source_quality": 4,
+            "voice_fidelity": 3,
+            "effective_total": 20,
+        }
+        result = {
+            "scorecard": scorecard,
+            "acceptance": {
+                "axis_shortfalls": {
+                    "voice_fidelity": {
+                        "observed": 3,
+                        "required": 4,
+                        "shortfall": 1,
+                    }
+                }
+            },
+            "gates": _gate("candidate-2"),
+            "factual_support_diagnostics": [],
+            "anti_slop_findings": [],
+        }
+
+        feedback = eval_package._repair_feedback(2, result)
+        standard = feedback["voice_repair_standard"]
+
+        self.assertEqual(standard["current_score"], 3)
+        self.assertEqual(standard["required_score"], 4)
+        self.assertIn("AI scaffolding", standard["level_3"])
+        self.assertIn("directly publishable", standard["level_4"])
+        self.assertIn("stacked punchy fragments", standard["short_emphasis_rule"])
+        self.assertIn(
+            "It didn't misunderstand the rule",
+            standard["calibration_examples"]["5"],
+        )
+
     def test_parser_exposes_required_eval_only_inputs(self) -> None:
         args = cli.build_parser().parse_args(
             [

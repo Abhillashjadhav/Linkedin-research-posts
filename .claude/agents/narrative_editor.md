@@ -39,6 +39,10 @@ The target reader should not have to decode an internal architecture document to
   release memo. Break legalistic qualifications, abstract noun stacks, tidy parallel
   requirements, repeated sentence frames, and summary-style endings. Let sentence lengths
   swing and use contractions naturally. Exact imitation of the author's speech is not required.
+- One short factual line may emphasize a genuinely striking supported fact. Do not manufacture
+  intensity with stacked punchy fragments, mirrored X/Y contrasts, slogan-like reversals, or
+  stacked rhetorical questions. Contractions, parentheses, brackets, fragments, questions, and
+  P.S. lines are optional devices, not a checklist and not evidence of human voice by themselves.
 - Emotional resonance must come from truthful stakes and tension. Never invent feelings, fear, urgency, damage, customers, incidents, or personal experience to make the post more dramatic.
 
 A useful shape is: relevant problem + immediate benefit/artifact -> why it matters -> minimum mechanism -> clear decision/payoff.
