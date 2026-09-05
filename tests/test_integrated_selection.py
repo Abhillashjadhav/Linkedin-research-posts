@@ -69,6 +69,23 @@ def selector() -> dict[str, object]:
 
 
 class SingleTopicSelectionTests(unittest.TestCase):
+    def test_blocked_selector_is_reported_as_advisory_in_final_summary(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+
+        def draft(_args):
+            integrated_cli._active_single_topic_value = topic_result()
+            integrated_cli._active_single_selector = {**selector(), "status": "BLOCKED"}
+            return 0
+
+        output = io.StringIO()
+        with patch.object(integrated_cli, "_original_command_draft", draft), redirect_stdout(output):
+            result = integrated_cli._command_draft(SimpleNamespace(allow_model_egress=True))
+        self.assertEqual(result, 0)
+        self.assertIn("Resonance Selector: BLOCKED", output.getvalue())
+        self.assertIn("; advisory.", output.getvalue())
+        self.assertNotIn("Resonance Selector: PASS", output.getvalue())
+
     def test_resonance_shortfall_does_not_block_writer(self) -> None:
         blocked = {
             **selector(),

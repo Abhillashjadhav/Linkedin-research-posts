@@ -675,10 +675,10 @@ def _repair_feedback(iteration: int, result: Mapping[str, object]) -> dict[str, 
             "Edit only the named failures. Keep the candidate ID, angle, claim IDs, "
             "selected thesis, evidence boundary, and passing material. Do not invent facts, "
             "experience, emotion, sources, scale, causality, or impact. The next revision is "
-            "eligible to become the new seed only if its overall total does not regress, hook "
-            "and voice do not fall below their mandatory floors. Editorial findings are "
+            "eligible to become the new seed only if its overall total does not regress. Hook "
+            "and voice remain final acceptance targets, not iteration vetoes. Editorial findings are "
             "advisory feedback, never reasons to discard score progress. Individual "
-            "middle, closer, and specificity scores may trade off inside the overall total."
+            "axis scores may trade off inside the overall total."
         ),
     }
     voice_score = int(scorecard["voice_fidelity"])
@@ -721,11 +721,6 @@ def _monotonic_edit_decision(
     proposed_total = int(proposed_score["effective_total"])
     if proposed_total < previous_total:
         regressions.append(f"total-regressed-{previous_total}-to-{proposed_total}")
-    for axis, floor in acceptance_policy.AXIS_FLOORS.items():
-        before = int(previous_score[axis])
-        after = int(proposed_score[axis])
-        if before >= floor and after < floor:
-            regressions.append(f"{axis}-fell-below-floor-{floor}")
 
     previous_gate_result = previous.get("gates")
     proposed_gate_result = proposed.get("gates")
@@ -881,7 +876,13 @@ def command(
             )
         edit = workflow.invoke_writer_revision if editor is None else editor
         for iteration in range(2, raw_limit + 1):
-            if current_result["acceptance"]["status"] == "PASS":  # type: ignore[index]
+            factual_findings = current_result.get("factual_support_diagnostics") or any(
+                "unsupported-factual-marker" in gate.get("reason_codes", [])
+                for gate in _failed_gate_details(current_result).values()
+            )
+            if current_result["acceptance"]["status"] == "PASS" and (  # type: ignore[index]
+                iteration > 2 or not factual_findings
+            ):
                 break
             feedback = _repair_feedback(iteration, current_result)
             revised = edit(
@@ -915,9 +916,7 @@ def command(
                 evidence=evidence,
                 proof=proof,  # type: ignore[arg-type]
                 score_provider=scorer,
-                # The first evaluation is strict so this wording finding always
-                # receives an automatic edit attempt.  After that attempt, the
-                # exact marker becomes a visible advisory rather than a blocker.
+                # Findings stay advisory before and after the bounded edit.
                 allow_factual_wording_advisory=True,
             )[0]
             accepted_as_seed, reasons = _monotonic_edit_decision(

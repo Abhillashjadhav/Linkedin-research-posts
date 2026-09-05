@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from authority_os import quality_cli, quality_optimizer, workflow
+from authority_os import quality_cli, quality_optimizer, v1_completion, workflow
 
 
 GATES_PASS = {
@@ -464,7 +464,7 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(retained.text, "Keep this stronger repair seed.")
         self.assertEqual(state.cycle_best_scores, [18, 16])
 
-    def test_voice_four_seed_beats_higher_total_voice_three_seed(self) -> None:
+    def test_higher_total_can_trade_off_voice_during_repair(self) -> None:
         state = quality_optimizer.RepairState()
         voice_pass = candidate(
             21,
@@ -490,10 +490,10 @@ class RepairStateTests(unittest.TestCase):
         )
         state.observe(attempt(voice_pass))
         retained = state.observe(attempt(voice_fail))
-        self.assertEqual(retained.text, "Keep the candidate that clears the values gate.")
-        self.assertEqual(retained.axes["voice_fidelity"], 4)
+        self.assertEqual(retained.text, voice_fail.text)
+        self.assertEqual(retained.axes["voice_fidelity"], 3)
 
-    def test_hook_four_seed_is_not_replaced_by_a_hook_regression(self) -> None:
+    def test_higher_total_can_trade_off_hook_during_repair(self) -> None:
         state = quality_optimizer.RepairState()
         hook_pass = candidate(
             21,
@@ -521,8 +521,8 @@ class RepairStateTests(unittest.TestCase):
         state.observe(attempt(hook_pass))
         retained = state.observe(attempt(hook_fail))
 
-        self.assertEqual(retained.text, hook_pass.text)
-        self.assertEqual(retained.axes["hook_strength"], 4)
+        self.assertEqual(retained.text, hook_fail.text)
+        self.assertEqual(retained.axes["hook_strength"], 3)
 
     def test_feedback_carries_full_best_text_scores_and_gate_failures(self) -> None:
         seed = candidate(
@@ -759,6 +759,7 @@ class FourCycleConvergenceTests(unittest.TestCase):
                 "write",
                 return_value=workflow.REPO_ROOT / "data/private/run/best-effort-post.md",
             ) as write,
+            patch.object(v1_completion, "record_decision") as record,
             redirect_stdout(output),
         ):
             result = quality_optimizer._command_draft(SimpleNamespace())  # type: ignore[attr-defined]
@@ -768,8 +769,10 @@ class FourCycleConvergenceTests(unittest.TestCase):
         self.assertIn("best overall=candidate-1 score=24/25", rendered)
         self.assertNotIn("The retained best overall candidate.", rendered)
         self.assertIn("best-effort-post.md", rendered)
-        self.assertIn("BEST_EFFORT", rendered)
+        self.assertIn("COMPLETED_WITH_WARNINGS", rendered)
         write.assert_called_once()
+        self.assertEqual(record.call_args.args[0]["observed_status"], "COMPLETED_WITH_WARNINGS")
+        self.assertEqual(record.call_args.kwargs["artifact_sha256"], v1_completion._sha256_text(best.text))
 
 
 if __name__ == "__main__":

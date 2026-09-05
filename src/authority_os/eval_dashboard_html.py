@@ -86,11 +86,11 @@ def render_dashboard(
     outcome = _status(run_dashboard.get("outcome"))
     if blockers:
         outcome = "FAIL"
-    elif outcome == "RUNNING" or gaps:
+    elif outcome == "RUNNING" or (gaps and outcome != "COMPLETED_WITH_WARNINGS"):
         outcome = "INCOMPLETE"
     elif all_checks and outcome != "COMPLETED_WITH_WARNINGS":
         outcome = "PASS"
-    first = blockers[0] if blockers else gaps[0] if gaps else None
+    first = blockers[0] if blockers else gaps[0] if gaps and outcome != "COMPLETED_WITH_WARNINGS" else None
     first_label = (
         first.get("label") or first.get("contract") or first.get("stage")
         if first else "No blocker recorded"

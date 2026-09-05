@@ -377,7 +377,9 @@ def _command_draft(args: object) -> int:
                         f"priority={topic_result.get('priority', 'n/a')})."
                     )
                 print(
-                    f"Resonance Selector: PASS ({selector.get('total', 'n/a')}/25)."
+                    f"Resonance Selector: {selector.get('status', 'NOT_EVALUATED')} "
+                    f"({selector.get('total', 'n/a')}/25)"
+                    + ("; advisory." if selector.get("status") != "PASS" else ".")
                 )
                 passed = [
                     item for item in diagnostics.values() if item.get("status") == "PASS"

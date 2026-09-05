@@ -259,6 +259,58 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(drafting["status"], "PASS")
 
+    def test_delivery_warnings_survive_ledger_dashboard_and_html(self) -> None:
+        from authority_os import eval_dashboard_html, v1_completion
+        artifact = "a" * 64
+        rows = [
+            v1_completion._decision_row(
+                {"contract": contract, "mode": "enforce", "status": "FAIL",
+                 "reason": "voice below target", "score": 3},
+                stage="quality-cycle-4", artifact_sha256=artifact,
+            )
+            for contract in ("voice_fidelity", "candidate_acceptance")
+        ]
+        rows.append(v1_completion._decision_row(
+            {"contract": "draft_delivery", "mode": "diagnostic", "status": "PASS",
+             "observed_status": "COMPLETED_WITH_WARNINGS", "reason": "draft delivered"},
+            stage="draft-delivery", artifact_sha256=artifact,
+        ))
+        evaluation = daily_spine_cli.render_eval_dashboard(rows)
+        dashboard = daily_spine_cli.new_run_dashboard()
+        outcome = daily_spine_cli.finalize_draft_evaluation(
+            dashboard, evaluation, return_code=0, failure_reason="unused",
+        )
+        dashboard["outcome"] = outcome
+        self.assertEqual(outcome, "COMPLETED_WITH_WARNINGS")
+        voice = next(c for c in evaluation["checks"] if c["contract"] == "voice_fidelity")
+        self.assertEqual(voice["status"], "FAIL")
+        self.assertEqual(voice["mode"], "diagnostic")
+        self.assertEqual(dashboard["decisions"][-1]["status"], outcome)
+        rendered = eval_dashboard_html.render_dashboard(dashboard, evaluation)
+        self.assertIn('verdict incomplete">COMPLETED_WITH_WARNINGS', rendered)
+        self.assertIn("No blocker recorded", rendered)
+        self.assertIsNone(dashboard.get("stopped_at"))
+
+    def test_final_evaluation_ignores_advisories_but_preserves_errors(self) -> None:
+        for mode, return_code, expected in (
+            ("diagnostic", 0, "PASS"), ("shadow", 0, "PASS"),
+            ("enforce", 0, "FAIL"), ("diagnostic", 2, "FAIL"),
+        ):
+            with self.subTest(mode=mode, return_code=return_code):
+                dashboard = daily_spine_cli.new_run_dashboard()
+                outcome = daily_spine_cli.finalize_draft_evaluation(
+                    dashboard,
+                    {"checks": [{"contract": "honesty", "label": "Honesty",
+                                 "status": "FAIL", "mode": mode, "reason": "finding"}]},
+                    return_code=return_code, failure_reason="provider unavailable",
+                )
+                self.assertEqual(outcome, expected)
+        dashboard = daily_spine_cli.new_run_dashboard()
+        self.assertEqual(daily_spine_cli.finalize_draft_evaluation(
+            dashboard, {"checks": [], "delivery_outcome": "COMPLETED_WITH_WARNINGS"},
+            return_code=1, failure_reason="write failed",
+        ), "FAIL")
+
     def test_run_dashboard_names_first_failed_stage_and_unreached_downstream(self) -> None:
         dashboard = daily_spine_cli.new_run_dashboard()
         daily_spine_cli.mark_run_stage(

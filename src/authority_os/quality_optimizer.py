@@ -2,8 +2,8 @@
 
 The V0 baseline stays frozen. This overlay changes only the current live V1 path:
 failed cycles carry the best grounded candidate forward as repair context instead of
-starting from a blank page. A repair stops when the 18/25 total, hook and voice floors,
-and every required deterministic contract pass.
+starting from a blank page. A repair stops when the 18/25 total and hook and voice targets pass.
+Editorial findings remain advisory, and exhaustion delivers the best draft with warnings.
 """
 
 from __future__ import annotations
@@ -58,11 +58,6 @@ def _candidate_progresses(
 
     if proposed.effective_total < previous.effective_total:
         return False
-    for axis, floor in AXIS_FLOORS.items():
-        before = int(previous.axes.get(axis, 0))
-        after = int(proposed.axes.get(axis, 0))
-        if before >= floor and after < floor:
-            return False
     previous_slop = {(item.code, item.excerpt) for item in anti_slop.audit(previous.text)}
     proposed_slop = {(item.code, item.excerpt) for item in anti_slop.audit(proposed.text)}
 
@@ -682,7 +677,19 @@ def _command_draft(args: object) -> int:
                     "Best-effort artifact: "
                     f"{path.relative_to(workflow.REPO_ROOT)}"
                 )
-                print("Fallback status: BEST_EFFORT; publishing remains disabled.")
+                v1_completion.record_decision(
+                    {
+                        "contract": "draft_delivery",
+                        "mode": "diagnostic",
+                        "status": "PASS",
+                        "observed_status": "COMPLETED_WITH_WARNINGS",
+                        "reason": "best draft delivered; writing scores remain below target",
+                    },
+                    stage="draft-delivery",
+                    subject_id=best.candidate_id,
+                    artifact_sha256=v1_completion._sha256_text(best.text),
+                )
+                print("Fallback status: COMPLETED_WITH_WARNINGS; publishing remains disabled.")
                 return 0
             raise
     finally:

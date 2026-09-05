@@ -37,11 +37,6 @@ def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
     post_evaluated = [
         check for check in evaluated if check.get("category") == "post_quality"
     ]
-    failed = [
-        check for check in evaluated
-        if check["status"] in {"FAIL", "BLOCKED"}
-        and check.get("mode") not in {"diagnostic", "shadow"}
-    ]
     daily_spine_cli.mark_run_stage(
         run_dashboard,
         "drafting",
@@ -53,47 +48,14 @@ def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
         ),
         return_code=result,
     )
-    if failed:
-        first_failure = failed[0]
-        daily_spine_cli.mark_run_stage(
-            run_dashboard,
-            "final_evals",
-            "FAIL",
-            f"{first_failure['label']}: {first_failure['reason']}",
-            failed_contracts=[str(check["contract"]) for check in failed],
-            failure_reasons=[
-                {
-                    "contract": str(check["contract"]),
-                    "reason": str(check["reason"]),
-                }
-                for check in failed
-            ],
-        )
-    elif result != 0 and post_evaluated:
-        daily_spine_cli.mark_run_stage(
-            run_dashboard,
-            "final_evals",
-            "FAIL",
-            f"drafting failed after recorded evals passed: {failure_reason}",
-        )
-    elif result != 0:
-        daily_spine_cli.mark_run_stage(
-            run_dashboard,
-            "final_evals",
-            "FAIL",
-            f"draft command stopped before a valid Critic 1-5 scorecard: {failure_reason}",
-        )
-    else:
-        daily_spine_cli.mark_run_stage(
-            run_dashboard,
-            "final_evals",
-            "PASS",
-            f"{len(evaluated)} evaluated contract(s) cleared",
-        )
+    outcome = daily_spine_cli.finalize_draft_evaluation(
+        run_dashboard, eval_dashboard,
+        return_code=result, failure_reason=failure_reason,
+    )
     daily_spine_cli.persist_run_dashboard(
         folder,
         run_dashboard,
-        outcome="PASS" if result == 0 else "FAIL",
+        outcome=outcome,
     )
     browser_path = eval_dashboard_html.write_dashboard(
         folder,
