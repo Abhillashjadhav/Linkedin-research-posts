@@ -423,7 +423,20 @@ def _persist_dashboards(
             "label": f"Candidate {item['candidate_id']} acceptance",
             "status": item["acceptance"]["status"],  # type: ignore[index]
             "reason": (
-                "candidate cleared Critic, hard gates, and anti-slop"
+                (
+                    "candidate cleared Critic and blocking gates; advisory: "
+                    + ", ".join(
+                        str(value)
+                        for value in item["acceptance"].get(  # type: ignore[index]
+                            "advisory_warnings", []
+                        )
+                    )
+                )
+                if (
+                    item["acceptance"]["status"] == "PASS"  # type: ignore[index]
+                    and item["acceptance"].get("advisory_warnings")  # type: ignore[index]
+                )
+                else "candidate cleared Critic, hard gates, and anti-slop"
                 if item["acceptance"]["status"] == "PASS"  # type: ignore[index]
                 else (
                     ", ".join(
@@ -457,7 +470,8 @@ def _persist_dashboards(
                     else "REJECTED"
                 ),
                 "failure_codes": list(item["acceptance"]["reasons"])  # type: ignore[index]
-                + list(item["editorial_decision_reasons"]),  # type: ignore[arg-type]
+                + list(item["editorial_decision_reasons"])  # type: ignore[arg-type]
+                + list(item["acceptance"].get("advisory_warnings", [])),  # type: ignore[index]
             }
             for item in repair_history
         ]
@@ -474,6 +488,9 @@ def _persist_dashboards(
                 "threshold": acceptance_policy.ACCEPTABLE_QUALITY_FLOOR,
                 "status": item["acceptance"]["status"],  # type: ignore[index]
                 "failure_codes": list(item["acceptance"]["reasons"]),  # type: ignore[index]
+                "advisory_codes": list(
+                    item["acceptance"].get("advisory_warnings", [])  # type: ignore[index]
+                ),
             }
             for item in results
         ]
@@ -548,6 +565,7 @@ def _evaluate_candidates(
     evidence: Sequence[Mapping[str, object]],
     proof: workflow.LoadedProof | None,
     score_provider: Callable[..., Sequence[Mapping[str, object]]],
+    allow_factual_wording_advisory: bool = False,
 ) -> list[dict[str, object]]:
     raw_scores = score_provider(
         candidates,
@@ -572,15 +590,23 @@ def _evaluate_candidates(
         candidate = candidates_by_id[candidate_id]
         gate = gates_by_id[candidate_id]
         findings = anti_slop.audit(str(candidate["text"]))
-        hard_gates_pass = (
-            gate["passes_required_gates"] is True
-            and acceptance_policy.hard_candidate_gates_pass(gate["gates"])  # type: ignore[arg-type]
+        raw_gates = gate["gates"]
+        hard_gates_pass = acceptance_policy.hard_candidate_gates_pass(
+            raw_gates,  # type: ignore[arg-type]
+            passes_required_gates=bool(gate["passes_required_gates"]),
+            allow_factual_wording_advisory=allow_factual_wording_advisory,
+        )
+        advisories = (
+            acceptance_policy.factual_wording_advisories(raw_gates)  # type: ignore[arg-type]
+            if allow_factual_wording_advisory
+            else []
         )
         decision = acceptance_policy.acceptance_decision(
             scorecard,
             hard_gates_pass=hard_gates_pass,
             additional_checks_pass=not findings,
         )
+        decision["advisory_warnings"] = advisories
         results.append(
             {
                 "candidate_id": candidate_id,
@@ -745,6 +771,11 @@ def _monotonic_edit_decision(
     previous_shortfalls = acceptance_policy.axis_shortfalls(previous_score)
     proposed_shortfalls = acceptance_policy.axis_shortfalls(proposed_score)
     improved = (
+        (
+            previous.get("acceptance", {}).get("status") != "PASS"  # type: ignore[union-attr]
+            and proposed.get("acceptance", {}).get("status") == "PASS"  # type: ignore[union-attr]
+        )
+        or
         proposed_total > previous_total
         or sum(item["shortfall"] for item in proposed_shortfalls.values())
         < sum(item["shortfall"] for item in previous_shortfalls.values())
@@ -902,6 +933,10 @@ def command(
                 evidence=evidence,
                 proof=proof,  # type: ignore[arg-type]
                 score_provider=scorer,
+                # The first evaluation is strict so this wording finding always
+                # receives an automatic edit attempt.  After that attempt, the
+                # exact marker becomes a visible advisory rather than a blocker.
+                allow_factual_wording_advisory=True,
             )[0]
             accepted_as_seed, reasons = _monotonic_edit_decision(
                 current_result, proposed_result

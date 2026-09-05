@@ -26,7 +26,7 @@ class LinkedInPostContractTests(unittest.TestCase):
     def test_contract_is_approved_v1(self) -> None:
         metadata = self.contract["metadata"]
         self.assertEqual(metadata["status"], "APPROVED")
-        self.assertEqual(metadata["version"], "1.3.0")
+        self.assertEqual(metadata["version"], "1.4.0")
 
     def test_critic_matches_executable_acceptance_policy(self) -> None:
         critic = self.contract["critic"]

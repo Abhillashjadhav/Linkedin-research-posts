@@ -330,6 +330,38 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(voice["shortfall"], 1)
         self.assertIn("short-by-1", voice["reason"])
 
+    def test_unsupported_wording_is_strict_before_rewrite_and_advisory_after(self) -> None:
+        item = candidate(
+            21,
+            {
+                "hook_strength": 4,
+                "middle_escalation": 4,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 4,
+                "voice_fidelity": 4,
+            },
+            gates_pass=False,
+        )
+        batch = attempt(item)
+
+        strict = quality_optimizer._qualifying_candidates(  # type: ignore[attr-defined]
+            batch,
+            rejected_openings=set(),
+            package_requested=False,
+            fixture_mode=True,
+            allow_factual_wording_advisory=False,
+        )
+        after_rewrite = quality_optimizer._qualifying_candidates(  # type: ignore[attr-defined]
+            batch,
+            rejected_openings=set(),
+            package_requested=False,
+            fixture_mode=True,
+            allow_factual_wording_advisory=True,
+        )
+
+        self.assertEqual(strict, ())
+        self.assertEqual(after_rewrite, (item,))
+
     def test_run_attempt_records_every_candidate_critic_scorecard(self) -> None:
         first = candidate(
             24,
@@ -388,13 +420,18 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(second_decision["status"], "PASS")
         self.assertEqual(second_decision["gates"], {"honesty": "FAIL"})
         self.assertIn("unsupported-factual-marker", second_decision["failure_codes"])
-        failed_honesty = next(
-            decision
-            for decision in gate_decisions
-            if decision["contract"] == "gate_honesty" and decision["status"] == "FAIL"
+        advisory_honesty = next(
+            call.args[0]
+            for call in record.call_args_list
+            if call.args[0]["contract"] == "gate_honesty"
+            and call.args[0]["status"] == "PASS"
+            and call.kwargs["subject_id"] == "candidate-2"
         )
-        self.assertEqual(failed_honesty["observed_status"], "FAIL")
-        self.assertIn("unsupported-factual-marker", failed_honesty["failure_codes"])
+        self.assertEqual(advisory_honesty["observed_status"], "FAIL")
+        self.assertEqual(advisory_honesty["mode"], "diagnostic")
+        self.assertIn(
+            "unsupported-factual-marker", advisory_honesty["advisory_codes"]
+        )
 
     def test_best_so_far_survives_a_later_score_regression(self) -> None:
         state = quality_optimizer.RepairState()

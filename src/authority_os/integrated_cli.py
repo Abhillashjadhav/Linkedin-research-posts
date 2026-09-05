@@ -98,8 +98,26 @@ def _pre_acceptance_failures(
                 f"critic-axis:{axis}={detail['observed']}/5<{detail['required']}/5;"
                 f"shortfall={detail['shortfall']}"
             )
-    if not bool(getattr(candidate, "passes_required_gates", False)):
-        gates = getattr(candidate, "gates", {})
+    gates = getattr(candidate, "gates", {})
+    raw_required_pass = bool(getattr(candidate, "passes_required_gates", False))
+    effective_hard_gates_pass = bool(
+        isinstance(gates, Mapping)
+        and (
+            (
+                raw_required_pass
+                and all(str(status) != "FAIL" for status in gates.values())
+            )
+            or acceptance_policy.hard_candidate_gates_pass(
+                gates,
+                passes_required_gates=raw_required_pass,
+                reason_codes=getattr(candidate, "gate_reasons", ()),
+                allow_factual_wording_advisory=bool(
+                    kwargs.get("allow_factual_wording_advisory", False)
+                ),
+            )
+        )
+    )
+    if not effective_hard_gates_pass:
         failed = (
             [str(name) for name, status in gates.items() if status == "FAIL"]
             if isinstance(gates, Mapping)
@@ -126,6 +144,7 @@ def _qualifying_candidates(
     rejected_openings: set[str],
     package_requested: bool,
     fixture_mode: bool,
+    allow_factual_wording_advisory: bool = False,
 ) -> tuple[quality_cli.CandidateResult, ...]:
     global _active_resonance_diagnostics, _active_acceptance_diagnostics
     candidates = _original_qualifying(
@@ -133,10 +152,12 @@ def _qualifying_candidates(
         rejected_openings=rejected_openings,
         package_requested=package_requested,
         fixture_mode=fixture_mode,
+        allow_factual_wording_advisory=allow_factual_wording_advisory,
     )
     acceptance_context = {
         "package_requested": package_requested,
         "fixture_mode": fixture_mode,
+        "allow_factual_wording_advisory": allow_factual_wording_advisory,
     }
     accepted = []
     _active_acceptance_diagnostics = {}

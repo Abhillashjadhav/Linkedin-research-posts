@@ -31,6 +31,15 @@ def blocking_failures(candidate: object) -> list[str]:
     gates = getattr(candidate, "gates", {})
     if not isinstance(gates, Mapping):
         return [name for name in BLOCKING_GATES if name != "privacy"]
+    if acceptance_policy.hard_candidate_gates_pass(
+        gates,
+        passes_required_gates=bool(
+            getattr(candidate, "passes_required_gates", False)
+        ),
+        reason_codes=getattr(candidate, "gate_reasons", ()),
+        allow_factual_wording_advisory=True,
+    ):
+        return []
     failures = [
         name
         for name in BLOCKING_GATES

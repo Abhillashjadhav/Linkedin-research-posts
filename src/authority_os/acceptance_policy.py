@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import MappingProxyType
+from collections.abc import Sequence
 from typing import Mapping
 
 
@@ -21,7 +22,9 @@ AXIS_FLOORS: Mapping[str, int] = MappingProxyType(
 )
 
 HARD_GATES = frozenset({"honesty", "citation", "proof", "privacy", "relevance"})
-ACCEPTANCE_CONTRACT_VERSION = "five-axis-v3"
+ADVISORY_FACTUAL_WORDING_CODE = "unsupported-factual-marker"
+ADVISORY_FACTUAL_WORDING_GATES = frozenset({"honesty", "citation"})
+ACCEPTANCE_CONTRACT_VERSION = "five-axis-v4"
 
 
 def axis_shortfalls(axes: Mapping[str, object]) -> dict[str, dict[str, int]]:
@@ -40,15 +43,73 @@ def axis_shortfalls(axes: Mapping[str, object]) -> dict[str, dict[str, int]]:
     return shortfalls
 
 
-def hard_candidate_gates_pass(gates: Mapping[str, object]) -> bool:
-    """Require every candidate-level hard gate; privacy is enforced at artifact write."""
+def _gate_status_and_reasons(
+    raw: object, pooled_reason_codes: Sequence[object]
+) -> tuple[str, tuple[str, ...]]:
+    if isinstance(raw, Mapping):
+        status = str(raw.get("status", "NOT_EVALUATED"))
+        raw_reasons = raw.get("reason_codes", ())
+        reasons = (
+            tuple(str(reason) for reason in raw_reasons)
+            if isinstance(raw_reasons, Sequence)
+            and not isinstance(raw_reasons, (str, bytes))
+            else ()
+        )
+        return status, reasons
+    return str(raw), tuple(str(reason) for reason in pooled_reason_codes)
 
-    for name in HARD_GATES - {"privacy"}:
-        raw = gates.get(name, "NOT_EVALUATED")
-        status = raw.get("status", "NOT_EVALUATED") if isinstance(raw, Mapping) else raw
+
+def factual_wording_advisories(
+    gates: Mapping[str, object], *, reason_codes: Sequence[object] = ()
+) -> list[str]:
+    """Return visible advisory codes without changing the raw gate evidence."""
+
+    advisories: list[str] = []
+    for name in ADVISORY_FACTUAL_WORDING_GATES:
+        status, reasons = _gate_status_and_reasons(gates.get(name), reason_codes)
+        if (
+            status in {"FAIL", "HUMAN_REVIEW", "ADVISORY"}
+            and reasons
+            and set(reasons) <= {ADVISORY_FACTUAL_WORDING_CODE}
+        ):
+            advisories.extend(reasons)
+    return list(dict.fromkeys(advisories))
+
+
+def hard_candidate_gates_pass(
+    gates: Mapping[str, object],
+    *,
+    passes_required_gates: bool | None = None,
+    reason_codes: Sequence[object] = (),
+    allow_factual_wording_advisory: bool = False,
+) -> bool:
+    """Apply the hard-gate contract, with one reason-specific wording advisory.
+
+    The raw gate findings stay unchanged.  After a bounded rewrite attempt, only
+    ``unsupported-factual-marker`` may be treated as non-blocking, and only when
+    it is the complete reason for the honesty/citation failures.  Every other
+    failed gate or mixed reason set remains blocking.
+    """
+
+    advisory_seen = False
+    names = (set(gates) | (HARD_GATES - {"privacy"})) - {"privacy"}
+    for name in names:
+        status, reasons = _gate_status_and_reasons(gates.get(name), reason_codes)
         allowed = {"PASS", "NOT_REQUIRED"} if name == "proof" else {"PASS"}
-        if str(status) not in allowed:
-            return False
+        if status in allowed:
+            continue
+        if (
+            allow_factual_wording_advisory
+            and name in ADVISORY_FACTUAL_WORDING_GATES
+            and status in {"FAIL", "HUMAN_REVIEW", "ADVISORY"}
+            and reasons
+            and set(reasons) <= {ADVISORY_FACTUAL_WORDING_CODE}
+        ):
+            advisory_seen = True
+            continue
+        return False
+    if passes_required_gates is False and not advisory_seen:
+        return False
     return True
 
 

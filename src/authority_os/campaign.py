@@ -568,6 +568,8 @@ def _candidate_diagnostics(
     scores: Sequence[Mapping[str, object]],
     gates: Mapping[str, Mapping[str, object]],
     slop: Mapping[str, Sequence[Mapping[str, str]]],
+    *,
+    allow_factual_wording_advisory: bool = False,
 ) -> list[dict[str, object]]:
     by_score = {str(item["candidate_id"]): item for item in scores}
     diagnostics: list[dict[str, object]] = []
@@ -580,8 +582,12 @@ def _candidate_diagnostics(
                 score,
                 hard_gates_pass=(
                     bool(gate)
-                    and acceptance_policy.hard_candidate_gates_pass(gate)
-                    and all(value["status"] != "FAIL" for value in gate.values())
+                    and acceptance_policy.hard_candidate_gates_pass(
+                        gate,
+                        allow_factual_wording_advisory=(
+                            allow_factual_wording_advisory
+                        ),
+                    )
                 ),
                 additional_checks_pass=not slop.get(candidate_id, ()),
             )
@@ -1305,20 +1311,21 @@ def _run_day(
             for item in scores
             if acceptance_policy.scorecard_is_acceptable(
                 item,
-                hard_gates_pass=(
-                    acceptance_policy.hard_candidate_gates_pass(
-                        gate_by_id[str(item["candidate_id"])]
-                    )
-                    and all(
-                        value["status"] != "FAIL"
-                        for value in gate_by_id[str(item["candidate_id"])].values()
-                    )
+                hard_gates_pass=acceptance_policy.hard_candidate_gates_pass(
+                    gate_by_id[str(item["candidate_id"])],
+                    allow_factual_wording_advisory=cycle > 1,
                 ),
                 additional_checks_pass=not slop_by_id[str(item["candidate_id"])],
             )
         ]
         if not eligible:
-            diagnostics = _candidate_diagnostics(narrative_trace, scores, gate_by_id, slop_by_id)
+            diagnostics = _candidate_diagnostics(
+                narrative_trace,
+                scores,
+                gate_by_id,
+                slop_by_id,
+                allow_factual_wording_advisory=cycle > 1,
+            )
             trace["regeneration_count"] = cycle
             continue
 
@@ -1375,9 +1382,9 @@ def _run_day(
         regated = _gate_trace(regated_raw)
         post_edit_acceptance = acceptance_policy.acceptance_decision(
             rescored,
-            hard_gates_pass=(
-                acceptance_policy.hard_candidate_gates_pass(regated)
-                and all(value["status"] != "FAIL" for value in regated.values())
+            hard_gates_pass=acceptance_policy.hard_candidate_gates_pass(
+                regated,
+                allow_factual_wording_advisory=cycle > 1,
             ),
             additional_checks_pass=not post_slop,
         )

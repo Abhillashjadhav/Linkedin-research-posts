@@ -499,7 +499,7 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(final["scorecard"]["effective_total"], 21)
         self.assertEqual(final["acceptance"]["status"], "PASS")
 
-    def test_progressive_repair_does_not_stop_on_score_when_hard_gate_never_clears(self) -> None:
+    def test_unsupported_wording_gets_one_rewrite_then_becomes_advisory(self) -> None:
         context = _repair_context()
         captured: dict[str, object] = {}
 
@@ -556,11 +556,16 @@ class EvalPackageTests(unittest.TestCase):
                 editor=editor,
             )
 
-        self.assertEqual(result, 1)
+        self.assertEqual(result, 0)
         history = captured["repair_history"]
-        self.assertEqual(len(history), 4)
-        self.assertTrue(all(item["acceptance"]["status"] == "FAIL" for item in history))
-        self.assertEqual(captured["results"][0]["acceptance"]["status"], "FAIL")
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[0]["acceptance"]["status"], "FAIL")
+        self.assertEqual(history[1]["acceptance"]["status"], "PASS")
+        self.assertEqual(
+            history[1]["acceptance"]["advisory_warnings"],
+            ["unsupported-factual-marker"],
+        )
+        self.assertEqual(captured["results"][0]["acceptance"]["status"], "PASS")
 
     def test_rubric_identity_hashes_the_current_loaded_rubric(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -26,6 +26,7 @@ _INSTALLED = False
 _ORIGINAL_COMMAND_DRAFT = quality_cli.command_draft
 _ORIGINAL_PACKAGE_DATA = approval_package._package_data  # type: ignore[attr-defined]
 _ORIGINAL_RUN_ATTEMPT = quality_cli._run_attempt  # type: ignore[attr-defined]
+_ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY = False
 
 
 def _failed_gate_count(candidate: quality_cli.CandidateResult) -> int:
@@ -91,14 +92,20 @@ def _candidate_progresses(
     )
 
 
-def candidate_is_acceptable(candidate: quality_cli.CandidateResult) -> bool:
-    """Return the explicit V1 human-review floor without weakening hard gates."""
+def candidate_is_acceptable(
+    candidate: quality_cli.CandidateResult,
+    *,
+    allow_factual_wording_advisory: bool = False,
+) -> bool:
+    """Return the V1 floor, optionally after the bounded wording repair."""
 
     return acceptance_policy.scorecard_is_acceptable(
         {**candidate.axes, "effective_total": candidate.effective_total},
-        hard_gates_pass=(
-            acceptance_policy.hard_candidate_gates_pass(candidate.gates)
-            and candidate.passes_required_gates
+        hard_gates_pass=acceptance_policy.hard_candidate_gates_pass(
+            candidate.gates,
+            passes_required_gates=candidate.passes_required_gates,
+            reason_codes=candidate.gate_reasons,
+            allow_factual_wording_advisory=allow_factual_wording_advisory,
         ),
     )
 
@@ -150,12 +157,18 @@ _ACTIVE_STATE: RepairState | None = None
 def _run_attempt(args: object, feedback: Mapping[str, object] | None):
     """Persist every 1-5 Critic scorecard before acceptance can reject it."""
 
-    attempt = _ORIGINAL_RUN_ATTEMPT(args, feedback)
     cycle = (
         int(feedback.get("rejected_cycle", 0)) + 1
         if isinstance(feedback, Mapping)
         else 1
     )
+    global _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY
+    previous_advisory = _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY
+    _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY = cycle > 1
+    try:
+        attempt = _ORIGINAL_RUN_ATTEMPT(args, feedback)
+    finally:
+        _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY = previous_advisory
     for candidate in attempt.candidates:
         failed_gates = {
             name: status
@@ -185,6 +198,13 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
             artifact_sha256=v1_completion._sha256_text(candidate.text),  # type: ignore[attr-defined]
         )
         artifact = v1_completion._sha256_text(candidate.text)  # type: ignore[attr-defined]
+        advisory_codes = (
+            acceptance_policy.factual_wording_advisories(
+                candidate.gates, reason_codes=candidate.gate_reasons
+            )
+            if cycle > 1
+            else []
+        )
         for axis in workflow.CRITIC_AXES:
             score = int(candidate.axes.get(axis, 0))
             threshold = AXIS_FLOORS.get(axis)
@@ -213,9 +233,18 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
             )
         for gate_name, gate_status in sorted(candidate.gates.items()):
             normalized = str(gate_status)
+            advisory_gate = (
+                cycle > 1
+                and bool(
+                    acceptance_policy.factual_wording_advisories(
+                        {gate_name: normalized},
+                        reason_codes=candidate.gate_reasons,
+                    )
+                )
+            )
             decision_status = (
                 "PASS"
-                if normalized in {"PASS", "NOT_REQUIRED"}
+                if normalized in {"PASS", "NOT_REQUIRED"} or advisory_gate
                 else "FAIL"
                 if normalized == "FAIL"
                 else "BLOCKED"
@@ -224,10 +253,15 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
             v1_completion.record_decision(
                 {
                     "contract": f"gate_{gate_name}",
-                    "mode": "enforce",
+                    "mode": "diagnostic" if advisory_gate else "enforce",
                     "status": decision_status,
-                    "reason": f"{gate_name}-{normalized.casefold().replace('_', '-')}",
+                    "reason": (
+                        "unsupported-factual-wording-advisory"
+                        if advisory_gate
+                        else f"{gate_name}-{normalized.casefold().replace('_', '-')}"
+                    ),
                     "observed_status": normalized,
+                    "advisory_codes": advisory_codes if advisory_gate else [],
                     "failure_codes": failure_codes,
                 },
                 stage=f"quality-cycle-{cycle}-gates",
@@ -443,12 +477,18 @@ def _qualifying_candidates(
     rejected_openings: set[str],
     package_requested: bool,
     fixture_mode: bool,
+    allow_factual_wording_advisory: bool = False,
 ) -> tuple[quality_cli.CandidateResult, ...]:
     # A strong repaired hook may survive across cycles; the V0 rule that bans every
     # prior opening prevents a genuine best-so-far repair lineage.
     del rejected_openings
     qualifying = tuple(
-        candidate for candidate in attempt.candidates if candidate_is_acceptable(candidate)
+        candidate
+        for candidate in attempt.candidates
+        if candidate_is_acceptable(
+            candidate,
+            allow_factual_wording_advisory=allow_factual_wording_advisory,
+        )
     )
     if not qualifying:
         return ()
@@ -463,15 +503,27 @@ def _qualifying_candidates(
 
 
 def _scorecard_is_acceptable(
-    scorecard: Mapping[str, object], gate_result: Mapping[str, object]
+    scorecard: Mapping[str, object],
+    gate_result: Mapping[str, object],
+    *,
+    allow_factual_wording_advisory: bool | None = None,
 ) -> bool:
+    if allow_factual_wording_advisory is None:
+        allow_factual_wording_advisory = _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY
     raw_gates = gate_result.get("gates")
     return acceptance_policy.scorecard_is_acceptable(
         scorecard,
         hard_gates_pass=(
-            gate_result.get("passes_required_gates") is True
-            and isinstance(raw_gates, Mapping)
-            and acceptance_policy.hard_candidate_gates_pass(raw_gates)
+            isinstance(raw_gates, Mapping)
+            and acceptance_policy.hard_candidate_gates_pass(
+                raw_gates,
+                passes_required_gates=(
+                    gate_result.get("passes_required_gates")
+                    if type(gate_result.get("passes_required_gates")) is bool
+                    else None
+                ),
+                allow_factual_wording_advisory=allow_factual_wording_advisory,
+            )
         ),
     )
 
