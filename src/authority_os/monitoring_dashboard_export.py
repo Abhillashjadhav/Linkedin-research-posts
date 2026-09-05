@@ -67,6 +67,10 @@ def export_completed_dashboard(
         raise workflow.WorkflowError(
             "Context and both dashboards must identify the same run."
         )
+    saved_contract = evaluation.get("acceptance_contract")
+    saved_contract = saved_contract if isinstance(saved_contract, dict) else {}
+    axis_floors = saved_contract.get("axis_floors")
+    axis_floors = axis_floors if isinstance(axis_floors, dict) else {}
     rows: list[dict[str, object]] = []
     for check in evaluation.get("checks", []):
         if not isinstance(check, dict):
@@ -81,21 +85,55 @@ def export_completed_dashboard(
     for score in evaluation.get("critic_scorecards", []):
         if not isinstance(score, dict):
             raise workflow.WorkflowError("Invalid scorecard.")
+        # Selection/acceptance describes the whole attempt, not each score.
+        # Preserve it separately so a rejected revision cannot relabel good axes.
+        rows.append(
+            {
+                "run_id": context["run_id"],
+                "recorded_at": context["observed_at"],
+                "contract": "critic_candidate_status",
+                "status": score.get("status", "NOT_EVALUATED"),
+                "subject_id": score.get("candidate_id", "unknown"),
+                "mode": "diagnostic",
+                "evidence": {
+                    "cycle": score.get("cycle", 0),
+                    "reason_codes": list(score.get("failure_codes") or [])
+                    + list(score.get("advisory_codes") or []),
+                },
+            }
+        )
         values = {"critic_total": score.get("total"), **dict(score.get("axes") or {})}
         for name, value in values.items():
+            threshold = (
+                score.get("threshold", saved_contract.get("minimum_total"))
+                if name == "critic_total"
+                else axis_floors.get(name)
+            )
+            measured = (
+                type(value) in {int, float}
+                and math.isfinite(value)
+                and type(threshold) in {int, float}
+                and math.isfinite(threshold)
+            )
+            status = (
+                "NOT_EVALUATED"
+                if not measured
+                else "PASS"
+                if value >= threshold
+                else "FAIL"
+            )
             rows.append(
                 {
                     "run_id": context["run_id"],
                     "recorded_at": context["observed_at"],
                     "contract": name,
-                    "status": score.get("status", "NOT_EVALUATED"),
+                    "status": status,
                     "subject_id": score.get("candidate_id", "unknown"),
                     "mode": "diagnostic",
                     "evidence": {
                         "score": value,
                         "cycle": score.get("cycle", 0),
-                        "reason_codes": list(score.get("failure_codes") or [])
-                        + list(score.get("advisory_codes") or []),
+                        "threshold": threshold,
                     },
                 }
             )
@@ -184,10 +222,6 @@ def export_completed_dashboard(
             separators=(",", ":"),
         ).encode()
     )
-    saved_contract = evaluation.get("acceptance_contract")
-    saved_contract = saved_contract if isinstance(saved_contract, dict) else {}
-    axis_floors = saved_contract.get("axis_floors")
-    axis_floors = axis_floors if isinstance(axis_floors, dict) else {}
     final_results = evaluation.get("results", [])
     for result in final_results if isinstance(final_results, list) else []:
         if (
