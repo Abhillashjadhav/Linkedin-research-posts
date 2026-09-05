@@ -26,7 +26,7 @@ class LinkedInPostContractTests(unittest.TestCase):
     def test_contract_is_approved_v1(self) -> None:
         metadata = self.contract["metadata"]
         self.assertEqual(metadata["status"], "APPROVED")
-        self.assertEqual(metadata["version"], "1.4.0")
+        self.assertEqual(metadata["version"], "1.5.0")
 
     def test_critic_matches_executable_acceptance_policy(self) -> None:
         critic = self.contract["critic"]
@@ -158,7 +158,7 @@ class LinkedInPostContractTests(unittest.TestCase):
             "overall total",
             "hook and voice",
             "may trade off",
-            "hard gate",
+            "never veto",
             "improves",
         ):
             with self.subTest(requirement=requirement):
@@ -167,7 +167,7 @@ class LinkedInPostContractTests(unittest.TestCase):
     def test_every_recorded_decision_is_resolved_and_none_are_open(self) -> None:
         decisions = self.contract["resolved_decisions"]
         self.assertTrue(decisions)
-        self.assertTrue(all(item["decision_status"] == "RESOLVED" for item in decisions))
+        self.assertTrue(all(item["decision_status"] in {"RESOLVED", "SUPERSEDED_BY_OD-9"} for item in decisions))
         self.assertFalse(self.contract.get("open_decisions"))
 
         def decision_statuses(value: object) -> list[str]:
@@ -188,7 +188,7 @@ class LinkedInPostContractTests(unittest.TestCase):
             return []
 
         self.assertTrue(
-            all(status == "RESOLVED" for status in decision_statuses(self.contract))
+            all(status in {"RESOLVED", "SUPERSEDED_BY_OD-9"} for status in decision_statuses(self.contract))
         )
 
 

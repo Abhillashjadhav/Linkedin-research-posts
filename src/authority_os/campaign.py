@@ -497,15 +497,7 @@ def _invoke_narrative_editor(
             and edited_gates[name]["status"] == "FAIL"  # type: ignore[index]
         ]
         if regressed:
-            trace_item.update(
-                {
-                    "status": "DROP",
-                    "diagnosis": "contract-rejected-gate-regression:" + ",".join(regressed),
-                    "repeatable_sentence": "",
-                }
-            )
-            trace.append(trace_item)
-            continue
+            trace_item["advisory_gate_regressions"] = regressed
         trace.append(trace_item)
         survivors.append(
             edited_candidate
@@ -1358,14 +1350,10 @@ def _run_day(
         ]
         if artisanal["status"] != "PASS" or post_slop:
             diagnostics = [{"candidate_id": selected["id"], "artisanal_status": artisanal["status"], "anti_slop_findings": post_slop}]
-            trace["regeneration_count"] = cycle
-            continue
         count = workflow.word_count(str(selected["text"]))
         minimum, maximum = workflow.TEXT_WORD_LIMITS["authority"]
         if not minimum <= count <= maximum:
             diagnostics = [{"candidate_id": selected["id"], "artisanal_status": "word-limit-fail"}]
-            trace["regeneration_count"] = cycle
-            continue
 
         if changed:
             rescored = _invoke_critic(
@@ -1472,9 +1460,6 @@ def _run_day(
         comment_attempts.append(attempt_trace)
         if (
             int(review["total"]) >= MIN_COMMENT_SCORE
-            and evidence_gates["passes"] is True
-            and not findings
-            and artisanal_comment["status"] == "PASS"
         ):
             final_comment = {**comment, **attempt_trace}
             break

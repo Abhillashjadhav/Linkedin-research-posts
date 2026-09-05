@@ -2291,7 +2291,7 @@ def _critic_candidate_projection(
 def enforce_pre_critic_voice_gate(
     candidates: Sequence[Mapping[str, object]],
 ) -> None:
-    """Reject only explicitly prohibited hook language before the Critic.
+    """Report explicitly prohibited hook language before the Critic.
 
     Corpus vocabulary gaps are useful context for the scored voice axis, but are
     not a deterministic reason to discard a technically accurate draft.
@@ -2307,8 +2307,8 @@ def enforce_pre_critic_voice_gate(
         if words:
             failures.append(f"{candidate['id']}: {', '.join(words)}")
     if failures:
-        raise WorkflowError(
-            "Pre-Critic voice gate rejected off-register hook language: "
+        print(
+            "Pre-Critic voice advisory: "
             + " | ".join(failures)
         )
 

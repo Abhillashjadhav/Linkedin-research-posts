@@ -61,8 +61,8 @@ def attempt_output(
         f"raw_total={first_score}; effective_total={first_score}; "
         f"band={'advance-to-gates' if first_score >= 18 else 'below-critic-bar'}.\n"
         "Critic score: id=candidate-2; hook_strength=4,middle_escalation=4,"
-        "earned_closer=4,specificity_and_source_quality=4,voice_fidelity=4; "
-        "raw_total=20; effective_total=20; band=advance-to-gates.\n"
+        "earned_closer=4,specificity_and_source_quality=4,voice_fidelity=3; "
+        "raw_total=19; effective_total=19; band=advance-to-gates.\n"
         "Critic score: id=candidate-3; hook_strength=3,middle_escalation=5,"
         "earned_closer=5,specificity_and_source_quality=5,voice_fidelity=5; "
         "raw_total=23; effective_total=23; band=advance-to-gates.\n"
@@ -172,7 +172,7 @@ class QualitySearchTests(unittest.TestCase):
         self.assertIn("Four-of-five opening clears the working standard", rendered)
         self.assertEqual(responses, [])
 
-    def test_score_without_required_gates_regenerates(self) -> None:
+    def test_score_without_required_gates_delivers_with_advisories(self) -> None:
         responses = [
             attempt_output(first_score=25, first_gates=False),
             attempt_output(first_score=24, first_opening="Second-cycle opening."),
@@ -189,8 +189,8 @@ class QualitySearchTests(unittest.TestCase):
             redirect_stdout(output),
         ):
             quality_cli.command_draft(self._args())
-        self.assertIn("required_gates=fail", output.getvalue())
-        self.assertIn("Quality search passed on cycle 2/2", output.getvalue())
+        self.assertIn("authority_conversion=FAIL", output.getvalue())
+        self.assertIn("Quality search passed on cycle 1/2", output.getvalue())
 
     def test_live_package_requires_ready_review_and_matching_recommendation(self) -> None:
         responses = [
@@ -210,10 +210,9 @@ class QualitySearchTests(unittest.TestCase):
         ):
             quality_cli.command_draft(self._args(package=True))
         rendered = output.getvalue()
-        self.assertIn("Quality cycle 1/2 rejected", rendered)
-        self.assertIn("Review status: READY_FOR_HUMAN_REVIEW", rendered)
+        self.assertIn("Quality search passed on cycle 1/2", rendered)
 
-    def test_reusing_a_rejected_opening_cannot_pass_the_next_cycle(self) -> None:
+    def test_reusing_an_opening_can_pass_after_scores_improve(self) -> None:
         repeated = "Do not reuse this opening."
         responses = [
             attempt_output(first_score=21, first_opening=repeated),
@@ -230,9 +229,9 @@ class QualitySearchTests(unittest.TestCase):
             patch.object(quality_cli, "MAX_QUALITY_CYCLES", 2),
             redirect_stdout(output),
         ):
-            with self.assertRaises(workflow.WorkflowError):
-                quality_cli.command_draft(self._args())
-        self.assertNotIn(repeated, output.getvalue())
+            result = quality_cli.command_draft(self._args())
+        self.assertEqual(result, 0)
+        self.assertIn(repeated, output.getvalue())
 
     def test_exhaustion_returns_no_post(self) -> None:
         def fake_command(_args: object) -> int:

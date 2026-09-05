@@ -482,11 +482,9 @@ class CriticPromptTests(unittest.TestCase):
             "A friend at a frontier AI lab earns nearly a million dollars.\n"
             "The role pays just shy of that mark.\n\nBody text."
         )
-        with self.assertRaisesRegex(
-            workflow.WorkflowError,
-            r"candidate-1: shy of",
-        ):
+        with patch("builtins.print") as advisory:
             workflow.enforce_pre_critic_voice_gate(candidates)
+        self.assertIn("candidate-1: shy of", advisory.call_args.args[0])
 
     def test_pre_critic_voice_gate_allows_industry_and_product_names(self) -> None:
         candidates = candidate_set()

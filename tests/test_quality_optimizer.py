@@ -159,7 +159,7 @@ class AcceptanceTests(unittest.TestCase):
                     quality_optimizer.candidate_is_acceptable(candidate(score, axes))
                 )
 
-    def test_perfect_25_with_failed_honesty_gate_never_advances(self) -> None:
+    def test_perfect_25_with_failed_honesty_gate_advances_with_finding(self) -> None:
         item = candidate(
             25,
             {
@@ -171,7 +171,7 @@ class AcceptanceTests(unittest.TestCase):
             },
             gates_pass=False,
         )
-        self.assertFalse(quality_optimizer.candidate_is_acceptable(item))
+        self.assertTrue(quality_optimizer.candidate_is_acceptable(item))
 
     def test_advisory_label_cannot_turn_honesty_into_a_pass(self) -> None:
         item = candidate(
@@ -192,7 +192,7 @@ class AcceptanceTests(unittest.TestCase):
             passes_required_gates=True,
             gate_reasons=("unsupported-factual-marker",),
         )
-        self.assertFalse(quality_optimizer.candidate_is_acceptable(item))
+        self.assertTrue(quality_optimizer.candidate_is_acceptable(item))
 
     def test_package_floor_uses_same_axis_and_gate_contract(self) -> None:
         scorecard = {
@@ -241,7 +241,7 @@ class AcceptanceTests(unittest.TestCase):
             quality_optimizer._scorecard_is_acceptable(scorecard, nested)  # type: ignore[attr-defined]
         )
         nested["gates"]["honesty"] = {"status": "FAIL"}
-        self.assertFalse(
+        self.assertTrue(
             quality_optimizer._scorecard_is_acceptable(scorecard, nested)  # type: ignore[attr-defined]
         )
 
@@ -330,7 +330,7 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(voice["shortfall"], 1)
         self.assertIn("short-by-1", voice["reason"])
 
-    def test_unsupported_wording_is_strict_before_rewrite_and_advisory_after(self) -> None:
+    def test_unsupported_wording_is_advisory_on_every_iteration(self) -> None:
         item = candidate(
             21,
             {
@@ -359,7 +359,7 @@ class RepairStateTests(unittest.TestCase):
             allow_factual_wording_advisory=True,
         )
 
-        self.assertEqual(strict, ())
+        self.assertEqual(strict, (item,))
         self.assertEqual(after_rewrite, (item,))
 
     def test_run_attempt_records_every_candidate_critic_scorecard(self) -> None:
@@ -762,7 +762,7 @@ class FourCycleConvergenceTests(unittest.TestCase):
         ):
             result = quality_optimizer._command_draft(SimpleNamespace())  # type: ignore[attr-defined]
 
-        self.assertEqual(result, 1)
+        self.assertEqual(result, 0)
         rendered = output.getvalue()
         self.assertIn("best overall=candidate-1 score=24/25", rendered)
         self.assertNotIn("The retained best overall candidate.", rendered)

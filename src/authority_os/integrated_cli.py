@@ -60,7 +60,7 @@ def _record_post_quality(candidate: object) -> None:
             "anti_slop",
             not findings,
             "no-anti-slop-findings" if not findings else "anti-slop-findings-present",
-            {"finding_count": len(findings), "threshold": 0},
+            {"finding_count": len(findings), "threshold": 0, "mode": "diagnostic"},
         )
     )
     for contract, passed, reason, evidence in decisions:
@@ -196,8 +196,7 @@ def _qualifying_candidates(
                 )
         if reasons:
             _active_acceptance_diagnostics[candidate.candidate_id] = reasons
-        if not reasons and resonance_passed:
-            accepted.append(candidate)
+        accepted.append(candidate)
     accepted_ids = {candidate.candidate_id for candidate in accepted}
     for candidate in all_candidates:
         candidate_id = str(getattr(candidate, "candidate_id", ""))
@@ -209,7 +208,8 @@ def _qualifying_candidates(
                 "mode": "enforce",
                 "status": "PASS" if candidate_id in accepted_ids else "FAIL",
                 "reason": "candidate-cleared-every-acceptance-check" if candidate_id in accepted_ids else " | ".join(reasons),
-                "failure_codes": reasons,
+                "failure_codes": reasons if candidate_id not in accepted_ids else [],
+                "advisory_codes": reasons if candidate_id in accepted_ids else [],
             },
             stage="candidate-acceptance",
             subject_id=candidate_id,
@@ -343,8 +343,8 @@ def _single_topic_selection_prompt(*, narrow_to_evidence: bool = False) -> Itera
                 narrow_to_evidence=narrow_to_evidence,
             )
             if selector.get("status") != "PASS":
-                raise workflow.WorkflowError(
-                    "Resonance Selector blocked the single-topic draft: "
+                print(
+                    "Resonance Selector advisory: "
                     f"{resonance.selector_failure_summary(selector)}"
                 )
             cached = {"day": day, "topic_value": selected_topic, "selector": selector}
@@ -464,16 +464,11 @@ def _command_draft(args: object) -> int:
     if blocked:
         for day, assessment in blocked.items():
             print(
-                f"Resonance gate blocked {day}: score={assessment.get('total', 'n/a')}/25; "
+                f"Resonance advisory for {day}: score={assessment.get('total', 'n/a')}/25; "
                 f"feed_value={assessment.get('feed_value', 'n/a')}; "
                 f"value_before_ask={assessment.get('value_before_ask', 'n/a')}; "
                 f"diagnosis={assessment.get('diagnosis', 'weak feed entry')}"
             )
-        print(
-            "Craft approval cannot override Topic Value, resonance, or feed-value failure. "
-            "Publishing remains disabled."
-        )
-        return 1
 
     print(captured.getvalue(), end="")
     for day, selector in selectors.items():

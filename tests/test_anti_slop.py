@@ -56,7 +56,7 @@ class IntegratedGateTests(unittest.TestCase):
     def candidate(self, text: str) -> SimpleNamespace:
         return SimpleNamespace(candidate_id="candidate-1", text=text)
 
-    def test_sloppy_candidate_cannot_clear_existing_quality_gate(self) -> None:
+    def test_sloppy_candidate_keeps_findings_without_a_second_quality_gate(self) -> None:
         sloppy = self.candidate("Here's the thing: this changes everything.")
         clean = self.candidate("The permission boundary belongs underneath every product flow.")
         with patch.object(quality_cli, "_qualifying_candidates", return_value=(sloppy, clean)):
@@ -72,7 +72,7 @@ class IntegratedGateTests(unittest.TestCase):
                 )
             finally:
                 integrated_cli._original_qualifying = original
-        self.assertEqual(accepted, (clean,))
+        self.assertEqual(accepted, (sloppy, clean))
         self.assertTrue(
             all(
                 reason.startswith("anti-slop:")

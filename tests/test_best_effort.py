@@ -64,7 +64,7 @@ class BestEffortTests(unittest.TestCase):
             self.assertEqual(privacy["contract"], "gate_privacy")
             self.assertEqual(privacy["status"], "PASS")
 
-    def test_hard_gate_failure_writes_nothing_and_names_gate(self) -> None:
+    def test_editorial_gate_failure_still_delivers_draft(self) -> None:
         workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
             target = Path(temporary) / "best-effort-post.md"
@@ -72,14 +72,14 @@ class BestEffortTests(unittest.TestCase):
                 patch.dict(os.environ, {best_effort.OUTPUT_ENV: str(target)}),
                 patch.object(best_effort.v1_completion, "record_decision"),
             ):
-                with self.assertRaisesRegex(workflow.WorkflowError, "honesty"):
-                    best_effort.write(
-                        candidate(honesty="FAIL"),
-                        SimpleNamespace(review_status=None, recommendation=None),
-                        cycle=4,
-                        failure_reason="quality search exhausted",
-                    )
-            self.assertFalse(target.exists())
+                best_effort.write(
+                    candidate(honesty="FAIL"),
+                    SimpleNamespace(review_status=None, recommendation=None),
+                    cycle=4,
+                    failure_reason="quality search exhausted",
+                )
+            self.assertTrue(target.exists())
+            self.assertIn("FAIL", target.read_text())
 
 
 if __name__ == "__main__":

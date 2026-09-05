@@ -284,10 +284,9 @@ class CampaignTests(unittest.TestCase):
             config=campaign.StageModels.preferred().narrative_editor,
             invoker=invoker,
         )
-        self.assertEqual(survivors, [])
-        self.assertTrue(all(item["status"] == "DROP" for item in trace))
+        self.assertEqual(len(survivors), len(drafts))
         self.assertTrue(
-            all(str(item["diagnosis"]).startswith("contract-rejected-gate-regression") for item in trace)
+            all(item["advisory_gate_regressions"] for item in trace)
         )
 
     def test_artisanal_prompt_protects_source_anchored_sentences(self) -> None:

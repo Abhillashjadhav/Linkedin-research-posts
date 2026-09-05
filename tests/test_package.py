@@ -161,7 +161,7 @@ class HumanApprovalPackageTests(unittest.TestCase):
             self.assertEqual(manifest["review_status"], "FIXTURE_REVIEW_ONLY")
             self.assertEqual(manifest["human_approval_status"], "NOT_APPROVED")
             self.assertEqual(manifest["publishing_status"], "DISABLED")
-            self.assertEqual(manifest["eligible_candidate_ids"], ["authority-1"])
+            self.assertEqual(manifest["eligible_candidate_ids"], ["authority-1", "authority-2", "authority-3"])
             self.assertIsNone(manifest["recommended_candidate_id"])
             self.assertIs(manifest["manual_fact_verification_required"], True)
             self.assertEqual(
@@ -183,7 +183,7 @@ class HumanApprovalPackageTests(unittest.TestCase):
             result = write_context(context, self.output_root(temporary))
             manifest = result["manifest"]
             self.assertEqual(manifest["review_status"], "READY_FOR_HUMAN_REVIEW")
-            self.assertEqual(manifest["eligible_candidate_ids"], ["authority-1"])
+            self.assertEqual(manifest["eligible_candidate_ids"], ["authority-1", "authority-2", "authority-3"])
             self.assertEqual(manifest["recommended_candidate_id"], "authority-1")
             self.assertEqual(manifest["human_approval_status"], "NOT_APPROVED")
             self.assertEqual(manifest["publishing_status"], "DISABLED")
@@ -231,8 +231,8 @@ class HumanApprovalPackageTests(unittest.TestCase):
         }
         self.assertIs(gate_results["authority-1"]["passes_required_gates"], False)
         self.assertIs(gate_results["authority-2"]["passes_required_gates"], True)
-        self.assertEqual(evaluation["eligible_candidate_ids"], ["authority-2"])
-        self.assertEqual(evaluation["recommended_candidate_id"], "authority-2")
+        self.assertEqual(evaluation["eligible_candidate_ids"], ["authority-1", "authority-2", "authority-3"])
+        self.assertEqual(evaluation["recommended_candidate_id"], "authority-1")
 
     def test_legacy_below_bar_at_20_is_eligible_under_shared_contract(self) -> None:
         context = fixture_context(mode="live")
@@ -249,7 +249,7 @@ class HumanApprovalPackageTests(unittest.TestCase):
             result = write_context(context, self.output_root(temporary))
         manifest = result["manifest"]
         self.assertEqual(manifest["review_status"], "READY_FOR_HUMAN_REVIEW")
-        self.assertEqual(len(manifest["eligible_candidate_ids"]), 1)
+        self.assertEqual(len(manifest["eligible_candidate_ids"]), 3)
         self.assertIsNotNone(manifest["recommended_candidate_id"])
         self.assertEqual(manifest["human_approval_status"], "NOT_APPROVED")
 

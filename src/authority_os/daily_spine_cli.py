@@ -1036,6 +1036,7 @@ def render_eval_dashboard(
                 "contract": contract,
                 "label": label,
                 "category": "post_quality" if contract in POST_QUALITY_CONTRACTS else "pipeline",
+                "mode": str(row.get("mode", "enforce")) if row else "enforce",
                 "status": status,
                 "reason": reason,
                 "subject_id": str(row.get("subject_id", "")) if row else "",
