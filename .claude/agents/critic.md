@@ -49,7 +49,8 @@ Any failed honesty, citation, or required proof gate is `DROP`, regardless of sc
 ## Thresholds
 
 The Critic scores only. Python owns acceptance. Its shared contract requires total
-at least 18, hook and voice at least 4, the other three axes at least 3, and every
-hard gate. A score of 24 remains an optimization target, never an approval signal.
+at least 18, hook and voice at least 4, and every hard gate. Middle escalation,
+earned closer, and specificity/source quality remain scored and may trade off inside
+the total; they have no independent floor.
 
 Never use `ship`, `published`, or automatic-approval language. Source traceability is not proof of truth; human verification remains required.

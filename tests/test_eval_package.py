@@ -38,6 +38,44 @@ def _gate(candidate_id: str) -> dict[str, object]:
     }
 
 
+def _failed_honesty_gate(candidate_id: str) -> dict[str, object]:
+    gate = _gate(candidate_id)
+    gate["gates"]["honesty"] = {  # type: ignore[index]
+        "status": "FAIL",
+        "reason_codes": ["unsupported-factual-marker"],
+    }
+    gate["passes_required_gates"] = False
+    return gate
+
+
+def _evaluated_result(
+    values: tuple[int, int, int, int, int],
+    *,
+    hard_gates_pass: bool = True,
+) -> dict[str, object]:
+    axes = dict(zip(workflow.CRITIC_AXES, values, strict=True))
+    total = sum(values)
+    scorecard: dict[str, object] = {
+        "candidate_id": "candidate-2",
+        **axes,
+        "raw_total": total,
+        "effective_total": total,
+    }
+    gates = _gate("candidate-2") if hard_gates_pass else _failed_honesty_gate("candidate-2")
+    return {
+        "candidate_id": "candidate-2",
+        "candidate": _candidate(2),
+        "scorecard": scorecard,
+        "gates": gates,
+        "factual_support_diagnostics": [],
+        "anti_slop_findings": [],
+        "acceptance": acceptance_policy.acceptance_decision(
+            scorecard,
+            hard_gates_pass=hard_gates_pass,
+        ),
+    }
+
+
 def _repair_context() -> dict[str, object]:
     candidates = [_candidate(index) for index in range(1, 4)]
     brief = {
@@ -88,6 +126,57 @@ def _raw_score(values: tuple[int, int, int, int, int]) -> list[dict[str, object]
 
 
 class EvalPackageTests(unittest.TestCase):
+    def test_total_only_shortfall_is_named_in_progressive_feedback(self) -> None:
+        result = _evaluated_result((4, 2, 3, 4, 4))
+
+        feedback = eval_package._repair_feedback(2, result)
+
+        self.assertEqual(feedback["current_total"], 17)
+        self.assertEqual(feedback["required_total"], 18)
+        self.assertEqual(feedback["total_shortfall"], 1)
+        self.assertEqual(feedback["axis_shortfalls"], {})
+
+    def test_monotonic_edit_rejects_hook_or_voice_falling_below_met_floor(self) -> None:
+        previous = _evaluated_result((4, 4, 4, 4, 4))
+        for proposed, expected_reason in (
+            (_evaluated_result((3, 5, 5, 5, 4)), "hook_strength-fell-below-floor-4"),
+            (_evaluated_result((4, 5, 5, 5, 3)), "voice_fidelity-fell-below-floor-4"),
+        ):
+            with self.subTest(reason=expected_reason):
+                accepted, reasons = eval_package._monotonic_edit_decision(
+                    previous, proposed
+                )
+                self.assertFalse(accepted)
+                self.assertIn(expected_reason, reasons)
+
+    def test_equal_total_can_advance_when_a_mandatory_shortfall_or_gate_improves(self) -> None:
+        cases = (
+            (
+                _evaluated_result((3, 4, 5, 4, 3)),
+                _evaluated_result((4, 3, 5, 4, 3)),
+            ),
+            (
+                _evaluated_result((4, 4, 4, 4, 4), hard_gates_pass=False),
+                _evaluated_result((4, 4, 4, 4, 4), hard_gates_pass=True),
+            ),
+        )
+        for previous, proposed in cases:
+            with self.subTest(previous=previous["scorecard"], proposed=proposed["scorecard"]):
+                accepted, reasons = eval_package._monotonic_edit_decision(
+                    previous, proposed
+                )
+                self.assertTrue(accepted)
+                self.assertEqual(reasons, [])
+
+    def test_lower_total_is_rejected_even_when_a_hard_gate_improves(self) -> None:
+        previous = _evaluated_result((4, 5, 5, 5, 4), hard_gates_pass=False)
+        proposed = _evaluated_result((4, 5, 5, 4, 4), hard_gates_pass=True)
+
+        accepted, reasons = eval_package._monotonic_edit_decision(previous, proposed)
+
+        self.assertFalse(accepted)
+        self.assertIn("total-regressed-23-to-22", reasons)
+
     def test_voice_shortfall_gets_the_exact_canonical_repair_standard(self) -> None:
         scorecard = {
             "candidate_id": "candidate-2",
@@ -394,13 +483,13 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(len(editor_inputs), 3)
         self.assertEqual(editor_inputs[0], _candidate(2)["text"])
-        self.assertEqual(editor_inputs[1], _candidate(2)["text"])
+        self.assertEqual(editor_inputs[1], "progressive revision 1")
         self.assertEqual(editor_inputs[2], "progressive revision 2")
         history = captured["repair_history"]
         self.assertEqual(len(history), 4)
-        self.assertFalse(history[1]["accepted_as_next_seed"])
+        self.assertTrue(history[1]["accepted_as_next_seed"])
         self.assertIn(
-            "middle_escalation-regressed-4-to-3",
+            "monotonic-improvement",
             history[1]["editorial_decision_reasons"],
         )
         self.assertTrue(history[2]["accepted_as_next_seed"])
@@ -409,6 +498,69 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(final["candidate_id"], "candidate-2")
         self.assertEqual(final["scorecard"]["effective_total"], 21)
         self.assertEqual(final["acceptance"]["status"], "PASS")
+
+    def test_progressive_repair_does_not_stop_on_score_when_hard_gate_never_clears(self) -> None:
+        context = _repair_context()
+        captured: dict[str, object] = {}
+
+        def persist(**kwargs: object) -> tuple[Path, Path, Path, bool]:
+            captured.update(kwargs)
+            return (
+                workflow.REPO_ROOT / "eval.json",
+                workflow.REPO_ROOT / "run.json",
+                workflow.REPO_ROOT / "eval.html",
+                False,
+            )
+
+        def editor(candidate: object, *_args: object, **_kwargs: object):
+            self.assertIsInstance(candidate, dict)
+            return {**candidate, "text": "A grounded edit that still fails honesty."}
+
+        args = SimpleNamespace(
+            allow_model_egress=True, repair=True, candidate="candidate-2"
+        )
+        with (
+            patch.object(eval_package, "_load_context", return_value=context),
+            patch.object(
+                eval_package,
+                "_rubric_identity",
+                return_value={
+                    "path": "config/current.json",
+                    "rubric_id": "current",
+                    "sha256": "a" * 64,
+                },
+            ),
+            patch.object(
+                workflow,
+                "evaluate_candidate_set_gates",
+                side_effect=lambda candidates, **_kwargs: [
+                    _failed_honesty_gate(str(candidate["id"]))
+                    for candidate in candidates
+                ],
+            ),
+            patch.object(
+                workflow, "candidate_factual_support_diagnostics", return_value=[]
+            ),
+            patch.object(
+                workflow,
+                "validate_draft_candidates",
+                side_effect=lambda candidates, **_kwargs: [
+                    dict(candidate) for candidate in candidates
+                ],
+            ),
+        ):
+            result = eval_package.command(
+                args,
+                persist=persist,
+                score_provider=lambda *_args, **_kwargs: _raw_score((4, 5, 5, 5, 4)),
+                editor=editor,
+            )
+
+        self.assertEqual(result, 1)
+        history = captured["repair_history"]
+        self.assertEqual(len(history), 4)
+        self.assertTrue(all(item["acceptance"]["status"] == "FAIL" for item in history))
+        self.assertEqual(captured["results"][0]["acceptance"]["status"], "FAIL")
 
     def test_rubric_identity_hashes_the_current_loaded_rubric(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

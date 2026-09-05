@@ -68,7 +68,11 @@ class V1ContractTests(unittest.TestCase):
             release_rule["hard_floors"],
             dict(acceptance_policy.AXIS_FLOORS),
         )
-        self.assertEqual(rubric["axes"]["earned_closer"]["floor"], 3)
+        self.assertIsNone(rubric["axes"]["middle_escalation"]["floor"])
+        self.assertIsNone(rubric["axes"]["earned_closer"]["floor"])
+        self.assertIsNone(
+            rubric["axes"]["specificity_and_source_quality"]["floor"]
+        )
 
     def test_atomic_value_novelty_uses_separate_private_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(

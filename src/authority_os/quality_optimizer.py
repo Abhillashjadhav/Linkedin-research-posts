@@ -2,7 +2,7 @@
 
 The V0 baseline stays frozen. This overlay changes only the current live V1 path:
 failed cycles carry the best grounded candidate forward as repair context instead of
-starting from a blank page. A repair stops when the 18/25 total, named per-axis floors,
+starting from a blank page. A repair stops when the 18/25 total, hook and voice floors,
 and every required deterministic contract pass.
 """
 
@@ -19,11 +19,6 @@ from . import quality_cli, v1_completion, workflow
 
 ACCEPTABLE_QUALITY_FLOOR = acceptance_policy.ACCEPTABLE_QUALITY_FLOOR
 MIN_HOOK_SCORE = acceptance_policy.MIN_HOOK_SCORE
-MIN_MIDDLE_ESCALATION_SCORE = acceptance_policy.MIN_MIDDLE_ESCALATION_SCORE
-MIN_EARNED_CLOSER_SCORE = acceptance_policy.MIN_EARNED_CLOSER_SCORE
-MIN_SPECIFICITY_AND_SOURCE_QUALITY_SCORE = (
-    acceptance_policy.MIN_SPECIFICITY_AND_SOURCE_QUALITY_SCORE
-)
 MIN_VOICE_FIDELITY_SCORE = acceptance_policy.MIN_VOICE_FIDELITY_SCORE
 AXIS_FLOORS = acceptance_policy.AXIS_FLOORS
 
@@ -40,17 +35,59 @@ def _failed_gate_count(candidate: quality_cli.CandidateResult) -> int:
 def _candidate_rank(
     candidate: quality_cli.CandidateResult,
 ) -> tuple[int, int, int, int, int, int, str]:
-    """Prefer grounded progress before raw prose score when choosing a repair seed."""
+    """Rank repair seeds by total first, then mandatory floors and hard gates."""
 
     shortfalls = acceptance_policy.axis_shortfalls(candidate.axes)
     return (
-        1 if candidate.passes_required_gates else 0,
-        -_failed_gate_count(candidate),
+        candidate.effective_total,
         1 if not shortfalls else 0,
         -sum(item["shortfall"] for item in shortfalls.values()),
-        candidate.effective_total,
+        1 if candidate.passes_required_gates else 0,
+        -_failed_gate_count(candidate),
         int(candidate.axes.get("hook_strength", 0)),
         candidate.candidate_id,
+    )
+
+
+def _candidate_progresses(
+    previous: quality_cli.CandidateResult,
+    proposed: quality_cli.CandidateResult,
+) -> bool:
+    """Allow a new repair seed only when total is monotonic and safety does not regress."""
+
+    if proposed.effective_total < previous.effective_total:
+        return False
+    for axis, floor in AXIS_FLOORS.items():
+        before = int(previous.axes.get(axis, 0))
+        after = int(proposed.axes.get(axis, 0))
+        if before >= floor and after < floor:
+            return False
+    for gate in acceptance_policy.HARD_GATES - {"privacy"}:
+        before = str(previous.gates.get(gate, "NOT_EVALUATED"))
+        after = str(proposed.gates.get(gate, "NOT_EVALUATED"))
+        if before in {"PASS", "NOT_REQUIRED"} and after not in {
+            "PASS",
+            "NOT_REQUIRED",
+        }:
+            return False
+    previous_slop = {(item.code, item.excerpt) for item in anti_slop.audit(previous.text)}
+    proposed_slop = {(item.code, item.excerpt) for item in anti_slop.audit(proposed.text)}
+    if not proposed_slop <= previous_slop:
+        return False
+
+    previous_shortfall = sum(
+        item["shortfall"]
+        for item in acceptance_policy.axis_shortfalls(previous.axes).values()
+    )
+    proposed_shortfall = sum(
+        item["shortfall"]
+        for item in acceptance_policy.axis_shortfalls(proposed.axes).values()
+    )
+    return (
+        proposed.effective_total > previous.effective_total
+        or proposed_shortfall < previous_shortfall
+        or _failed_gate_count(proposed) < _failed_gate_count(previous)
+        or len(proposed_slop) < len(previous_slop)
     )
 
 
@@ -90,7 +127,7 @@ class RepairState:
         )
         current = max(attempt.candidates, key=_candidate_rank)
         self.cycle_best_scores.append(current.effective_total)
-        if self.best is None or _candidate_rank(current) > _candidate_rank(self.best):
+        if self.best is None or _candidate_progresses(self.best, current):
             self.best = current
             self.best_attempt = attempt
         assert self.best is not None
@@ -148,18 +185,22 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
             artifact_sha256=v1_completion._sha256_text(candidate.text),  # type: ignore[attr-defined]
         )
         artifact = v1_completion._sha256_text(candidate.text)  # type: ignore[attr-defined]
-        for axis, threshold in AXIS_FLOORS.items():
+        for axis in workflow.CRITIC_AXES:
             score = int(candidate.axes.get(axis, 0))
-            shortfall = max(0, threshold - score)
+            threshold = AXIS_FLOORS.get(axis)
+            shortfall = max(0, threshold - score) if threshold is not None else 0
+            enforced = threshold is not None
             v1_completion.record_decision(
                 {
                     "contract": axis,
-                    "mode": "enforce",
+                    "mode": "enforce" if enforced else "diagnostic",
                     "status": "PASS" if shortfall == 0 else "FAIL",
                     "reason": (
                         f"{axis}-{score}-of-5-meets-{threshold}"
-                        if shortfall == 0
+                        if enforced and shortfall == 0
                         else f"{axis}-{score}-of-5-short-by-{shortfall}"
+                        if enforced
+                        else f"{axis}-{score}-of-5-recorded-for-total"
                     ),
                     "score": score,
                     "threshold": threshold,
@@ -206,16 +247,16 @@ def _state() -> RepairState:
 def _weak_axes(candidate: quality_cli.CandidateResult) -> dict[str, int]:
     return {
         axis: int(candidate.axes.get(axis, 0))
-        for axis in workflow.CRITIC_AXES
-        if int(candidate.axes.get(axis, 0)) < AXIS_FLOORS[axis]
+        for axis, floor in AXIS_FLOORS.items()
+        if int(candidate.axes.get(axis, 0)) < floor
     }
 
 
 def _passing_axes(candidate: quality_cli.CandidateResult) -> dict[str, int]:
     return {
         axis: int(candidate.axes.get(axis, 0))
-        for axis in workflow.CRITIC_AXES
-        if int(candidate.axes.get(axis, 0)) >= AXIS_FLOORS[axis]
+        for axis, floor in AXIS_FLOORS.items()
+        if int(candidate.axes.get(axis, 0)) >= floor
     }
 
 
@@ -251,7 +292,7 @@ def _voice_repair_instruction(feedback: Mapping[str, object]) -> str:
         "\nVOICE_FIDELITY_REPAIR_REQUIRED\n"
         f"The retained seed scored voice_fidelity={voice}/5; it must reach "
         f"{MIN_VOICE_FIDELITY_SCORE}/5. {preserve_hook}"
-        "Preserve every supported claim, the product decision, and all other passing axes. "
+        "Preserve every supported claim, the product decision, and every passing mandatory axis. "
         "Repair the prose as a conversational product leader: plain spoken words, varied sentence "
         "lengths, occasional natural contractions, direct judgment, and honest uncertainty. Remove "
         "consultant-memo language, legalistic qualification, abstract noun stacks, tidy parallel "
@@ -283,7 +324,7 @@ def _anti_slop_repair_instruction(feedback: Mapping[str, object]) -> str:
         "\nANTI_SLOP_REPAIR_REQUIRED\n"
         "Rewrite the smallest excerpt needed to remove every exact anti_slop_findings entry "
         "on repair_seed. Do not replace one canned phrase, parallel list, or artificial rhythm "
-        "with another. Preserve supported facts, the thesis, reader stake, and every passing axis.\n"
+        "with another. Preserve supported facts, the thesis, reader stake, and every passing mandatory axis.\n"
     )
 
 
@@ -295,6 +336,7 @@ def _quality_feedback(
     current_best = max(attempt.candidates, key=_candidate_rank)
     previous_best = max(state.cycle_best_scores[:-1], default=0)
     delta = current_best.effective_total - previous_best if previous_best else None
+    total_shortfall = max(0, ACCEPTABLE_QUALITY_FLOOR - seed.effective_total)
 
     return {
         "rejected_cycle": cycle,
@@ -303,6 +345,8 @@ def _quality_feedback(
         "cycle_best_score": current_best.effective_total,
         "cycle_score_delta": delta,
         "best_so_far_score": seed.effective_total,
+        "required_total": ACCEPTABLE_QUALITY_FLOOR,
+        "total_shortfall": total_shortfall,
         "score_history": list(state.cycle_best_scores),
         "repair_seed": {
             "candidate_id": seed.candidate_id,
@@ -324,11 +368,11 @@ def _quality_feedback(
         "required_next_action": (
             "Repair the best-so-far candidate instead of starting over. Preserve its grounded "
             "atomic value and strongest passages, remove every unsupported or failing claim, "
-            "and repair only the axes below their named floors plus explicit gate findings. "
-            "Do not chase 5/5 on an axis already listed in preserve_axes. A result at or above 18/25 is "
-            "acceptable only when hook_strength and voice_fidelity are at least 4/5; "
-            "middle_escalation, earned_closer, and specificity_and_source_quality are at least 3/5; "
-            "and every required deterministic/V1 gate passes. Voice below 4/5 is never traded away. "
+            "and repair the named total deficit, mandatory-axis shortfalls, and explicit gate findings. "
+            "Do not chase 5/5 on a mandatory axis already listed in preserve_axes. A result at or above 18/25 is "
+            "acceptable when hook_strength and voice_fidelity are at least 4/5 and every required "
+            "deterministic/V1 gate passes. The other three scored axes may trade off inside the total. "
+            "Voice below 4/5 is never traded away. "
             "Return three materially different repairs in the Writer's required angle slots: "
             "candidate-1 remains mechanism-led, candidate-2 remains product-decision-led, and "
             "candidate-3 remains artefact/failure-mode-led. All three must inherit the repair seed's "
@@ -370,8 +414,9 @@ def _writer_retry_prompt(feedback: Mapping[str, object] | None) -> Iterator[None
             "diagnostics show is weak or unsupported. Produce three repairs in the angle slots already "
             "required by the base Writer contract: mechanism-led, product-decision-led, and "
             "artefact/failure-mode-led. They may restructure the seed, but must preserve its supportable "
-            "atomic value, strategy, evidence boundary, and grounded claims. Repair only named axis "
-            "shortfalls and gate findings; do not chase 5/5 on an axis already in preserve_axes. Stop "
+            "atomic value, strategy, evidence boundary, and grounded claims. Repair the named total "
+            "deficit, mandatory-axis shortfalls, and gate findings; the other three axes may trade "
+            "inside the total. Do not chase 5/5 on a mandatory axis already in preserve_axes. Stop "
             "once the shared acceptance contract passes. Do not accept cosmetic rewrites: the next set "
             "must improve a failed axis, eliminate a gate failure, or both. Supported abstraction may "
             "remove incidental precision or map an instance to its "

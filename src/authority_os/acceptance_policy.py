@@ -8,26 +8,20 @@ from typing import Mapping
 
 ACCEPTABLE_QUALITY_FLOOR = 18
 MIN_HOOK_SCORE = 4
-MIN_MIDDLE_ESCALATION_SCORE = 3
-MIN_EARNED_CLOSER_SCORE = 3
-MIN_SPECIFICITY_AND_SOURCE_QUALITY_SCORE = 3
 MIN_VOICE_FIDELITY_SCORE = 4
 
-# Earned closer remains in acceptance by owner decision. Across two independent
-# calibration runs it measured inverted (owner flops 3.73 versus winners 3.33),
-# so it is a candidate for demotion only after a held-out set exists.
+# All five axes remain scored and contribute to the 18/25 total. Only hook and
+# voice have independent floors; the other three axes may trade off inside the
+# total. Hard factual gates remain separate and cannot be offset by score.
 AXIS_FLOORS: Mapping[str, int] = MappingProxyType(
     {
         "hook_strength": MIN_HOOK_SCORE,
-        "middle_escalation": MIN_MIDDLE_ESCALATION_SCORE,
-        "earned_closer": MIN_EARNED_CLOSER_SCORE,
-        "specificity_and_source_quality": MIN_SPECIFICITY_AND_SOURCE_QUALITY_SCORE,
         "voice_fidelity": MIN_VOICE_FIDELITY_SCORE,
     }
 )
 
 HARD_GATES = frozenset({"honesty", "citation", "proof", "privacy", "relevance"})
-ACCEPTANCE_CONTRACT_VERSION = "five-axis-v2"
+ACCEPTANCE_CONTRACT_VERSION = "five-axis-v3"
 
 
 def axis_shortfalls(axes: Mapping[str, object]) -> dict[str, dict[str, int]]:

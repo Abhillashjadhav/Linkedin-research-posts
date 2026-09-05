@@ -794,7 +794,8 @@ class WriterRevisionInvocationTests(unittest.TestCase):
         self.assertIn("UNTRUSTED_REPAIR_FEEDBACK_DATA", prompt)
         self.assertIn("OpenAI reported 95% reliability.", prompt)
         self.assertIn("passing_axes_to_preserve", prompt)
-        self.assertIn("improving only the failed axes", prompt)
+        self.assertIn("improving the failed mandatory", prompt)
+        self.assertIn("overall total may not decrease", prompt)
 
     @patch("authority_os.workflow.subprocess.run")
     @patch("authority_os.workflow.shutil.which", return_value="/opt/claude")

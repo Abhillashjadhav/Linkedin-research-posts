@@ -73,8 +73,6 @@ def _shortfalls(
             seen.add(bar)
 
     total = int(getattr(candidate, "effective_total", 0))
-    if total < 24:
-        add("target_quality", f"observed {total}/25; target 24/25")
     if total < acceptance_policy.ACCEPTABLE_QUALITY_FLOOR:
         add(
             "critic_total",

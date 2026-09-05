@@ -26,14 +26,23 @@ class LinkedInPostContractTests(unittest.TestCase):
     def test_contract_is_approved_v1(self) -> None:
         metadata = self.contract["metadata"]
         self.assertEqual(metadata["status"], "APPROVED")
-        self.assertEqual(metadata["version"], "1.2.0")
+        self.assertEqual(metadata["version"], "1.3.0")
 
     def test_critic_matches_executable_acceptance_policy(self) -> None:
         critic = self.contract["critic"]
         expected_floors = dict(acceptance_policy.AXIS_FLOORS)
 
-        self.assertEqual(critic["axis_order"], list(expected_floors))
-        self.assertEqual(list(critic["axes"]), list(expected_floors))
+        self.assertEqual(
+            critic["axis_order"],
+            [
+                "hook_strength",
+                "middle_escalation",
+                "earned_closer",
+                "specificity_and_source_quality",
+                "voice_fidelity",
+            ],
+        )
+        self.assertEqual(list(critic["axes"]), critic["axis_order"])
         self.assertEqual(critic["axis_floors"], expected_floors)
         self.assertEqual(
             critic["minimum_total"],
@@ -146,8 +155,9 @@ class LinkedInPostContractTests(unittest.TestCase):
         )
         monotonic = repair["progressive_editor_monotonic_rule"]
         for requirement in (
-            "total score",
-            "every individual axis",
+            "overall total",
+            "hook and voice",
+            "may trade off",
             "hard gate",
             "improves",
         ):

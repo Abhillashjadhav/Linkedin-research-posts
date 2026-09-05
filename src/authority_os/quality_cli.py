@@ -352,8 +352,8 @@ def _render_success(
     print(
         f"Quality search passed on cycle {cycle}/{limit}: "
         f"{len(accepted)} candidate(s) cleared the shared five-axis contract "
-        f"({MIN_QUALITY_SCORE}/25 total; hook/voice 4/5; middle/closer/"
-        "specificity 3/5) and every required gate."
+        f"({MIN_QUALITY_SCORE}/25 total; hook/voice 4/5; the other three axes "
+        "scored into the total) and every required gate."
     )
     for candidate in accepted:
         print(
