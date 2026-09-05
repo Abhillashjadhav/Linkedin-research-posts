@@ -1069,11 +1069,23 @@ def render_eval_dashboard(
                 failure_codes.extend(
                     str(value) for value in acceptance_codes if str(value) not in failure_codes
                 )
+        # A total-only ledger PASS is not five-axis quality acceptance.
+        # Keep the raw total result separate so advisory delivery cannot make
+        # an under-target hook or voice appear to qualify.
+        quality_acceptance = acceptance_policy.acceptance_decision(
+            {**axes, "effective_total": evidence.get("score", 0)},
+            hard_gates_pass=True,
+        )
+        for reason in quality_acceptance["reasons"]:
+            if reason not in failure_codes:
+                failure_codes.append(reason)
         scorecards.append(
             {
                 "cycle": int(evidence.get("cycle", 0)),
                 "candidate_id": str(row.get("subject_id", "")),
-                "status": str(row.get("status", "NOT_EVALUATED")),
+                "status": quality_acceptance["status"],
+                "total_status": str(row.get("status", "NOT_EVALUATED")),
+                "axis_targets": dict(acceptance_policy.AXIS_FLOORS),
                 "total": int(evidence.get("score", 0)),
                 "threshold": int(evidence.get("threshold", 18)),
                 "axes": {axis: int(axes.get(axis, 0)) for axis in workflow.CRITIC_AXES},
