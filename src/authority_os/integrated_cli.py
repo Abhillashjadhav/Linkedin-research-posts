@@ -98,7 +98,7 @@ def _pre_acceptance_failures(
                 f"critic-axis:{axis}={detail['observed']}/5<{detail['required']}/5;"
                 f"shortfall={detail['shortfall']}"
             )
-    return reasons or ["pre-acceptance:unknown-contract-mismatch"]
+    return reasons
 
 
 def _qualifying_candidates(

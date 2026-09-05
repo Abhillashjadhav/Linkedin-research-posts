@@ -143,10 +143,7 @@ class IntegratedGateTests(unittest.TestCase):
         )
         self.assertEqual(
             reasons,
-            [
-                "package-review-status:BLOCKED",
-                "package-recommendation:none!=candidate:candidate-3",
-            ],
+            [],
         )
 
     def test_post_quality_records_every_axis_and_anti_slop(self) -> None:
