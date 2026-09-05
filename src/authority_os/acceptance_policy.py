@@ -13,7 +13,7 @@ MIN_VOICE_FIDELITY_SCORE = 4
 
 # All five axes remain scored and contribute to the 18/25 total. Only hook and
 # voice have independent floors; the other three axes may trade off inside the
-# total. Hard factual gates remain separate and cannot be offset by score.
+# total. Editorial findings are advisory and never add a second acceptance bar.
 AXIS_FLOORS: Mapping[str, int] = MappingProxyType(
     {
         "hook_strength": MIN_HOOK_SCORE,
@@ -24,7 +24,7 @@ AXIS_FLOORS: Mapping[str, int] = MappingProxyType(
 HARD_GATES = frozenset({"honesty", "citation", "proof", "privacy", "relevance"})
 ADVISORY_FACTUAL_WORDING_CODE = "unsupported-factual-marker"
 ADVISORY_FACTUAL_WORDING_GATES = frozenset({"honesty", "citation"})
-ACCEPTANCE_CONTRACT_VERSION = "five-axis-v4"
+ACCEPTANCE_CONTRACT_VERSION = "five-axis-v5"
 
 
 def axis_shortfalls(axes: Mapping[str, object]) -> dict[str, dict[str, int]]:
@@ -121,8 +121,8 @@ def acceptance_decision(
 ) -> dict[str, object]:
     """Evaluate the shared five-axis contract and record every shortfall.
 
-    Callers remain responsible for deterministic checks that are specific to
-    their artifact (for example anti-slop or privacy-at-write enforcement).
+    Raw editorial checks remain visible, but cannot veto writing acceptance.
+    Filesystem security and authorization are enforced separately at I/O.
     """
 
     effective_raw = scorecard.get("effective_total")
@@ -132,17 +132,16 @@ def acceptance_decision(
     accepted = (
         total_shortfall == 0
         and not axis_failures
-        and hard_gates_pass is True
-        and additional_checks_pass is True
     )
     reasons: list[str] = []
     if total_shortfall:
         reasons.append("total_score")
     reasons.extend(axis_failures)
+    advisories = []
     if hard_gates_pass is not True:
-        reasons.append("hard_gates")
+        advisories.append("editorial-gate-findings")
     if additional_checks_pass is not True:
-        reasons.append("additional_checks")
+        advisories.append("additional-editorial-findings")
     return {
         "contract_version": ACCEPTANCE_CONTRACT_VERSION,
         "status": "PASS" if accepted else "FAIL",
@@ -153,6 +152,7 @@ def acceptance_decision(
         "hard_gates_pass": hard_gates_pass is True,
         "additional_checks_pass": additional_checks_pass is True,
         "reasons": reasons,
+        "advisory_warnings": advisories,
     }
 
 

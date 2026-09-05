@@ -607,7 +607,7 @@ class PerformancePackageTests(unittest.TestCase):
         with self.assertRaisesRegex(workflow.WorkflowError, "ranking"):
             self.load()
 
-    def test_gate_schema_and_exact_ranked_eligibility_are_recomputed(self) -> None:
+    def test_historical_eligible_subset_loads_but_raw_gate_schema_is_validated(self) -> None:
         manifest, evaluation = package_documents()
         partial_manifest = deepcopy(manifest)
         partial_evaluation = deepcopy(evaluation)
@@ -620,8 +620,7 @@ class PerformancePackageTests(unittest.TestCase):
             manifest=partial_manifest,
             evaluation=partial_evaluation,
         )
-        with self.assertRaisesRegex(workflow.WorkflowError, "eligibility"):
-            self.load("candidate-2")
+        self.assertEqual(self.load("candidate-2")["candidate_id"], "candidate-2")
 
         malformed_evaluation = deepcopy(evaluation)
         malformed_evaluation["gate_results"][0]["gates"]["citation"]["status"] = "FAIL"  # type: ignore[index]

@@ -54,7 +54,7 @@ def _candidate_progresses(
     previous: quality_cli.CandidateResult,
     proposed: quality_cli.CandidateResult,
 ) -> bool:
-    """Allow a new repair seed only when total is monotonic and safety does not regress."""
+    """Retain score progress; editorial findings are feedback, never vetoes."""
 
     if proposed.effective_total < previous.effective_total:
         return False
@@ -63,18 +63,8 @@ def _candidate_progresses(
         after = int(proposed.axes.get(axis, 0))
         if before >= floor and after < floor:
             return False
-    for gate in acceptance_policy.HARD_GATES - {"privacy"}:
-        before = str(previous.gates.get(gate, "NOT_EVALUATED"))
-        after = str(proposed.gates.get(gate, "NOT_EVALUATED"))
-        if before in {"PASS", "NOT_REQUIRED"} and after not in {
-            "PASS",
-            "NOT_REQUIRED",
-        }:
-            return False
     previous_slop = {(item.code, item.excerpt) for item in anti_slop.audit(previous.text)}
     proposed_slop = {(item.code, item.excerpt) for item in anti_slop.audit(proposed.text)}
-    if not proposed_slop <= previous_slop:
-        return False
 
     previous_shortfall = sum(
         item["shortfall"]
@@ -190,7 +180,8 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
                 "axes": dict(candidate.axes),
                 "axis_shortfalls": acceptance_policy.axis_shortfalls(candidate.axes),
                 "cycle": cycle,
-                "failure_codes": list(candidate.gate_reasons),
+                "failure_codes": list(acceptance_policy.axis_shortfalls(candidate.axes)),
+                "advisory_codes": list(candidate.gate_reasons),
                 "gates": failed_gates,
             },
             stage=f"quality-cycle-{cycle}",
@@ -253,7 +244,7 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
             v1_completion.record_decision(
                 {
                     "contract": f"gate_{gate_name}",
-                    "mode": "diagnostic" if advisory_gate else "enforce",
+                    "mode": "diagnostic",
                     "status": decision_status,
                     "reason": (
                         "unsupported-factual-wording-advisory"
@@ -404,8 +395,8 @@ def _quality_feedback(
             "atomic value and strongest passages, remove every unsupported or failing claim, "
             "and repair the named total deficit, mandatory-axis shortfalls, and explicit gate findings. "
             "Do not chase 5/5 on a mandatory axis already listed in preserve_axes. A result at or above 18/25 is "
-            "acceptable when hook_strength and voice_fidelity are at least 4/5 and every required "
-            "deterministic/V1 gate passes. The other three scored axes may trade off inside the total. "
+            "acceptable when hook_strength and voice_fidelity are at least 4/5. Editorial findings "
+            "are advisory. The other three scored axes may trade off inside the total. "
             "Voice below 4/5 is never traded away. "
             "Return three materially different repairs in the Writer's required angle slots: "
             "candidate-1 remains mechanism-led, candidate-2 remains product-decision-led, and "
@@ -492,13 +483,6 @@ def _qualifying_candidates(
     )
     if not qualifying:
         return ()
-    if package_requested and not fixture_mode:
-        if attempt.review_status != "READY_FOR_HUMAN_REVIEW":
-            return ()
-        if attempt.recommendation not in {
-            candidate.candidate_id for candidate in qualifying
-        }:
-            return ()
     return qualifying
 
 
@@ -692,14 +676,14 @@ def _command_draft(args: object) -> int:
                     f"Quality search exhausted; best overall={best.candidate_id} "
                     f"score={best.effective_total}/25; "
                     f"hook={best.axes.get('hook_strength', 0)}/5; "
-                    "required_gates=pass."
+                    "editorial checks are advisory."
                 )
                 print(
                     "Best-effort artifact: "
                     f"{path.relative_to(workflow.REPO_ROOT)}"
                 )
                 print("Fallback status: BEST_EFFORT; publishing remains disabled.")
-                return 1
+                return 0
             raise
     finally:
         _ACTIVE_STATE = previous

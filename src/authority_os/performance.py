@@ -462,7 +462,10 @@ def _validate_package_context(
             ),
         )
     ]
-    if eligible != computed_eligible:
+    # Older packages may have excluded score-qualified drafts for editorial
+    # findings. Preserve their recorded selection, in score order, while
+    # validating that every recorded eligible candidate meets today's scores.
+    if eligible != [item for item in computed_eligible if item in eligible]:
         raise workflow.WorkflowError("The performance package eligibility is invalid.")
     revision_count = evaluation["revision_count"]
     revision_candidate_id = evaluation["revision_candidate_id"]

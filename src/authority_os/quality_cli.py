@@ -246,17 +246,9 @@ def _qualifying_candidates(
                 allow_factual_wording_advisory=allow_factual_wording_advisory,
             ),
         )
-        and _normalise_opening(candidate.opening) not in rejected_openings
     )
     if not qualifying:
         return ()
-    if package_requested and not fixture_mode:
-        if attempt.review_status != "READY_FOR_HUMAN_REVIEW":
-            return ()
-        if attempt.recommendation not in {
-            candidate.candidate_id for candidate in qualifying
-        }:
-            return ()
     return qualifying
 
 
@@ -356,7 +348,7 @@ def _render_success(
         f"Quality search passed on cycle {cycle}/{limit}: "
         f"{len(accepted)} candidate(s) cleared the shared five-axis contract "
         f"({MIN_QUALITY_SCORE}/25 total; hook/voice 4/5; the other three axes "
-        "scored into the total) and every blocking gate."
+        "scored into the total). Editorial checks are advisory."
     )
     for candidate in accepted:
         print(
@@ -373,13 +365,13 @@ def _render_success(
         gate_summary = ",".join(
             f"{name}={status}" for name, status in candidate.gates.items()
         )
-        print(f"Accepted gates: {gate_summary}.")
+        print(f"Editorial checks (non-blocking): {gate_summary}.")
         advisories = acceptance_policy.factual_wording_advisories(
             candidate.gates, reason_codes=candidate.gate_reasons
         )
         if advisories:
             print(
-                "Non-blocking factual wording advisory after automatic rewrite: "
+                "Non-blocking factual wording advisory: "
                 + ",".join(advisories)
                 + "."
             )
@@ -476,9 +468,7 @@ def command_draft(args: object) -> int:
             rejected_openings=rejected_openings,
             package_requested=package_requested,
             fixture_mode=fixture_mode,
-            # Cycle one remains strict and therefore always supplies the
-            # unsupported wording to the automatic repair feedback.  From the
-            # second scored cycle onward, that exact residual marker is advisory.
+            # Compatibility flag; editorial checks never veto acceptance.
             allow_factual_wording_advisory=cycle > 1,
         )
         if accepted:

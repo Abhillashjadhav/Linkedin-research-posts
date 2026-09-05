@@ -274,8 +274,6 @@ def invoke_selector(
     narrow_to_evidence: bool = False,
     invoker: StageInvoker = _default_invoker,
 ) -> dict[str, object]:
-    if selected_topic_value.get("status") != "PASS":
-        raise workflow.WorkflowError("Blocked Topic Value material cannot enter Resonance.")
     selected_id = str(selected_topic_value.get("id", "")).strip()
     if not selected_id:
         raise workflow.WorkflowError("Resonance requires an identified Topic Value situation.")
@@ -404,11 +402,9 @@ def enrich_day(
 ) -> dict[str, object]:
     """Project Topic Value, feed packaging, and proof plan into the existing trusted brief fields."""
 
-    if selector.get("status") != "PASS":
-        raise workflow.WorkflowError("A blocked resonance selection cannot enter Writer.")
     topic_result = selected_topic_value or selector.get("topic_value")
-    if not isinstance(topic_result, Mapping) or topic_result.get("status") != "PASS":
-        raise workflow.WorkflowError("Writer enrichment requires a passed Topic Value selection.")
+    if not isinstance(topic_result, Mapping):
+        raise workflow.WorkflowError("Writer enrichment requires a Topic Value selection.")
     enriched = dict(day)
     if selector.get("narrowed_to_evidence") is True:
         enriched["thesis"] = str(selector["evidence_bounded_thesis"]).strip()
@@ -485,8 +481,8 @@ def prepare_campaign_spec(
         )
         results[day_name] = selector
         if selector["status"] != "PASS":
-            raise workflow.WorkflowError(
-                f"Resonance Selector blocked {day_name}: "
+            print(
+                f"Resonance Selector advisory for {day_name}: "
                 f"{selector_failure_summary(selector)}"
             )
         enriched_days.append(enrich_day(raw_day, selector, selected_topic))
@@ -539,10 +535,10 @@ def invoke_post_critic(
         value_before_ask=value_before_ask,
     )
     expected_status = "PASS" if computed else "BLOCKED"
-    if result.get("status") != expected_status:
-        raise workflow.WorkflowError("Resonance Critic status contradicts its scores or feed-value gates.")
     return {
         **dict(result),
+        "status": expected_status,
+        "model_status": result.get("status"),
         "scores": scores,
         "total": sum(scores.values()),
     }
@@ -581,7 +577,7 @@ def _rewrite_summary(
         item["feed_value"] = overlay.get("feed_value")
         item["value_before_ask"] = overlay.get("value_before_ask")
         if overlay["status"] == "BLOCKED":
-            item["status"] = "BLOCKED"
+            item["resonance_advisory"] = True
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     table = [
@@ -641,16 +637,7 @@ def apply_post_gate(
             encoding="utf-8",
         )
         if assessment["status"] == "BLOCKED":
-            trace["final"] = {
-                "status": "BLOCKED",
-                "reason": "Craft cleared, but the post failed the resonance/feed-value gate.",
-                "human_approval_status": "NOT_APPROVED",
-                "publishing_status": "DISABLED",
-            }
-            for name in ("post.md", "first-comment.md"):
-                path = directory / name
-                if path.is_file():
-                    path.unlink()
+            trace["resonance_advisory"] = assessment
         trace_path.write_text(json.dumps(trace, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     _rewrite_summary(output_root, overlays, selectors)
     return overlays

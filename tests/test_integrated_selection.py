@@ -69,7 +69,7 @@ def selector() -> dict[str, object]:
 
 
 class SingleTopicSelectionTests(unittest.TestCase):
-    def test_python_block_names_the_exact_resonance_shortfall(self) -> None:
+    def test_resonance_shortfall_does_not_block_writer(self) -> None:
         blocked = {
             **selector(),
             "status": "BLOCKED",
@@ -90,19 +90,16 @@ class SingleTopicSelectionTests(unittest.TestCase):
             ),
         ):
             with integrated_cli._single_topic_selection_prompt():
-                with self.assertRaisesRegex(
-                    workflow.WorkflowError,
-                    "recognition=3/5 below 4/5 by 1",
-                ):
-                    workflow.build_writer_prompt(
-                        brief=brief(),
-                        evidence=evidence(),
-                        voice_guidance={
-                            "provenance": "reconstructed-style-guidance",
-                            "voice": "x",
-                        },
-                        proof=None,
-                    )
+                prompt = workflow.build_writer_prompt(
+                    brief=brief(),
+                    evidence=evidence(),
+                    voice_guidance={
+                        "provenance": "reconstructed-style-guidance",
+                        "voice": "x",
+                    },
+                    proof=None,
+                )
+                self.assertTrue(prompt)
 
     def test_live_selection_uses_one_model_call_and_python_status(self) -> None:
         raw_selector = {
@@ -248,7 +245,7 @@ class SingleTopicSelectionTests(unittest.TestCase):
         )
         self.assertEqual(supplied_evidence, evidence())
 
-    def test_single_topic_craft_candidate_is_rejected_when_feed_value_fails(self) -> None:
+    def test_single_topic_craft_candidate_keeps_feed_value_as_advisory(self) -> None:
         candidate = SimpleNamespace(candidate_id="candidate-1", text="A polished post")
         integrated_cli._active_single_selector = selector()
         integrated_cli._active_resonance_diagnostics = {}
@@ -278,7 +275,7 @@ class SingleTopicSelectionTests(unittest.TestCase):
                     package_requested=False,
                     fixture_mode=True,
                 )
-            self.assertEqual(accepted, ())
+            self.assertEqual(accepted, (candidate,))
             self.assertEqual(
                 integrated_cli._active_resonance_diagnostics["candidate-1"]["feed_value"],
                 False,

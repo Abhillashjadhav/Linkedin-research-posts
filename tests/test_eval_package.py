@@ -126,6 +126,44 @@ def _raw_score(values: tuple[int, int, int, int, int]) -> list[dict[str, object]
 
 
 class EvalPackageTests(unittest.TestCase):
+    def test_screenshot_candidate_advances_despite_new_editorial_findings(self) -> None:
+        previous = _evaluated_result((3, 5, 5, 5, 4))
+        proposed = _evaluated_result((5, 4, 5, 4, 4), hard_gates_pass=False)
+        proposed["anti_slop_findings"] = [{"code": "new-slop", "excerpt": "A phrase"}]
+        accepted, reasons = eval_package._monotonic_edit_decision(previous, proposed)
+        self.assertTrue(accepted)
+        self.assertEqual(reasons, [])
+        self.assertEqual(proposed["acceptance"]["status"], "PASS")
+        self.assertFalse(proposed["gates"]["passes_required_gates"])
+
+    def test_four_attempt_exhaustion_delivers_without_claiming_score_pass(self) -> None:
+        context = _repair_context()
+        captured = {}
+        calls = []
+        def edit(candidate, *_args, **_kwargs):
+            calls.append(candidate)
+            return {**candidate, "text": "another edit"}
+        def persist(**kwargs):
+            captured.update(kwargs)
+            return tuple(workflow.REPO_ROOT / name for name in ("eval.json", "run.json", "eval.html")) + (False,)
+        with (
+            patch.object(eval_package, "_load_context", return_value=context),
+            patch.object(eval_package, "_rubric_identity", return_value={"rubric_id": "test", "sha256": "a" * 64}),
+            patch.object(workflow, "evaluate_candidate_set_gates", side_effect=lambda candidates, **kwargs: [_failed_honesty_gate(c["id"]) for c in candidates]),
+            patch.object(workflow, "candidate_factual_support_diagnostics", return_value=[]),
+            patch.object(workflow, "validate_draft_candidates", side_effect=lambda candidates, **kwargs: candidates),
+        ):
+            result = eval_package.command(
+                SimpleNamespace(allow_model_egress=True, repair=True, candidate="candidate-2"),
+                persist=persist, editor=edit,
+                score_provider=lambda *args, **kwargs: _raw_score((3, 4, 5, 4, 3)),
+            )
+        self.assertEqual(result, 0)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(captured["repair_history"]), 4)
+        self.assertEqual(captured["results"][0]["acceptance"]["status"], "FAIL")
+        self.assertEqual(captured["results"][0]["candidate"]["text"], context["selected_candidates"][0]["text"])
+
     def test_total_only_shortfall_is_named_in_progressive_feedback(self) -> None:
         result = _evaluated_result((4, 2, 3, 4, 4))
 
@@ -499,7 +537,7 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(final["scorecard"]["effective_total"], 21)
         self.assertEqual(final["acceptance"]["status"], "PASS")
 
-    def test_unsupported_wording_gets_one_rewrite_then_becomes_advisory(self) -> None:
+    def test_editorial_warning_never_forces_an_extra_rewrite(self) -> None:
         context = _repair_context()
         captured: dict[str, object] = {}
 
@@ -558,13 +596,10 @@ class EvalPackageTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         history = captured["repair_history"]
-        self.assertEqual(len(history), 2)
-        self.assertEqual(history[0]["acceptance"]["status"], "FAIL")
-        self.assertEqual(history[1]["acceptance"]["status"], "PASS")
-        self.assertEqual(
-            history[1]["acceptance"]["advisory_warnings"],
-            ["unsupported-factual-marker"],
-        )
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["acceptance"]["status"], "PASS")
+        self.assertTrue(history[0]["acceptance"]["advisory_warnings"])
+        self.assertFalse(captured["results"][0]["gates"]["passes_required_gates"])
         self.assertEqual(captured["results"][0]["acceptance"]["status"], "PASS")
 
     def test_rubric_identity_hashes_the_current_loaded_rubric(self) -> None:

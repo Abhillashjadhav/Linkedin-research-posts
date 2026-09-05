@@ -945,6 +945,22 @@ def render_eval_dashboard(
         if contract == "critic_total" and type(score) is int and int(score) > best_post_score:
             best_post_score = int(score)
             best_post_artifact = str(row.get("artifact_sha256", ""))
+    # Prefer an accepted artifact, including an equal-total edit that repairs
+    # hook/voice. The first score leader may still have failed those floors.
+    accepted_artifacts = {
+        artifact for artifact, decision in acceptance_by_artifact.items()
+        if decision.get("status") == "PASS"
+    }
+    accepted_scores = [
+        row for row in rows
+        if row.get("contract") == "critic_total"
+        and row.get("artifact_sha256") in accepted_artifacts
+    ]
+    if accepted_scores:
+        best_post_artifact = str(max(
+            reversed(accepted_scores),
+            key=lambda row: int(row.get("evidence", {}).get("score", 0)),
+        )["artifact_sha256"])
     checks: list[dict[str, object]] = []
     decisions: list[dict[str, object]] = []
     for sequence, row in enumerate(rows, start=1):
@@ -1013,6 +1029,7 @@ def render_eval_dashboard(
                 "threshold": int(evidence.get("threshold", 18)),
                 "axes": {axis: int(axes.get(axis, 0)) for axis in workflow.CRITIC_AXES},
                 "failure_codes": failure_codes,
+                "advisory_codes": list(evidence.get("advisory_codes", [])),
                 "failed_gates": dict(evidence.get("gates", {})) if isinstance(evidence.get("gates"), Mapping) else {},
                 "artifact_sha256": artifact,
             }
@@ -1036,6 +1053,7 @@ def render_eval_dashboard(
                 "contract": contract,
                 "label": label,
                 "category": "post_quality" if contract in POST_QUALITY_CONTRACTS else "pipeline",
+                "mode": str(row.get("mode", "enforce")) if row else "enforce",
                 "status": status,
                 "reason": reason,
                 "subject_id": str(row.get("subject_id", "")) if row else "",

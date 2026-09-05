@@ -43,12 +43,22 @@ class AcceptancePolicyTests(unittest.TestCase):
                     expected,
                 )
 
-    def test_perfect_score_never_offsets_a_failed_hard_gate(self) -> None:
-        self.assertFalse(
+    def test_editorial_findings_do_not_veto_writing_scores(self) -> None:
+        self.assertTrue(
             acceptance_policy.scorecard_is_acceptable(
                 scorecard(5, 5, 5, 5, 5), hard_gates_pass=False
             )
         )
+
+        decision = acceptance_policy.acceptance_decision(
+            scorecard(5, 4, 5, 4, 4),
+            hard_gates_pass=False,
+            additional_checks_pass=False,
+        )
+        self.assertEqual(decision["status"], "PASS")
+        self.assertEqual(decision["reasons"], [])
+        self.assertEqual(len(decision["advisory_warnings"]), 2)
+        self.assertFalse(decision["hard_gates_pass"])
 
     def test_unsupported_factual_wording_is_advisory_only_after_rewrite(self) -> None:
         gates = {

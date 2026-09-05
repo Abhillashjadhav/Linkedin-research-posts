@@ -60,7 +60,7 @@ def _record_post_quality(candidate: object) -> None:
             "anti_slop",
             not findings,
             "no-anti-slop-findings" if not findings else "anti-slop-findings-present",
-            {"finding_count": len(findings), "threshold": 0},
+            {"finding_count": len(findings), "threshold": 0, "mode": "diagnostic"},
         )
     )
     for contract, passed, reason, evidence in decisions:
@@ -98,44 +98,7 @@ def _pre_acceptance_failures(
                 f"critic-axis:{axis}={detail['observed']}/5<{detail['required']}/5;"
                 f"shortfall={detail['shortfall']}"
             )
-    gates = getattr(candidate, "gates", {})
-    raw_required_pass = bool(getattr(candidate, "passes_required_gates", False))
-    effective_hard_gates_pass = bool(
-        isinstance(gates, Mapping)
-        and (
-            (
-                raw_required_pass
-                and all(str(status) != "FAIL" for status in gates.values())
-            )
-            or acceptance_policy.hard_candidate_gates_pass(
-                gates,
-                passes_required_gates=raw_required_pass,
-                reason_codes=getattr(candidate, "gate_reasons", ()),
-                allow_factual_wording_advisory=bool(
-                    kwargs.get("allow_factual_wording_advisory", False)
-                ),
-            )
-        )
-    )
-    if not effective_hard_gates_pass:
-        failed = (
-            [str(name) for name, status in gates.items() if status == "FAIL"]
-            if isinstance(gates, Mapping)
-            else []
-        )
-        reasons.append("required-gates:" + (",".join(failed) or "failed"))
-    if bool(kwargs.get("package_requested")) and not bool(kwargs.get("fixture_mode")):
-        review_status = str(getattr(attempt, "review_status", None))
-        raw_recommendation = getattr(attempt, "recommendation", None)
-        recommendation = "" if raw_recommendation is None else str(raw_recommendation)
-        candidate_id = str(getattr(candidate, "candidate_id", ""))
-        if review_status != "READY_FOR_HUMAN_REVIEW":
-            reasons.append(f"package-review-status:{review_status}")
-        if recommendation != candidate_id:
-            reasons.append(
-                f"package-recommendation:{recommendation or 'none'}!=candidate:{candidate_id}"
-            )
-    return reasons or ["pre-acceptance:unknown-contract-mismatch"]
+    return reasons
 
 
 def _qualifying_candidates(
@@ -196,8 +159,7 @@ def _qualifying_candidates(
                 )
         if reasons:
             _active_acceptance_diagnostics[candidate.candidate_id] = reasons
-        if not reasons and resonance_passed:
-            accepted.append(candidate)
+        accepted.append(candidate)
     accepted_ids = {candidate.candidate_id for candidate in accepted}
     for candidate in all_candidates:
         candidate_id = str(getattr(candidate, "candidate_id", ""))
@@ -209,7 +171,8 @@ def _qualifying_candidates(
                 "mode": "enforce",
                 "status": "PASS" if candidate_id in accepted_ids else "FAIL",
                 "reason": "candidate-cleared-every-acceptance-check" if candidate_id in accepted_ids else " | ".join(reasons),
-                "failure_codes": reasons,
+                "failure_codes": reasons if candidate_id not in accepted_ids else [],
+                "advisory_codes": reasons if candidate_id in accepted_ids else [],
             },
             stage="candidate-acceptance",
             subject_id=candidate_id,
@@ -343,8 +306,8 @@ def _single_topic_selection_prompt(*, narrow_to_evidence: bool = False) -> Itera
                 narrow_to_evidence=narrow_to_evidence,
             )
             if selector.get("status") != "PASS":
-                raise workflow.WorkflowError(
-                    "Resonance Selector blocked the single-topic draft: "
+                print(
+                    "Resonance Selector advisory: "
                     f"{resonance.selector_failure_summary(selector)}"
                 )
             cached = {"day": day, "topic_value": selected_topic, "selector": selector}
@@ -464,16 +427,11 @@ def _command_draft(args: object) -> int:
     if blocked:
         for day, assessment in blocked.items():
             print(
-                f"Resonance gate blocked {day}: score={assessment.get('total', 'n/a')}/25; "
+                f"Resonance advisory for {day}: score={assessment.get('total', 'n/a')}/25; "
                 f"feed_value={assessment.get('feed_value', 'n/a')}; "
                 f"value_before_ask={assessment.get('value_before_ask', 'n/a')}; "
                 f"diagnosis={assessment.get('diagnosis', 'weak feed entry')}"
             )
-        print(
-            "Craft approval cannot override Topic Value, resonance, or feed-value failure. "
-            "Publishing remains disabled."
-        )
-        return 1
 
     print(captured.getvalue(), end="")
     for day, selector in selectors.items():

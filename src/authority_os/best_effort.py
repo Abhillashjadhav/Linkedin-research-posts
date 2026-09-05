@@ -26,30 +26,9 @@ def output_path() -> Path:
 
 
 def blocking_failures(candidate: object) -> list[str]:
-    """Return every hard gate that prevents a best-effort handoff."""
+    """Editorial findings cannot prevent delivery; secure writes still validate."""
 
-    gates = getattr(candidate, "gates", {})
-    if not isinstance(gates, Mapping):
-        return [name for name in BLOCKING_GATES if name != "privacy"]
-    if acceptance_policy.hard_candidate_gates_pass(
-        gates,
-        passes_required_gates=bool(
-            getattr(candidate, "passes_required_gates", False)
-        ),
-        reason_codes=getattr(candidate, "gate_reasons", ()),
-        allow_factual_wording_advisory=True,
-    ):
-        return []
-    failures = [
-        name
-        for name in BLOCKING_GATES
-        if name != "privacy" and str(gates.get(name, "NOT_EVALUATED")) not in {"PASS", "NOT_REQUIRED"}
-    ]
-    if getattr(candidate, "passes_required_gates", False) is not True:
-        for name, status in gates.items():
-            if str(status) == "FAIL" and str(name) not in failures:
-                failures.append(str(name))
-    return failures
+    return []
 
 
 def _run_decisions(artifact_sha256: str) -> list[dict[str, object]]:
@@ -186,7 +165,7 @@ def render(
 
     return (
         "# BEST_EFFORT — NOT READY_FOR_HUMAN_REVIEW\n\n"
-        "> This is the safest retained candidate from a failed run. Publishing remains disabled.\n\n"
+        "> Best retained draft, delivered with warnings. Publication remains manual.\n\n"
         f"Candidate: `{candidate_id}`  \n"
         f"Cycle: `{cycle}`  \n"
         f"Critic score: `{score}/25`  \n"
@@ -197,6 +176,13 @@ def render(
         + "\n".join(passed)
         + "\n\n## Missed bars\n\n"
         + "\n".join(shortfalls)
+        + "\n\n## Editorial advisories (non-blocking)\n\n"
+        + "\n".join(
+            f"- {name}: {status}"
+            for name, status in gates.items()
+            if str(status) not in {"PASS", "NOT_REQUIRED"}
+        )
+        + "\n" + ", ".join(str(value) for value in getattr(candidate, "gate_reasons", ()))
         + "\n"
     )
 

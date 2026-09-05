@@ -91,15 +91,15 @@ exact timestamp; otherwise the command fails closed rather than guessing.
 
 ## Locked high-bar search
 
-A live invocation no longer exposes the first completed draft batch. It runs up to four candidate cycles and returns prose only when at least one candidate satisfies all of these conditions:
+A live invocation runs at most four scored iterations. Writing acceptance has one rule:
 
 - effective Critic score of at least **18/25**;
 - hook and voice scores of at least **4/5**; middle escalation, earned closer,
-  and specificity/source quality remain scored and may trade off inside the total;
-- every required authority, proof, honesty, citation, and relevance gate passes; and
-- the opening does not repeat one rejected in an earlier cycle.
+  and specificity/source quality remain scored and may trade off inside the total.
 
-Each cycle still contains exactly three candidates and at most one light revision. When a cycle fails, its prose remains hidden. Only bounded angle, opening, score, per-axis shortfalls, and gate diagnostics are added to the next Writer prompt. A hook below 4/5 or voice below 4/5 is a hard failure; neither can be traded against a high total.
+Authority, proof, honesty, citation, relevance, resonance, hook-register and anti-slop checks are editorial advisories. Their raw findings remain visible; they cannot veto score acceptance or discard an improving edit. Passing text is returned immediately. On exhaustion, the best draft is delivered with unmet score targets recorded honestly. Successful artifact delivery returns exit code 0 even when writing scores remain below target; missing inputs, malformed model output, authorization and secure-file errors still fail.
+
+`eval-package --repair` scores the saved candidate, then edits that same candidate at most three times. It reuses the saved evidence and never restarts discovery. The dashboard links `evaluated-<candidate-id>.md` and separates score shortfalls from advisory findings. Publication remains manual.
 
 The Resonance model does not return a `PASS`/`BLOCKED` label. It returns the
 five scores and locked-thesis flag; Python is the only status owner and derives

@@ -40,6 +40,7 @@ def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
     failed = [
         check for check in evaluated
         if check["status"] in {"FAIL", "BLOCKED"}
+        and check.get("mode") not in {"diagnostic", "shadow"}
     ]
     daily_spine_cli.mark_run_stage(
         run_dashboard,

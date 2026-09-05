@@ -27,7 +27,7 @@ def _checks(payload: Mapping[str, object]) -> list[Mapping[str, object]]:
 def _status(value: object) -> str:
     normalized = str(value or "NOT_EVALUATED").upper()
     return normalized if normalized in {
-        "PASS", "FAIL", "BLOCKED", "NOT_EVALUATED", "RUNNING", "REJECTED", "UNAVAILABLE"
+        "PASS", "FAIL", "BLOCKED", "NOT_EVALUATED", "RUNNING", "REJECTED", "UNAVAILABLE", "COMPLETED_WITH_WARNINGS"
     } else "BLOCKED"
 
 
@@ -79,6 +79,7 @@ def render_dashboard(
     all_checks = [*run_checks, *eval_checks]
     blockers = [
         item for item in all_checks if _status(item.get("status")) in {"FAIL", "BLOCKED"}
+        and item.get("mode") not in {"diagnostic", "shadow"}
     ]
     gaps = [item for item in all_checks if _status(item.get("status")) == "NOT_EVALUATED"]
     passed = [item for item in all_checks if _status(item.get("status")) == "PASS"]
@@ -87,19 +88,26 @@ def render_dashboard(
         outcome = "FAIL"
     elif outcome == "RUNNING" or gaps:
         outcome = "INCOMPLETE"
-    elif all_checks:
+    elif all_checks and outcome != "COMPLETED_WITH_WARNINGS":
         outcome = "PASS"
     first = blockers[0] if blockers else gaps[0] if gaps else None
     first_label = (
         first.get("label") or first.get("contract") or first.get("stage")
         if first else "No blocker recorded"
     )
-    first_reason = first.get("reason") if first else "Every visible check passed."
+    first_reason = first.get("reason") if first else "Draft delivered; see scores and advisory findings below."
     run_id = run_dashboard.get("run_id") or eval_dashboard.get("run_id")
     outcome_css = "pass" if outcome == "PASS" else "fail" if outcome == "FAIL" else "incomplete"
     run_cards = "".join(_card(item) for item in run_checks) or '<p class="empty">No workflow checks recorded.</p>'
     pipeline_cards = "".join(_card(item) for item in pipeline_checks) or '<p class="empty">No pipeline contracts recorded.</p>'
     post_cards = "".join(_card(item) for item in post_checks) or '<p class="empty">No post-quality contracts recorded.</p>'
+    draft_cards = "".join(
+        '<article class="box"><h3>' + _safe(item.get("candidate_id"))
+        + '</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
+        + html.escape(str(item["candidate"].get("text", ""))) + '</pre></article>'
+        for item in eval_dashboard.get("results", [])
+        if isinstance(item, Mapping) and isinstance(item.get("candidate"), Mapping)
+    )
     raw_scorecards = eval_dashboard.get("critic_scorecards")
     scorecards = [item for item in raw_scorecards if isinstance(item, Mapping)] if isinstance(raw_scorecards, list) else []
     axis_order = (
@@ -120,7 +128,7 @@ def render_dashboard(
         )
         + f'<td><strong>{int(item.get("total", 0))}/25</strong><small> bar {int(item.get("threshold", 18))}</small></td>'
         + f'<td><span class="status {_status(item.get("status")).casefold()}">{_safe(item.get("status"))}</span></td>'
-        + f'<td>{_safe(" | ".join(str(value) for value in item.get("failure_codes", [])), "No Critic or gate failure recorded")}</td>'
+        + f'<td>{_safe(" | ".join(str(value) for value in item.get("failure_codes", [])), "No score shortfall")}<small>Advisories: {_safe(" | ".join(str(value) for value in item.get("advisory_codes", [])), "none")}</small></td>'
         + "</tr>"
         for item in scorecards
     ) or f'<tr><td colspan="10">{_empty_scorecard_message(run_checks)}</td></tr>'
@@ -205,10 +213,11 @@ def render_dashboard(
 <div class="grid"><section class="panel"><div class="heading"><p class="eyebrow">OPERATING FLOW</p><h2>Workflow stages</h2></div>{run_cards}</section><section class="panel"><div class="heading"><p class="eyebrow">PIPELINE CONTRACTS</p><h2>Input and execution evals</h2></div>{pipeline_cards}</section></div>
 <section class="panel"><div class="heading"><p class="eyebrow">CRITIC SCORECARDS</p><h2>Every candidate, every cycle, every 1–5 axis</h2></div><div class="table-scroll"><table><thead><tr><th>Cycle</th><th>Candidate</th><th>Hook</th><th>Middle</th><th>Closer</th><th>Specificity + sources</th><th>Voice</th><th>Total</th><th>Critic bar</th><th>Failure codes</th></tr></thead><tbody>{scorecard_rows}</tbody></table></div></section>
 <section class="panel"><div class="heading"><p class="eyebrow">POST QUALITY</p><h2>Would the post itself clear the bar?</h2></div>{post_cards}</section>
+<section class="panel"><div class="heading"><p class="eyebrow">DELIVERED DRAFTS</p><h2>Read the retained post</h2></div>{draft_cards or '<p class="empty">See the printed candidate artifact path.</p>'}</section>
 <section class="panel"><div class="heading"><p class="eyebrow">DECISION TRACE</p><h2>Expected rule, observed value, and exact reason</h2></div><div class="table-scroll"><table><thead><tr><th>Stage / subject</th><th>Decision</th><th>Status</th><th>Expected</th><th>Observed</th><th>Why / artifact</th></tr></thead><tbody>{decision_rows}</tbody></table></div></section>
 <div class="grid"><section class="panel"><div class="heading"><p class="eyebrow">EXECUTION</p><h2>Exact code that ran</h2></div><table><tbody>{execution_rows}</tbody></table></section><section class="panel"><div class="heading"><p class="eyebrow">REPRODUCIBILITY</p><h2>Evaluator, model and rubric versions</h2></div><table><tbody>{version_rows}</tbody></table></section></div>
 <section class="panel"><div class="heading"><p class="eyebrow">BASELINE</p><h2>Last five local runs</h2></div><table><thead><tr><th>Run</th><th>Outcome</th><th>Stopped at</th><th>Passed stages</th></tr></thead><tbody>{baseline_rows}</tbody></table></section>
-<section class="rule"><strong>Reading rule</strong><p>PASS means the check ran and cleared its bar. FAIL or BLOCKED is a stopping condition. REJECTED and UNAVAILABLE describe one candidate or input without necessarily stopping the run. NOT_EVALUATED is an observability gap, never a pass.</p></section>
+<section class="rule"><strong>Reading rule</strong><p>PASS means a check cleared its bar. Editorial findings are non-blocking advisories. COMPLETED_WITH_WARNINGS means a draft was delivered with unmet writing scores. REJECTED describes an edit that did not improve the retained draft. Input, execution, authorization and secure-file errors can still stop a run. NOT_EVALUATED means the check did not run.</p></section>
 </main></body></html>"""
 
 

@@ -9,6 +9,15 @@ from authority_os import eval_dashboard_html
 
 
 class EvalDashboardHtmlTests(unittest.TestCase):
+    def test_advisory_failure_is_visible_without_becoming_a_run_blocker(self) -> None:
+        rendered = eval_dashboard_html.render_dashboard(
+            {"outcome": "COMPLETED_WITH_WARNINGS", "checks": []},
+            {"checks": [{"status": "FAIL", "mode": "diagnostic", "reason": "voice short by one"}], "critic_scorecards": []},
+        )
+        self.assertIn("COMPLETED_WITH_WARNINGS", rendered)
+        self.assertIn("No blocker recorded", rendered)
+        self.assertIn("voice short by one", rendered)
+
     def test_empty_scorecard_says_drafting_stopped_before_critic(self) -> None:
         rendered = eval_dashboard_html.render_dashboard(
             {
