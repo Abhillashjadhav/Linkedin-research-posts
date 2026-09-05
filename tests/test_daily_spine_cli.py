@@ -464,6 +464,27 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual(scorecard["axes"]["voice_fidelity"], 4)
         self.assertIn("package-recommendation:none", scorecard["failure_codes"][0])
 
+    def test_scorecard_requires_every_axis_floor_despite_total_pass(self) -> None:
+        baseline = dict(zip(workflow.CRITIC_AXES, (4, 4, 3, 3, 4)))
+        cases = [(baseline, "PASS")]
+        for axis, floor in daily_spine_cli.acceptance_policy.AXIS_FLOORS.items():
+            axes = {key: 5 for key in baseline}
+            axes[axis] = floor - 1
+            cases.append((axes, "FAIL"))
+        cases.append((dict(zip(workflow.CRITIC_AXES, (3, 4, 5, 5, 4))), "FAIL"))
+        for axes, expected in cases:
+            with self.subTest(axes=axes), redirect_stdout(io.StringIO()):
+                dashboard = daily_spine_cli.render_eval_dashboard([{
+                    "contract": "critic_total", "status": "PASS",
+                    "subject_id": "candidate-1", "artifact_sha256": "a" * 64,
+                    "evidence": {"score": sum(axes.values()), "axes": axes},
+                }])
+                card = dashboard["critic_scorecards"][0]
+                self.assertEqual(card["status"], expected)
+                self.assertEqual(card["total_status"], "PASS")
+                if expected == "FAIL":
+                    self.assertTrue(card["failure_codes"])
+
     def test_thesis_search_keeps_a_qualifying_leader_from_a_mixed_batch(self) -> None:
         mixed_scores = [
             {
