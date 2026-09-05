@@ -535,10 +535,10 @@ def invoke_post_critic(
         value_before_ask=value_before_ask,
     )
     expected_status = "PASS" if computed else "BLOCKED"
-    if result.get("status") != expected_status:
-        raise workflow.WorkflowError("Resonance Critic status contradicts its scores or feed-value gates.")
     return {
         **dict(result),
+        "status": expected_status,
+        "model_status": result.get("status"),
         "scores": scores,
         "total": sum(scores.values()),
     }

@@ -110,6 +110,22 @@ def cards() -> list[dict[str, object]]:
 
 
 class SpineCardTests(unittest.TestCase):
+    def test_dashboard_uses_accepted_edit_when_total_ties_earlier_failure(self) -> None:
+        rows = []
+        for artifact, hook, accepted in (("old", 3, False), ("new", 5, True)):
+            rows.extend([
+                {"contract": "critic_total", "status": "PASS", "artifact_sha256": artifact,
+                 "evidence": {"score": 22, "axes": {axis: hook if axis == "hook_strength" else 4 for axis in workflow.CRITIC_AXES}}},
+                {"contract": "hook_strength", "status": "PASS" if accepted else "FAIL", "artifact_sha256": artifact,
+                 "reason": f"hook={hook}", "evidence": {"score": hook}},
+                {"contract": "candidate_acceptance", "status": "PASS" if accepted else "FAIL", "artifact_sha256": artifact},
+            ])
+        with redirect_stdout(io.StringIO()):
+            result = daily_spine_cli.render_eval_dashboard(rows)
+        hook = next(item for item in result["checks"] if item["contract"] == "hook_strength")
+        self.assertEqual(hook["status"], "PASS")
+        self.assertEqual(hook["evidence"]["score"], 5)
+
     def test_dashboard_versions_report_the_live_v2_critic_rubric(self) -> None:
         versions = daily_spine_cli.evaluator_versions()
         rubrics = versions["rubrics"]

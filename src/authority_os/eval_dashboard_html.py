@@ -101,6 +101,13 @@ def render_dashboard(
     run_cards = "".join(_card(item) for item in run_checks) or '<p class="empty">No workflow checks recorded.</p>'
     pipeline_cards = "".join(_card(item) for item in pipeline_checks) or '<p class="empty">No pipeline contracts recorded.</p>'
     post_cards = "".join(_card(item) for item in post_checks) or '<p class="empty">No post-quality contracts recorded.</p>'
+    draft_cards = "".join(
+        '<article class="box"><h3>' + _safe(item.get("candidate_id"))
+        + '</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
+        + html.escape(str(item["candidate"].get("text", ""))) + '</pre></article>'
+        for item in eval_dashboard.get("results", [])
+        if isinstance(item, Mapping) and isinstance(item.get("candidate"), Mapping)
+    )
     raw_scorecards = eval_dashboard.get("critic_scorecards")
     scorecards = [item for item in raw_scorecards if isinstance(item, Mapping)] if isinstance(raw_scorecards, list) else []
     axis_order = (
@@ -206,6 +213,7 @@ def render_dashboard(
 <div class="grid"><section class="panel"><div class="heading"><p class="eyebrow">OPERATING FLOW</p><h2>Workflow stages</h2></div>{run_cards}</section><section class="panel"><div class="heading"><p class="eyebrow">PIPELINE CONTRACTS</p><h2>Input and execution evals</h2></div>{pipeline_cards}</section></div>
 <section class="panel"><div class="heading"><p class="eyebrow">CRITIC SCORECARDS</p><h2>Every candidate, every cycle, every 1–5 axis</h2></div><div class="table-scroll"><table><thead><tr><th>Cycle</th><th>Candidate</th><th>Hook</th><th>Middle</th><th>Closer</th><th>Specificity + sources</th><th>Voice</th><th>Total</th><th>Critic bar</th><th>Failure codes</th></tr></thead><tbody>{scorecard_rows}</tbody></table></div></section>
 <section class="panel"><div class="heading"><p class="eyebrow">POST QUALITY</p><h2>Would the post itself clear the bar?</h2></div>{post_cards}</section>
+<section class="panel"><div class="heading"><p class="eyebrow">DELIVERED DRAFTS</p><h2>Read the retained post</h2></div>{draft_cards or '<p class="empty">See the printed candidate artifact path.</p>'}</section>
 <section class="panel"><div class="heading"><p class="eyebrow">DECISION TRACE</p><h2>Expected rule, observed value, and exact reason</h2></div><div class="table-scroll"><table><thead><tr><th>Stage / subject</th><th>Decision</th><th>Status</th><th>Expected</th><th>Observed</th><th>Why / artifact</th></tr></thead><tbody>{decision_rows}</tbody></table></div></section>
 <div class="grid"><section class="panel"><div class="heading"><p class="eyebrow">EXECUTION</p><h2>Exact code that ran</h2></div><table><tbody>{execution_rows}</tbody></table></section><section class="panel"><div class="heading"><p class="eyebrow">REPRODUCIBILITY</p><h2>Evaluator, model and rubric versions</h2></div><table><tbody>{version_rows}</tbody></table></section></div>
 <section class="panel"><div class="heading"><p class="eyebrow">BASELINE</p><h2>Last five local runs</h2></div><table><thead><tr><th>Run</th><th>Outcome</th><th>Stopped at</th><th>Passed stages</th></tr></thead><tbody>{baseline_rows}</tbody></table></section>

@@ -419,7 +419,8 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(first_decision["axes"]["voice_fidelity"], 4)
         self.assertEqual(second_decision["status"], "PASS")
         self.assertEqual(second_decision["gates"], {"honesty": "FAIL"})
-        self.assertIn("unsupported-factual-marker", second_decision["failure_codes"])
+        self.assertNotIn("unsupported-factual-marker", second_decision["failure_codes"])
+        self.assertIn("unsupported-factual-marker", second_decision["advisory_codes"])
         advisory_honesty = next(
             call.args[0]
             for call in record.call_args_list

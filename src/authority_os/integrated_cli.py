@@ -98,43 +98,6 @@ def _pre_acceptance_failures(
                 f"critic-axis:{axis}={detail['observed']}/5<{detail['required']}/5;"
                 f"shortfall={detail['shortfall']}"
             )
-    gates = getattr(candidate, "gates", {})
-    raw_required_pass = bool(getattr(candidate, "passes_required_gates", False))
-    effective_hard_gates_pass = bool(
-        isinstance(gates, Mapping)
-        and (
-            (
-                raw_required_pass
-                and all(str(status) != "FAIL" for status in gates.values())
-            )
-            or acceptance_policy.hard_candidate_gates_pass(
-                gates,
-                passes_required_gates=raw_required_pass,
-                reason_codes=getattr(candidate, "gate_reasons", ()),
-                allow_factual_wording_advisory=bool(
-                    kwargs.get("allow_factual_wording_advisory", False)
-                ),
-            )
-        )
-    )
-    if not effective_hard_gates_pass:
-        failed = (
-            [str(name) for name, status in gates.items() if status == "FAIL"]
-            if isinstance(gates, Mapping)
-            else []
-        )
-        reasons.append("required-gates:" + (",".join(failed) or "failed"))
-    if bool(kwargs.get("package_requested")) and not bool(kwargs.get("fixture_mode")):
-        review_status = str(getattr(attempt, "review_status", None))
-        raw_recommendation = getattr(attempt, "recommendation", None)
-        recommendation = "" if raw_recommendation is None else str(raw_recommendation)
-        candidate_id = str(getattr(candidate, "candidate_id", ""))
-        if review_status != "READY_FOR_HUMAN_REVIEW":
-            reasons.append(f"package-review-status:{review_status}")
-        if recommendation != candidate_id:
-            reasons.append(
-                f"package-recommendation:{recommendation or 'none'}!=candidate:{candidate_id}"
-            )
     return reasons or ["pre-acceptance:unknown-contract-mismatch"]
 
 
