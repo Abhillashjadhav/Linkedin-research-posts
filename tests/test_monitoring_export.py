@@ -33,8 +33,48 @@ def context() -> dict[str, str]:
 
 
 class MonitoringExportTests(unittest.TestCase):
+    def test_completed_export_uses_v3_without_overwriting_v2_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            legacy = (
+                root / "monitoring-dashboard-v2-linkedin-production-1.normalized.json"
+            )
+            legacy.write_text('{"legacy": true}')
+            payload = {"corrected": True}
+            with (
+                mock.patch.object(v1_completion, "STATE_ROOT", root),
+                mock.patch.object(workflow, "REPO_ROOT", root),
+                mock.patch.object(
+                    monitoring_export, "load_context", return_value=context()
+                ),
+                mock.patch(
+                    "authority_os.monitoring_dashboard_export.export_completed_dashboard",
+                    return_value=payload,
+                ),
+                mock.patch("builtins.print"),
+            ):
+                self.assertEqual(
+                    monitoring_export.main(
+                        [
+                            "--context",
+                            "context.json",
+                            "--run-folder",
+                            "completed",
+                            "--allow-monitoring-export",
+                        ]
+                    ),
+                    0,
+                )
+            current = (
+                root / "monitoring-dashboard-v3-linkedin-production-1.normalized.json"
+            )
+            self.assertEqual(json.loads(current.read_text()), payload)
+            self.assertEqual(legacy.read_text(), '{"legacy": true}')
+
     def test_export_contains_only_redacted_facts_and_opaque_identity(self) -> None:
-        private_text = "Candidate hook with personal@example.com and private source body"
+        private_text = (
+            "Candidate hook with personal@example.com and private source body"
+        )
         rows = [
             {
                 "schema_version": 2,
@@ -73,9 +113,7 @@ class MonitoringExportTests(unittest.TestCase):
         )
         by_definition = {item["definition_id"]: item for item in case["checks"]}
         self.assertEqual(by_definition["research-trust"]["status"], "PASS")
-        self.assertEqual(
-            by_definition["reader-attention"]["status"], "NOT_EVALUATED"
-        )
+        self.assertEqual(by_definition["reader-attention"]["status"], "NOT_EVALUATED")
 
     def test_export_never_mixes_rows_from_another_run(self) -> None:
         rows = [
@@ -93,7 +131,9 @@ class MonitoringExportTests(unittest.TestCase):
                 "evidence": {},
             }
         ]
-        with self.assertRaisesRegex(workflow.WorkflowError, "No V1 decisions match run ID"):
+        with self.assertRaisesRegex(
+            workflow.WorkflowError, "No V1 decisions match run ID"
+        ):
             monitoring_export.build_normalized_export(context(), rows)
 
     def test_context_is_strict_and_timezone_aware(self) -> None:

@@ -386,7 +386,7 @@ def main(argv: list[str] | None = None) -> int:
             v1_completion.STATE_ROOT / v1_completion.DECISION_LEDGER_NAME
         )
         payload = build_normalized_export(context, rows)
-    prefix = "monitoring-dashboard-v2" if args.run_folder else "monitoring"
+    prefix = "monitoring-dashboard-v3" if args.run_folder else "monitoring"
     output = v1_completion.STATE_ROOT / f"{prefix}-{context['run_id']}.normalized.json"
     _write_private(output, payload)
     print(f"Redacted monitoring export: {output.relative_to(workflow.REPO_ROOT)}")
