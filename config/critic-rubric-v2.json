@@ -12,11 +12,11 @@
       "floor": 4,
       "note": "Rescaled. On the v1 scale the owner gave 2 to 17 of his own 30 published posts and 4-or-5 to only two, so a floor of 4 passed nothing. The v2 anchors move a publishable, unmistakably human conversational-product-leader standard to 4. The target is a broad human voice, not imitation of the owner or any other person.",
       "detector": "Sentence-length variance separates his voice from AI cadence at kappa 0.48 - directional, not gate-grade. A model judge is required; the deterministic signal is a prior, not a verdict.",
-      "1": "Uniform sentence rhythm, stacked adjectives, no contractions, tidy parallel structure, or invented emotion and first-person experience. It reads as competent copy nobody actually said.",
-      "2": "The subject is relevant, but the prose is formulaic or presentation-driven. It uses polished connective tissue, high-flown words, forced wit, or generic declarations of empathy instead of sounding emotionally observant and spoken.",
-      "3": "Human-readable, but passages flatten into a consultant memo or presentation: legalistic qualifications, abstract noun stacks, tidy parallel requirements, executive-summary language, or a summary-style ending. It still carries a visible AI fingerprint.",
-      "4": "WORKING STANDARD. Clearly human, conversational product-leader writing, not an imitation of the owner. Sentence lengths swing, contractions appear naturally, plain words carry the argument, and judgment is direct. When the evidence supports it, the writing notices the real human feeling or consequence - frustration, empathy, uncertainty, helplessness, wasted effort, or relief - without inventing emotion or experience. It avoids consultant, presentation, and explanatory register, including in line 2.",
-      "5": "Distinctive, memorable human writing. It is exceptionally sharp and may be witty, but wit is never required or forced. It is emotionally perceptive where the truth supports that reading, technically credible without sounding like a specification, and confident without hiding uncertainty. Plain words do the work; industry vocabulary is used only where it helps, and no feeling or lived experience is fabricated.",
+      "1": "Unmistakably machine, corporate, or consultant-written. Uniform rhythm, stacked adjectives, rigid parallel structure, invented emotion, or invented first-person experience overwhelms any human point of view.",
+      "2": "Clear enough to follow, but visibly template-written. Polished connective tissue, presentation language, high-flown words, canned drama, or generic empathy makes the post sound assembled rather than naturally authored.",
+      "3": "Competent and sometimes natural at sentence level, but the complete post remains generic, impersonal, over-structured, or summary-like. Some human lines may work, yet visible AI scaffolding remains; a clean sentence is not enough for a 4.",
+      "4": "WORKING STANDARD. The complete post reads as naturally authored and directly publishable by a sharp conversational product leader, not as an imitation of the owner. Plain words carry a specific point of view; sentence lengths vary without conspicuous fragment stacking; contractions, parentheses, questions, or a P.S. appear only when natural. Judgment and honest uncertainty sound lived-in, while no emotion or personal experience is invented. Consultant, presentation, and explanatory register are absent, including in line 2.",
+      "5": "Distinctive, memorable human writing. One unusually sharp observation, earned turn of phrase, or emotionally perceptive detail makes the post recognizably authored without performing wit. It remains technically credible, plain-spoken, and honest about uncertainty; no feeling or lived experience is fabricated.",
       "banned_register": {
         "rule": "Use plain, spoken words. Consultant language, presentation language, high-flown wording, and abstract noun stacks are AI smell even when technically correct.",
         "examples_of_words_he_does_not_use": [
@@ -42,7 +42,14 @@
           "token"
         ]
       },
-      "line_two_rule": "Score the first two lines together. Line 2 must remain human and conversational rather than sliding into explanatory, consultant, or presentation register."
+      "line_two_rule": "Score the first two lines together. Line 2 must remain human and conversational rather than sliding into explanatory, consultant, or presentation register.",
+      "short_emphasis_rule": "One short factual line may emphasize a genuinely striking supported fact. Do not reward stacked punchy fragments, mirrored X/Y contrasts, slogan-like reversals, or stacked rhetorical questions used to manufacture intensity. Repeated patterns such as 'The instruction was clear. The authority was not. The model knew. The product let it.' are an AI fingerprint, not evidence of human voice. Avoid canned phrases such as 'Yes, you read that right.'",
+      "optional_human_devices_rule": "Contractions, parentheses, brackets, fragments, rhetorical questions, and P.S. lines are optional devices, never a checklist and never points by themselves. Reward them only when they make the reasoning sound more natural.",
+      "calibration_examples": {
+        "3": "The instruction was clear. The authority was not. It did it anyway. The model knew the rule. The product let it break.",
+        "4": "PocketOS reportedly lost its production database and volume-level backups in nine seconds. Recovery then took roughly 30 hours because the latest independent backup was reportedly three months old. What makes the incident difficult to dismiss is that the agent wasn't operating without instructions. It had already been told not to run destructive commands without approval. The rule existed, but nothing outside the model reliably enforced it. That is a fairly brutal way to learn the difference between an instruction and a control.",
+        "5": "It didn't misunderstand the rule; it had the power to ignore it. Before giving an agent production access, I would want to know who can stop it and what would survive if no one did."
+      }
     },
     "hook_strength": {
       "type": "outcome_gate",

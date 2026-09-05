@@ -26,7 +26,7 @@ class LinkedInPostContractTests(unittest.TestCase):
     def test_contract_is_approved_v1(self) -> None:
         metadata = self.contract["metadata"]
         self.assertEqual(metadata["status"], "APPROVED")
-        self.assertEqual(metadata["version"], "1.1.0")
+        self.assertEqual(metadata["version"], "1.2.0")
 
     def test_critic_matches_executable_acceptance_policy(self) -> None:
         critic = self.contract["critic"]
@@ -54,6 +54,27 @@ class LinkedInPostContractTests(unittest.TestCase):
                     for level in range(1, 6)
                 }
                 self.assertEqual(contract_anchors, rubric_anchors)
+
+        self.assertEqual(
+            self.contract["critic"]["axes"]["voice_fidelity"],
+            {
+                key: value
+                for key, value in self.rubric["axes"]["voice_fidelity"].items()
+                if key
+                in {
+                    "type",
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                    "line_two_rule",
+                    "short_emphasis_rule",
+                    "optional_human_devices_rule",
+                    "calibration_examples",
+                }
+            },
+        )
 
     def test_legacy_quality_target_is_not_part_of_contract(self) -> None:
         critic = self.contract["critic"]
@@ -108,6 +129,11 @@ class LinkedInPostContractTests(unittest.TestCase):
             writing["personal_experience"]["invented_emotion"], "prohibited"
         )
         self.assertTrue(writing["plain_language"]["prohibited_register_examples"])
+        voice = self.contract["critic"]["axes"]["voice_fidelity"]
+        self.assertIn("stacked punchy fragments", voice["short_emphasis_rule"])
+        self.assertIn("never a checklist", voice["optional_human_devices_rule"])
+        self.assertIn("complete post", voice["3"])
+        self.assertIn("directly publishable", voice["4"])
 
     def test_progressive_editor_contract_is_monotonic_and_bounded(self) -> None:
         repair = self.contract["repair"]

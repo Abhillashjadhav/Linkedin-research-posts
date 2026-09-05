@@ -627,7 +627,7 @@ def _repair_feedback(iteration: int, result: Mapping[str, object]) -> dict[str, 
         for axis in workflow.CRITIC_AXES
         if int(scorecard[axis]) >= acceptance_policy.AXIS_FLOORS[axis]
     }
-    return {
+    feedback: dict[str, object] = {
         "next_scored_iteration": iteration,
         "same_candidate_required": True,
         "current_scores": {
@@ -651,6 +651,22 @@ def _repair_feedback(iteration: int, result: Mapping[str, object]) -> dict[str, 
             "deterministic check regresses and at least one failed measure improves."
         ),
     }
+    voice_score = int(scorecard["voice_fidelity"])
+    if voice_score < acceptance_policy.AXIS_FLOORS["voice_fidelity"]:
+        voice_rubric = workflow._load_canonical_voice_fidelity_rubric()
+        feedback["voice_repair_standard"] = {
+            "current_score": voice_score,
+            "required_score": acceptance_policy.AXIS_FLOORS["voice_fidelity"],
+            "level_3": voice_rubric["3"],
+            "level_4": voice_rubric["4"],
+            "level_5": voice_rubric["5"],
+            "short_emphasis_rule": voice_rubric["short_emphasis_rule"],
+            "optional_human_devices_rule": voice_rubric[
+                "optional_human_devices_rule"
+            ],
+            "calibration_examples": voice_rubric["calibration_examples"],
+        }
+    return feedback
 
 
 def _finding_keys(raw: object) -> set[tuple[str, str]]:

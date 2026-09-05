@@ -126,7 +126,12 @@ class VoiceGuidanceTests(unittest.TestCase):
         guidance = workflow.load_voice_guidance()
         self.assertEqual(
             set(guidance),
-            {"voice_guide", "performance_patterns", "provenance"},
+            {
+                "voice_guide",
+                "performance_patterns",
+                "canonical_voice_fidelity_rubric_v2",
+                "provenance",
+            },
         )
         self.assertEqual(guidance["provenance"], "reconstructed-style-guidance")
         self.assertIn("Reconstructed voice guide", guidance["voice_guide"])
@@ -134,6 +139,10 @@ class VoiceGuidanceTests(unittest.TestCase):
             "Reconstructed performance-pattern anchors",
             guidance["performance_patterns"],
         )
+        canonical = json.loads(guidance["canonical_voice_fidelity_rubric_v2"])
+        self.assertIn("directly publishable", canonical["4"])
+        self.assertIn("stacked punchy fragments", canonical["short_emphasis_rule"])
+        self.assertIn("Yes, you read that right", canonical["short_emphasis_rule"])
         self.assertTrue(all(value.strip() for value in guidance.values()))
 
     def test_explicit_voice_paths_are_loaded_as_text_with_fixed_provenance(self) -> None:
