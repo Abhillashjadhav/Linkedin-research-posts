@@ -2,7 +2,7 @@
   "metadata": {
     "contract_id": "linkedin-post-contract",
     "schema_version": 1,
-    "version": "1.5.1",
+    "version": "1.6.0",
     "status": "APPROVED",
     "purpose": "One product and runtime contract for discovery, evidence, selection, drafting, evaluation, repair, packaging, and release.",
     "hash_algorithm": "sha256",
@@ -235,10 +235,11 @@
     "post_critic": {
       "current_live_rule": {
         "axis_floors": {
-          "stop_power": 4,
-          "five_second_comprehension": 4,
-          "payoff_distance": 3,
-          "proof_proximity": 3
+          "hook_strength": 4,
+          "middle_escalation": 3,
+          "earned_closer": 3,
+          "specificity_and_source_quality": 3,
+          "voice_fidelity": 4
         },
         "shareability_floor": null,
         "minimum_total": 20,
@@ -330,6 +331,9 @@
     "legacy_hook_total_cap": "DELETED",
     "axis_floors": {
       "hook_strength": 4,
+      "middle_escalation": 3,
+      "earned_closer": 3,
+      "specificity_and_source_quality": 3,
       "voice_fidelity": 4
     },
     "axes": {
@@ -475,18 +479,19 @@
     "retain_best_grounded_candidate": true,
     "progressive_editor_candidate_count": 1,
     "progressive_editor_identity_rule": "Every edit keeps the selected candidate ID, angle, and claim IDs exactly.",
-    "progressive_editor_monotonic_rule": "Retain an edit when its overall total does not decrease and a score or finding improves. All five axes may trade off inside the total; hook and voice remain final acceptance targets, not iteration vetoes. Editorial gate regressions and new findings never veto score progress.",
+    "progressive_editor_monotonic_rule": "Repair axis deficits first: hook and voice target 4, middle, closer and specificity target 3. Retain an edit that reduces a deficit without worsening another; passing scores may trade off down to their targets even if the overall total decreases. Once all targets are met, the overall total must not decrease and a score or finding improves. Editorial findings never veto progress.",
     "first_iteration_pass_rule": "If the frozen candidate passes on iteration 1, stop unless unsupported factual wording needs one automatic rewrite attempt. Findings remain advisory, and the shared limit is three edits.",
     "repair_only_failed_mandatory_floors_and_gates": true,
     "repair_named_total_deficit": true,
-    "preserve_passing_mandatory_floors": false,
+    "preserve_passing_mandatory_floors": true,
     "never_lower_a_floor_during_a_run": true,
     "never_change_the_locked_thesis_without_a_recorded_claim_support_decision": true,
     "campaign_and_single_post_use_same_policy": true,
-    "on_exhaustion": "Complete with warnings and return the best draft, exact scorecards, unmet score targets and editorial findings. Exit successfully when artifacts were written; do not claim the writing score passed. Publication remains manual."
+    "on_exhaustion": "Complete with warnings and return the best draft, exact scorecards, unmet score targets and editorial findings. Exit successfully when artifacts were written; do not claim the writing score passed. Publication remains manual.",
+    "priority": "axis_targets_then_overall_total"
   },
   "acceptance": {
-    "formula": "critic_total_at_least_18 AND hook_at_least_4 AND voice_at_least_4",
+    "formula": "critic_total_at_least_18 AND hook_at_least_4 AND voice_at_least_4 AND middle_at_least_3 AND closer_at_least_3 AND specificity_at_least_3",
     "model_reported_status_is_authoritative": false,
     "python_computes_acceptance": true,
     "model_scores_and_evidence_are_inputs": true,
@@ -627,7 +632,7 @@
     {
       "id": "OD-9",
       "question": "Should editorial checks independently block draft delivery or reject score progress?",
-      "resolution": "No. Total >=18, hook >=4 and voice >=4 are the single writing acceptance rule. Every editorial finding is advisory. Keep at most four scored iterations, deliver the best draft with honest warnings on exhaustion, preserve filesystem security and model-egress consent, and leave publication manual.",
+      "resolution": "Every editorial finding is advisory. Writing acceptance requires total >=18, hook and voice >=4, and middle, closer and specificity >=3. Repair below-target axes first, then overall total; do not polish passing axes. Repeated findings never abort the four-cycle budget. Deliver the best draft with honest warnings on exhaustion, preserve filesystem security and model-egress consent, and leave publication manual.",
       "decision_status": "RESOLVED"
     }
   ]

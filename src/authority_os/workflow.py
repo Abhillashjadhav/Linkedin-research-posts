@@ -1346,6 +1346,25 @@ def build_strategy_brief(
     }
 
 
+def build_axis_repair_plan(scores: Mapping[str, object]) -> dict[str, object]:
+    """Share exact below-target Critic anchors with Writer and frozen Editor."""
+    from . import acceptance_policy
+
+    plan = acceptance_policy.axis_repair_plan(scores)
+    try:
+        rubric = json.loads(CRITIC_RUBRIC_PATH.read_text(encoding="utf-8"))
+        for edit in plan["edits"]:
+            anchors = rubric["axes"][edit["axis"]]
+            edit["current_anchor"] = anchors[str(edit["observed"])]
+            edit["target_anchor"] = anchors[str(edit["required"])]
+            if not all(isinstance(edit[key], str) and edit[key].strip()
+                       for key in ("current_anchor", "target_anchor")):
+                raise ValueError("invalid repair anchor")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise WorkflowError("Critic v2 repair anchors are unavailable or malformed.") from exc
+    return plan
+
+
 def _load_canonical_voice_fidelity_rubric() -> dict[str, object]:
     """Load the exact voice contract shared by Writer, editor, and Critic."""
 

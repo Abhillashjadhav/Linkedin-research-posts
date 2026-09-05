@@ -2,7 +2,7 @@
 
 The V0 baseline stays frozen. This overlay changes only the current live V1 path:
 failed cycles carry the best grounded candidate forward as repair context instead of
-starting from a blank page. A repair stops when the 18/25 total and hook and voice targets pass.
+starting from a blank page. A repair reaches all five axis targets first, then the 18/25 total.
 Editorial findings remain advisory, and exhaustion delivers the best draft with warnings.
 """
 
@@ -36,13 +36,13 @@ def _failed_gate_count(candidate: quality_cli.CandidateResult) -> int:
 def _candidate_rank(
     candidate: quality_cli.CandidateResult,
 ) -> tuple[int, int, int, int, int, int, str]:
-    """Rank repair seeds by total first, then mandatory floors and hard gates."""
+    """Rank seeds by unmet axis targets first, then overall total."""
 
     shortfalls = acceptance_policy.axis_shortfalls(candidate.axes)
     return (
-        candidate.effective_total,
-        1 if not shortfalls else 0,
         -sum(item["shortfall"] for item in shortfalls.values()),
+        -len(shortfalls),
+        candidate.effective_total,
         1 if candidate.passes_required_gates else 0,
         -_failed_gate_count(candidate),
         int(candidate.axes.get("hook_strength", 0)),
@@ -56,8 +56,12 @@ def _candidate_progresses(
 ) -> bool:
     """Retain score progress; editorial findings are feedback, never vetoes."""
 
-    if proposed.effective_total < previous.effective_total:
-        return False
+    progresses, reasons = acceptance_policy.repair_score_decision(
+        {**previous.axes, "effective_total": previous.effective_total},
+        {**proposed.axes, "effective_total": proposed.effective_total},
+    )
+    if progresses or reasons != ["no-score-improvement"]:
+        return progresses
     previous_slop = {(item.code, item.excerpt) for item in anti_slop.audit(previous.text)}
     proposed_slop = {(item.code, item.excerpt) for item in anti_slop.audit(proposed.text)}
 
@@ -119,8 +123,12 @@ class RepairState:
         )
         current = max(attempt.candidates, key=_candidate_rank)
         self.cycle_best_scores.append(current.effective_total)
-        if self.best is None or _candidate_progresses(self.best, current):
-            self.best = current
+        progressing = [
+            candidate for candidate in attempt.candidates
+            if self.best is None or _candidate_progresses(self.best, candidate)
+        ]
+        if progressing:
+            self.best = max(progressing, key=_candidate_rank)
             self.best_attempt = attempt
         assert self.best is not None
         return self.best
@@ -362,6 +370,11 @@ def _quality_feedback(
         "rejected_cycle": cycle,
         "acceptable_floor": ACCEPTABLE_QUALITY_FLOOR,
         "axis_floors": dict(AXIS_FLOORS),
+        "axis_repair_plan": workflow.build_axis_repair_plan(seed.axes),
+        "rejected_openings": list(dict.fromkeys(
+            candidate.opening for _, candidate, _ in state.observed
+            if int(candidate.axes.get("hook_strength", 0)) < MIN_HOOK_SCORE
+        ))[-9:],
         "cycle_best_score": current_best.effective_total,
         "cycle_score_delta": delta,
         "best_so_far_score": seed.effective_total,
@@ -390,9 +403,9 @@ def _quality_feedback(
             "atomic value and strongest passages, remove every unsupported or failing claim, "
             "and repair the named total deficit, mandatory-axis shortfalls, and explicit gate findings. "
             "Do not chase 5/5 on a mandatory axis already listed in preserve_axes. A result at or above 18/25 is "
-            "acceptable when hook_strength and voice_fidelity are at least 4/5. Editorial findings "
-            "are advisory. All five axes may trade off during repair when the overall total "
-            "does not decrease. Hook and voice remain final acceptance targets, not iteration vetoes. "
+            "acceptable when hook and voice are at least 4 and middle, closer, and specificity at least 3. Editorial findings "
+            "are advisory. Follow axis_repair_plan: fix the below-target axes before optimizing total. "
+            "Never repeat a rejected opening when hook is still below 4; change its framing, not just its words. "
             "Return three materially different repairs in the Writer's required angle slots: "
             "candidate-1 remains mechanism-led, candidate-2 remains product-decision-led, and "
             "candidate-3 remains artefact/failure-mode-led. All three must inherit the repair seed's "
@@ -434,9 +447,10 @@ def _writer_retry_prompt(feedback: Mapping[str, object] | None) -> Iterator[None
             "diagnostics show is weak or unsupported. Produce three repairs in the angle slots already "
             "required by the base Writer contract: mechanism-led, product-decision-led, and "
             "artefact/failure-mode-led. They may restructure the seed, but must preserve its supportable "
-            "atomic value, strategy, evidence boundary, and grounded claims. Repair the named total "
-            "deficit, mandatory-axis shortfalls, and gate findings; the other three axes may trade "
-            "inside the total. Do not chase 5/5 on a mandatory axis already in preserve_axes. Stop "
+            "atomic value, strategy, evidence boundary, and grounded claims. Follow axis_repair_plan: "
+            "repair below-target axes first, leaving passing sections unchanged. For a failed hook, "
+            "each variant must use a different supported opening, never a cosmetic rejected-opening rewrite. "
+            "Only after targets are met, repair the total deficit. Do not chase 5/5 on passing axes. Stop "
             "once the shared acceptance contract passes. Do not accept cosmetic rewrites: the next set "
             "must improve a failed axis, eliminate a gate failure, or both. Supported abstraction may "
             "remove incidental precision or map an instance to its "
