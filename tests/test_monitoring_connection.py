@@ -31,6 +31,62 @@ def decisions(run_id: str) -> list[dict[str, object]]:
 
 
 class MonitoringConnectionTests(unittest.TestCase):
+    def test_daily_dashboard_scores_use_its_saved_run_acceptance_policy(self):
+        import io
+        from contextlib import redirect_stdout
+
+        from authority_os import daily_spine_cli
+        from authority_os.monitoring_dashboard_export import export_completed_dashboard
+
+        ctx = context()
+        run = daily_spine_cli.new_run_dashboard(ctx["run_id"])
+        run["outcome"] = "COMPLETED_WITH_WARNINGS"
+        axes = {
+            "hook_strength": 3,
+            "middle_escalation": 3,
+            "earned_closer": 5,
+            "specificity_and_source_quality": 4,
+            "voice_fidelity": 4,
+        }
+        # A saved historical target deliberately differs from installed policy.
+        run["evaluator_versions"]["acceptance"]["axis_floors"]["middle_escalation"] = 4
+        with redirect_stdout(io.StringIO()):
+            evaluation = daily_spine_cli.render_eval_dashboard(
+                [
+                    {
+                        "contract": "critic_total",
+                        "status": "FAIL",
+                        "subject_id": "candidate-1",
+                        "artifact_sha256": "a" * 64,
+                        "evidence": {
+                            "score": 19,
+                            "threshold": 18,
+                            "cycle": 1,
+                            "axes": axes,
+                        },
+                    },
+                ]
+            )
+        evaluation["run_id"] = ctx["run_id"]
+        self.assertNotIn("acceptance_contract", evaluation)
+        self.assertNotIn("results", evaluation)
+        # Prove the saved run's `floor` variant also works without cycle threshold.
+        evaluation["critic_scorecards"][0].pop("threshold")
+        with patch(
+            "authority_os.monitoring_dashboard_export._read_dashboard",
+            side_effect=[run, evaluation],
+        ):
+            exported = export_completed_dashboard(ctx, Path("unused"))
+        facts = {
+            fact["contract"]: fact
+            for fact in exported["source_facts"]
+            if fact["cycle"] == 1
+        }
+        self.assertEqual(facts["critic_total"]["observed_status"], "PASS")
+        self.assertEqual(facts["hook_strength"]["observed_status"], "FAIL")
+        self.assertEqual(facts["earned_closer"]["observed_status"], "PASS")
+        self.assertEqual(facts["middle_escalation"]["observed_status"], "FAIL")
+
     def test_cycle_score_facts_do_not_inherit_candidate_failure_or_rejection(self):
         from authority_os.monitoring_dashboard_export import export_completed_dashboard
 
@@ -79,7 +135,7 @@ class MonitoringConnectionTests(unittest.TestCase):
             self.assertEqual(facts["earned_closer"]["observed_status"], "PASS")
             self.assertEqual(facts["earned_closer"]["reason_codes"], [])
             self.assertEqual(
-                facts["critic_candidate_status"]["recorded_status"],
+                facts["critic_scorecard_status"]["recorded_status"],
                 "FAIL" if cycle == 1 else "REJECTED",
             )
         evaluation.pop("acceptance_contract")
