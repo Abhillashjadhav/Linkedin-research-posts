@@ -31,6 +31,77 @@ def decisions(run_id: str) -> list[dict[str, object]]:
 
 
 class MonitoringConnectionTests(unittest.TestCase):
+    def test_cycle_score_facts_do_not_inherit_candidate_failure_or_rejection(self):
+        from authority_os.monitoring_dashboard_export import export_completed_dashboard
+
+        ctx = context()
+        run = {"run_id": ctx["run_id"], "outcome": "COMPLETED_WITH_WARNINGS"}
+        axes = {
+            "hook_strength": 3,
+            "middle_escalation": 3,
+            "earned_closer": 5,
+            "specificity_and_source_quality": 4,
+            "voice_fidelity": 4,
+        }
+        evaluation = {
+            "run_id": ctx["run_id"],
+            "acceptance_contract": {
+                "minimum_total": 18,
+                "axis_floors": dict(axes, hook_strength=4, earned_closer=3),
+            },
+            "critic_scorecards": [
+                {
+                    "candidate_id": "candidate-1",
+                    "cycle": cycle,
+                    "status": status,
+                    "total": 19,
+                    "threshold": 18,
+                    "axes": axes,
+                    "failure_codes": ["hook_strength"],
+                    "advisory_codes": [],
+                }
+                for cycle, status in ((1, "FAIL"), (2, "REJECTED"))
+            ],
+        }
+        with patch(
+            "authority_os.monitoring_dashboard_export._read_dashboard",
+            side_effect=[run, evaluation],
+        ):
+            result = export_completed_dashboard(ctx, Path("unused"))
+        for cycle in (1, 2):
+            facts = {
+                fact["contract"]: fact
+                for fact in result["source_facts"]
+                if fact["cycle"] == cycle
+            }
+            self.assertEqual(facts["critic_total"]["observed_status"], "PASS")
+            self.assertEqual(facts["hook_strength"]["observed_status"], "FAIL")
+            self.assertEqual(facts["earned_closer"]["observed_status"], "PASS")
+            self.assertEqual(facts["earned_closer"]["reason_codes"], [])
+            self.assertEqual(
+                facts["critic_candidate_status"]["recorded_status"],
+                "FAIL" if cycle == 1 else "REJECTED",
+            )
+        evaluation.pop("acceptance_contract")
+        with patch(
+            "authority_os.monitoring_dashboard_export._read_dashboard",
+            side_effect=[run, evaluation],
+        ):
+            unknown_policy = export_completed_dashboard(ctx, Path("unused"))
+        hook = next(
+            fact
+            for fact in unknown_policy["source_facts"]
+            if fact["contract"] == "hook_strength"
+        )
+        self.assertEqual(hook["observed_status"], "NOT_EVALUATED")
+        self.assertEqual(hook["value"], 3)
+        total = next(
+            fact
+            for fact in unknown_policy["source_facts"]
+            if fact["contract"] == "critic_total"
+        )
+        self.assertEqual(total["observed_status"], "PASS")
+
     def test_dashboard_reader_rejects_symlinks_and_special_files(self) -> None:
         from authority_os import workflow
         from authority_os.monitoring_dashboard_export import _read_dashboard
