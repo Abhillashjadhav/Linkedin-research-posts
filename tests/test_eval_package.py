@@ -174,18 +174,15 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(feedback["total_shortfall"], 1)
         self.assertEqual(feedback["axis_shortfalls"], {})
 
-    def test_monotonic_edit_rejects_hook_or_voice_falling_below_met_floor(self) -> None:
+    def test_higher_total_can_trade_off_hook_or_voice_during_repair(self) -> None:
         previous = _evaluated_result((4, 4, 4, 4, 4))
-        for proposed, expected_reason in (
-            (_evaluated_result((3, 5, 5, 5, 4)), "hook_strength-fell-below-floor-4"),
-            (_evaluated_result((4, 5, 5, 5, 3)), "voice_fidelity-fell-below-floor-4"),
-        ):
-            with self.subTest(reason=expected_reason):
-                accepted, reasons = eval_package._monotonic_edit_decision(
-                    previous, proposed
-                )
-                self.assertFalse(accepted)
-                self.assertIn(expected_reason, reasons)
+        for axes in ((3, 5, 5, 5, 4), (4, 5, 5, 5, 3)):
+            with self.subTest(axes=axes):
+                proposed = _evaluated_result(axes)
+                accepted, reasons = eval_package._monotonic_edit_decision(previous, proposed)
+                self.assertTrue(accepted)
+                self.assertEqual(reasons, [])
+                self.assertEqual(proposed["acceptance"]["status"], "FAIL")
 
     def test_equal_total_can_advance_when_a_mandatory_shortfall_or_gate_improves(self) -> None:
         cases = (
@@ -537,7 +534,7 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(final["scorecard"]["effective_total"], 21)
         self.assertEqual(final["acceptance"]["status"], "PASS")
 
-    def test_editorial_warning_never_forces_an_extra_rewrite(self) -> None:
+    def test_unsupported_wording_gets_one_advisory_rewrite(self) -> None:
         context = _repair_context()
         captured: dict[str, object] = {}
 
@@ -596,7 +593,9 @@ class EvalPackageTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         history = captured["repair_history"]
-        self.assertEqual(len(history), 1)
+        self.assertEqual(len(history), 2)
+        self.assertFalse(history[1]["accepted_as_next_seed"])
+        self.assertEqual(captured["results"][0]["candidate"]["text"], context["selected_candidates"][0]["text"])
         self.assertEqual(history[0]["acceptance"]["status"], "PASS")
         self.assertTrue(history[0]["acceptance"]["advisory_warnings"])
         self.assertFalse(captured["results"][0]["gates"]["passes_required_gates"])

@@ -83,7 +83,7 @@ DISCOVERY_STAGES = (
 STAGE_EXCEPTIONS = (Exception,)
 OBSERVABILITY_CONTRACT = "decision-trace-v1"
 OBSERVABILITY_STATUS = frozenset(
-    {"PASS", "FAIL", "BLOCKED", "NOT_EVALUATED", "RUNNING", "REJECTED", "UNAVAILABLE"}
+    {"PASS", "FAIL", "BLOCKED", "NOT_EVALUATED", "RUNNING", "REJECTED", "UNAVAILABLE", "COMPLETED_WITH_WARNINGS"}
 )
 
 
@@ -925,6 +925,48 @@ def persist_run_dashboard(
     return path
 
 
+def finalize_draft_evaluation(
+    run_dashboard: dict[str, object],
+    eval_dashboard: Mapping[str, object],
+    *,
+    return_code: int,
+    failure_reason: str,
+) -> str:
+    """Keep delivery completion separate from writing targets and execution errors."""
+    evaluated = [
+        check for check in eval_dashboard["checks"]
+        if check["status"] != "NOT_EVALUATED"
+    ]
+    failed = [
+        check for check in evaluated
+        if check["status"] in {"FAIL", "BLOCKED"}
+        and check.get("mode") not in {"diagnostic", "shadow"}
+    ]
+    warnings = eval_dashboard.get("delivery_outcome") == "COMPLETED_WITH_WARNINGS"
+    if return_code != 0:
+        outcome = "FAIL"
+        reason = f"draft execution failed: {failure_reason}"
+    elif failed:
+        outcome = "FAIL"
+        reason = f"{failed[0]['label']}: {failed[0]['reason']}"
+    elif warnings:
+        outcome = "COMPLETED_WITH_WARNINGS"
+        reason = "best draft delivered; writing scores remain below target"
+    else:
+        outcome = "PASS"
+        reason = "writing targets cleared; editorial findings remain advisory"
+    mark_run_stage(
+        run_dashboard, "final_evals", outcome, reason,
+        return_code=return_code,
+        failed_contracts=[str(check["contract"]) for check in failed],
+        failure_reasons=[
+            {"contract": str(check["contract"]), "reason": str(check["reason"])}
+            for check in failed
+        ],
+    )
+    return outcome
+
+
 def render_eval_dashboard(
     rows: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
@@ -961,6 +1003,13 @@ def render_eval_dashboard(
             reversed(accepted_scores),
             key=lambda row: int(row.get("evidence", {}).get("score", 0)),
         )["artifact_sha256"])
+    delivery = latest.get("draft_delivery", {})
+    delivered_with_warnings = (
+        delivery.get("status") == "PASS"
+        and delivery.get("evidence", {}).get("observed_status") == "COMPLETED_WITH_WARNINGS"
+    )
+    if delivered_with_warnings and delivery.get("artifact_sha256"):
+        best_post_artifact = str(delivery["artifact_sha256"])
     checks: list[dict[str, object]] = []
     decisions: list[dict[str, object]] = []
     for sequence, row in enumerate(rows, start=1):
@@ -1053,7 +1102,11 @@ def render_eval_dashboard(
                 "contract": contract,
                 "label": label,
                 "category": "post_quality" if contract in POST_QUALITY_CONTRACTS else "pipeline",
-                "mode": str(row.get("mode", "enforce")) if row else "enforce",
+                "mode": (
+                    "diagnostic"
+                    if delivered_with_warnings and contract in POST_QUALITY_CONTRACTS
+                    else str(row.get("mode", "enforce")) if row else "enforce"
+                ),
                 "status": status,
                 "reason": reason,
                 "subject_id": str(row.get("subject_id", "")) if row else "",
@@ -1064,6 +1117,7 @@ def render_eval_dashboard(
     scorecards.sort(key=lambda item: (int(item["cycle"]), str(item["candidate_id"])))
     return {
         "schema_version": 3,
+        "delivery_outcome": "COMPLETED_WITH_WARNINGS" if delivered_with_warnings else None,
         "checks": checks,
         "critic_scorecards": scorecards,
         "decisions": decisions,
@@ -2570,57 +2624,16 @@ def command(args: argparse.Namespace) -> int:
             for check in evaluated_rows
             if check.get("category") == "post_quality"
         ]
-        failed_rows = [
-            check
-            for check in evaluated_rows
-            if check["status"] in {"FAIL", "BLOCKED"}
-        ]
         record_drafting_stage(
             run_dashboard,
             completed,
             post_evaluated=bool(post_evaluated_rows),
         )
-        if failed_rows:
-            first_failure = failed_rows[0]
-            mark_run_stage(
-                run_dashboard,
-                "final_evals",
-                "FAIL",
-                f"{first_failure['label']}: {first_failure['reason']}",
-                failed_contracts=[str(check["contract"]) for check in failed_rows],
-                failure_reasons=[
-                    {
-                        "contract": str(check["contract"]),
-                        "reason": str(check["reason"]),
-                    }
-                    for check in failed_rows
-                ],
-            )
-        elif completed.returncode != 0 and post_evaluated_rows:
-            mark_run_stage(
-                run_dashboard,
-                "final_evals",
-                "FAIL",
-                f"workflow failed after recorded evals passed: {completed.reason}",
-                evaluated_contracts=[
-                    str(check["contract"]) for check in evaluated_rows
-                ],
-            )
-        elif completed.returncode != 0:
-            mark_run_stage(
-                run_dashboard,
-                "final_evals",
-                "FAIL",
-                f"draft subprocess stopped before a valid Critic 1-5 scorecard: {completed.reason}",
-                return_code=completed.returncode,
-            )
-        elif completed.returncode == 0:
-            mark_run_stage(
-                run_dashboard,
-                "final_evals",
-                "PASS",
-                f"{len(evaluated_rows)} evaluated contract(s) cleared",
-            )
+        outcome = finalize_draft_evaluation(
+            run_dashboard, dashboard,
+            return_code=completed.returncode,
+            failure_reason=completed.reason,
+        )
         print(
             f"Eval dashboard stored: "
             f"{dashboard_path.relative_to(workflow.REPO_ROOT)}."
@@ -2628,7 +2641,7 @@ def command(args: argparse.Namespace) -> int:
         persist_run_dashboard(
             folder,
             run_dashboard,
-            outcome="PASS" if completed.returncode == 0 else "FAIL",
+            outcome=outcome,
         )
         browser_dashboard = eval_dashboard_html.write_dashboard(
             folder,

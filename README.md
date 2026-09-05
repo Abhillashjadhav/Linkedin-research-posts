@@ -97,7 +97,7 @@ A live invocation runs at most four scored iterations. Writing acceptance has on
 - hook and voice scores of at least **4/5**; middle escalation, earned closer,
   and specificity/source quality remain scored and may trade off inside the total.
 
-Authority, proof, honesty, citation, relevance, resonance, hook-register and anti-slop checks are editorial advisories. Their raw findings remain visible; they cannot veto score acceptance or discard an improving edit. Passing text is returned immediately. On exhaustion, the best draft is delivered with unmet score targets recorded honestly. Successful artifact delivery returns exit code 0 even when writing scores remain below target; missing inputs, malformed model output, authorization and secure-file errors still fail.
+Authority, proof, honesty, citation, relevance, resonance, hook-register and anti-slop checks are editorial advisories. Their raw findings remain visible; they cannot veto score acceptance or discard an improving edit. Passing text is returned immediately, except that frozen repair may attempt one automatic rewrite for unsupported factual wording. On exhaustion, the best draft is delivered with unmet score targets recorded honestly. Successful artifact delivery returns exit code 0 even when writing scores remain below target; missing inputs, malformed model output, authorization and secure-file errors still fail.
 
 `eval-package --repair` scores the saved candidate, then edits that same candidate at most three times. It reuses the saved evidence and never restarts discovery. The dashboard links `evaluated-<candidate-id>.md` and separates score shortfalls from advisory findings. Publication remains manual.
 
@@ -114,7 +114,7 @@ evidence-bounded thesis and product decision, and then applies the same
 Resonance, Critic, proof, honesty, citation, privacy, and relevance gates. It
 does not rerun discovery, acquire evidence, or lower the 4/5 proof-value floor.
 
-After four unsuccessful live cycles, the command fails closed and returns no post. When `--package` is selected, rejected cycles may leave private `BLOCKED` audit packages; only a live `READY_FOR_HUMAN_REVIEW` package can clear the coordinator.
+After four unsuccessful live cycles, the command delivers the best draft with `COMPLETED_WITH_WARNINGS`. Unmet writing targets and editorial findings stay visible. Existing `BLOCKED` audit packages are historical diagnostics, not a reason to discard the delivered draft.
 
 ## Run a persisted five-day campaign
 
@@ -240,8 +240,9 @@ Opportunity drafting additionally requires a validated public-safe proof manifes
 ## Re-evaluate and progressively repair a frozen candidate
 
 Use the existing package, strategy, and evidence when research is already complete. The
-first iteration scores the frozen candidate unchanged. If it passes, the editor is never
-called. Otherwise, at most three bounded edits follow, for four scored iterations total:
+first iteration scores the frozen candidate unchanged. A passing candidate is returned
+immediately unless unsupported factual wording needs one automatic rewrite attempt.
+At most three bounded edits follow, for four scored iterations total:
 
 ```bash
 ./bin/linkedin-os eval-package \
@@ -254,9 +255,12 @@ called. Otherwise, at most three bounded edits follow, for four scored iteration
   --repair
 ```
 
-Every accepted edit keeps the same candidate ID, angle, and claim IDs. It may not lower
-the total, any individual Critic axis, or any passing hard gate, and it may not introduce
-a new deterministic finding. A rejected edit never replaces the retained best candidate.
+Every retained edit keeps the same candidate ID, angle, and claim IDs. Only the overall
+total must not decrease; individual axes may trade off. An edit must improve a score or
+reduce a finding. Hook and voice remain final acceptance targets. Editorial findings
+stay advisory, including after the automatic factual rewrite. A rejected edit never
+replaces the retained best candidate. If targets remain unmet after repair, the draft is
+delivered with `COMPLETED_WITH_WARNINGS`, not a false score pass or a workflow failure.
 Discovery, research, thesis selection, and the original Writer are not rerun.
 
 ## Safety model
