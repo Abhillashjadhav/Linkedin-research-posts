@@ -2616,8 +2616,10 @@ def _build_writer_revision_prompt(
     except (TypeError, ValueError) as exc:
         raise WorkflowError("Writer revision repair feedback is malformed.") from exc
     return f"""
-Make one bounded editorial revision of this single candidate, improving only the failed axes,
-gates, and deterministic findings named in the repair feedback.
+Make one bounded editorial revision of this single candidate, improving the failed mandatory
+floors, gates, and deterministic findings named in the repair feedback. The other scored axes may
+trade off inside the overall total, but the overall total may not decrease and hook or voice may
+not fall below 4 once that floor has been reached.
 Preserve its id, angle, and claim_ids exactly.
 Return one candidate in the required structured envelope; that candidate contains only id, angle,
 text, and claim_ids. Do not create a new angle, invent evidence, score,

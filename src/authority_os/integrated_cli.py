@@ -31,19 +31,28 @@ def _record_post_quality(candidate: object) -> None:
     artifact = v1_completion._sha256_text(text)  # type: ignore[attr-defined]
     findings = anti_slop.audit(text)
     decisions = []
-    for axis, threshold in acceptance_policy.AXIS_FLOORS.items():
+    for axis in workflow.CRITIC_AXES:
         score = int(axes.get(axis, 0))
-        shortfall = max(0, threshold - score)
+        threshold = acceptance_policy.AXIS_FLOORS.get(axis)
+        enforced = threshold is not None
+        shortfall = max(0, threshold - score) if enforced else 0
         decisions.append(
             (
                 axis,
                 shortfall == 0,
                 (
                     f"{axis}-{score}-of-5-meets-{threshold}"
-                    if shortfall == 0
+                    if enforced and shortfall == 0
                     else f"{axis}-{score}-of-5-short-by-{shortfall}"
+                    if enforced
+                    else f"{axis}-{score}-of-5-recorded-for-total"
                 ),
-                {"score": score, "threshold": threshold, "shortfall": shortfall},
+                {
+                    "score": score,
+                    "threshold": threshold,
+                    "shortfall": shortfall,
+                    "mode": "enforce" if enforced else "diagnostic",
+                },
             )
         )
     decisions.append(
@@ -55,10 +64,11 @@ def _record_post_quality(candidate: object) -> None:
         )
     )
     for contract, passed, reason, evidence in decisions:
+        mode = str(evidence.pop("mode", "enforce"))
         v1_completion.record_decision(
             {
                 "contract": contract,
-                "mode": "enforce",
+                "mode": mode,
                 "status": "PASS" if passed else "FAIL",
                 "reason": reason,
                 **evidence,

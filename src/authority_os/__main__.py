@@ -196,7 +196,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Progressively edit one --candidate for at most four scored iterations; "
-            "accepted edits may not regress any axis or hard gate."
+            "accepted edits may not reduce the overall total, take hook or voice below "
+            "4 once reached, or regress a hard gate."
         ),
     )
 

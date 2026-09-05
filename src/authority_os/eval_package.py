@@ -624,8 +624,8 @@ def _repair_feedback(iteration: int, result: Mapping[str, object]) -> dict[str, 
         raise workflow.WorkflowError("Progressive editor score result is malformed.")
     passing_axes = {
         axis: int(scorecard[axis])
-        for axis in workflow.CRITIC_AXES
-        if int(scorecard[axis]) >= acceptance_policy.AXIS_FLOORS[axis]
+        for axis, floor in acceptance_policy.AXIS_FLOORS.items()
+        if int(scorecard[axis]) >= floor
     }
     feedback: dict[str, object] = {
         "next_scored_iteration": iteration,
@@ -634,6 +634,12 @@ def _repair_feedback(iteration: int, result: Mapping[str, object]) -> dict[str, 
             axis: int(scorecard[axis]) for axis in workflow.CRITIC_AXES
         },
         "current_total": int(scorecard["effective_total"]),
+        "required_total": acceptance_policy.ACCEPTABLE_QUALITY_FLOOR,
+        "total_shortfall": max(
+            0,
+            acceptance_policy.ACCEPTABLE_QUALITY_FLOOR
+            - int(scorecard["effective_total"]),
+        ),
         "axis_shortfalls": dict(acceptance.get("axis_shortfalls", {})),
         "passing_axes_to_preserve": passing_axes,
         "failed_gates": _failed_gate_details(result),
@@ -647,8 +653,10 @@ def _repair_feedback(iteration: int, result: Mapping[str, object]) -> dict[str, 
             "Edit only the named failures. Keep the candidate ID, angle, claim IDs, "
             "selected thesis, evidence boundary, and passing material. Do not invent facts, "
             "experience, emotion, sources, scale, causality, or impact. The next revision is "
-            "eligible to become the new seed only if no axis, total, passing hard gate, or "
-            "deterministic check regresses and at least one failed measure improves."
+            "eligible to become the new seed only if its overall total does not regress, hook "
+            "and voice do not fall below their mandatory floors, no passing hard gate or "
+            "deterministic check regresses, and at least one failed measure improves. Individual "
+            "middle, closer, and specificity scores may trade off inside the overall total."
         ),
     }
     voice_score = int(scorecard["voice_fidelity"])
@@ -687,15 +695,15 @@ def _monotonic_edit_decision(
     if not isinstance(previous_score, Mapping) or not isinstance(proposed_score, Mapping):
         raise workflow.WorkflowError("Progressive editor score comparison is malformed.")
     regressions: list[str] = []
-    for axis in workflow.CRITIC_AXES:
-        before = int(previous_score[axis])
-        after = int(proposed_score[axis])
-        if after < before:
-            regressions.append(f"{axis}-regressed-{before}-to-{after}")
     previous_total = int(previous_score["effective_total"])
     proposed_total = int(proposed_score["effective_total"])
     if proposed_total < previous_total:
         regressions.append(f"total-regressed-{previous_total}-to-{proposed_total}")
+    for axis, floor in acceptance_policy.AXIS_FLOORS.items():
+        before = int(previous_score[axis])
+        after = int(proposed_score[axis])
+        if before >= floor and after < floor:
+            regressions.append(f"{axis}-fell-below-floor-{floor}")
 
     previous_gate_result = previous.get("gates")
     proposed_gate_result = proposed.get("gates")
@@ -734,11 +742,12 @@ def _monotonic_edit_decision(
     proposed_factual = len(
         _finding_keys(proposed.get("factual_support_diagnostics"))
     )
+    previous_shortfalls = acceptance_policy.axis_shortfalls(previous_score)
+    proposed_shortfalls = acceptance_policy.axis_shortfalls(proposed_score)
     improved = (
-        any(
-            int(proposed_score[axis]) > int(previous_score[axis])
-            for axis in workflow.CRITIC_AXES
-        )
+        proposed_total > previous_total
+        or sum(item["shortfall"] for item in proposed_shortfalls.values())
+        < sum(item["shortfall"] for item in previous_shortfalls.values())
         or proposed_failed < previous_failed
         or len(proposed_slop) < len(previous_slop)
         or proposed_factual < previous_factual

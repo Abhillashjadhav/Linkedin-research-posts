@@ -2,7 +2,7 @@
   "metadata": {
     "contract_id": "linkedin-post-contract",
     "schema_version": 1,
-    "version": "1.2.0",
+    "version": "1.3.0",
     "status": "APPROVED",
     "purpose": "One product and runtime contract for discovery, evidence, selection, drafting, evaluation, repair, packaging, and release.",
     "hash_algorithm": "sha256",
@@ -270,9 +270,6 @@
     "legacy_hook_total_cap": "DELETED",
     "axis_floors": {
       "hook_strength": 4,
-      "middle_escalation": 3,
-      "earned_closer": 3,
-      "specificity_and_source_quality": 3,
       "voice_fidelity": 4
     },
     "axes": {
@@ -388,17 +385,18 @@
     "retain_best_grounded_candidate": true,
     "progressive_editor_candidate_count": 1,
     "progressive_editor_identity_rule": "Every edit keeps the selected candidate ID, angle, and claim IDs exactly.",
-    "progressive_editor_monotonic_rule": "An edit becomes the next seed only when total score and every individual axis are no lower than the current seed, no passing hard gate regresses, no new deterministic finding appears, and at least one failed axis, gate, or finding measurably improves.",
+    "progressive_editor_monotonic_rule": "An edit becomes the next seed when its overall total is no lower than the current seed, hook and voice remain at or above 4 once reached, no passing hard gate regresses, no new deterministic finding appears, and the total or at least one failed mandatory floor, gate, or finding measurably improves. Middle escalation, earned closer, and specificity/source quality may trade off inside the overall total.",
     "first_iteration_pass_rule": "If the frozen candidate passes on iteration 1, stop without invoking the editor.",
-    "repair_only_failed_axes_and_gates": true,
-    "preserve_passing_axes": true,
+    "repair_only_failed_mandatory_floors_and_gates": true,
+    "repair_named_total_deficit": true,
+    "preserve_passing_mandatory_floors": true,
     "never_lower_a_floor_during_a_run": true,
     "never_change_the_locked_thesis_without_a_recorded_claim_support_decision": true,
     "campaign_and_single_post_use_same_policy": true,
     "on_exhaustion": "Write best-effort-post.md, all candidate texts, exact scorecards, shortfalls, gate reasons, and the next safe action. Do not publish."
   },
   "acceptance": {
-    "formula": "critic_total_at_least_18 AND every_axis_floor_met AND every_hard_gate_passed AND deterministic_checks_passed AND package_complete",
+    "formula": "critic_total_at_least_18 AND hook_at_least_4 AND voice_at_least_4 AND every_hard_gate_passed AND deterministic_checks_passed AND package_complete",
     "model_reported_status_is_authoritative": false,
     "python_computes_acceptance": true,
     "model_scores_and_evidence_are_inputs": true,
@@ -517,9 +515,9 @@
     {
       "id": "OD-7",
       "question": "How should a failed frozen candidate improve across the four-iteration editorial loop?",
-      "resolution": "Keep one candidate lineage. Score the frozen candidate first, then edit that exact candidate at most three times. Accept an edit as the next seed only when no axis, total, passing hard gate, or deterministic check regresses and at least one failed measure improves.",
+      "resolution": "Keep one candidate lineage. Score the frozen candidate first, then edit that exact candidate at most three times. Accept an edit as the next seed only when the overall total does not decrease, hook and voice stay at or above 4 once reached, no passing hard gate or deterministic check regresses, and at least one failed mandatory floor, gate, finding, or the overall total improves. Middle escalation, earned closer, and specificity/source quality may trade off inside the overall total.",
       "decision_status": "RESOLVED",
-      "why": "The editor should compound verified progress instead of replacing strong material with unrelated variants or allowing one quality dimension to fall while another rises."
+      "why": "The editor should compound verified progress instead of replacing strong material with unrelated variants, while allowing the three non-mandatory axes to trade off without lowering the overall score."
     }
   ]
 }

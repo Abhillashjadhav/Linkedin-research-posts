@@ -94,8 +94,8 @@ exact timestamp; otherwise the command fails closed rather than guessing.
 A live invocation no longer exposes the first completed draft batch. It runs up to four candidate cycles and returns prose only when at least one candidate satisfies all of these conditions:
 
 - effective Critic score of at least **18/25**;
-- hook and voice scores of at least **4/5**, with middle escalation, earned closer,
-  and specificity/source quality each at least **3/5**;
+- hook and voice scores of at least **4/5**; middle escalation, earned closer,
+  and specificity/source quality remain scored and may trade off inside the total;
 - every required authority, proof, honesty, citation, and relevance gate passes; and
 - the opening does not repeat one rejected in an earlier cycle.
 
@@ -324,7 +324,7 @@ make check
 - macOS and Linux are supported; Windows is not currently supported for private-data operation.
 - Legacy single-post live drafting depends on the locally configured Claude service and explicit consent; trace-first campaign mode uses the authenticated Codex CLI with explicit per-stage model settings.
 - The bounded search stops after four live cycles rather than spending indefinitely.
-- Passing the 18/25 total, every named axis floor, and every hard gate creates review eligibility; it is not proof that a human will find the post compelling. A score of 24 remains an optimization target only.
+- Passing the 18/25 total, the hook and voice floors, and every hard gate creates review eligibility; it is not proof that a human will find the post compelling.
 - Research ingestion, analytics collection, and publication are not automated.
 - Structural citation checks reduce unsupported claims but cannot prove factual truth.
 - Performance learning depends on manually recorded observations.

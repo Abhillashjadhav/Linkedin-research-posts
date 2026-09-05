@@ -99,11 +99,9 @@ class AcceptanceTests(unittest.TestCase):
     def test_named_acceptance_constants_match_the_owner_decision(self) -> None:
         self.assertEqual(quality_optimizer.ACCEPTABLE_QUALITY_FLOOR, 18)
         self.assertEqual(quality_optimizer.MIN_HOOK_SCORE, 4)
-        self.assertEqual(quality_optimizer.MIN_MIDDLE_ESCALATION_SCORE, 3)
-        self.assertEqual(quality_optimizer.MIN_EARNED_CLOSER_SCORE, 3)
         self.assertEqual(
-            quality_optimizer.MIN_SPECIFICITY_AND_SOURCE_QUALITY_SCORE,
-            3,
+            dict(quality_optimizer.AXIS_FLOORS),
+            {"hook_strength": 4, "voice_fidelity": 4},
         )
         self.assertEqual(quality_optimizer.MIN_VOICE_FIDELITY_SCORE, 4)
 
@@ -249,6 +247,42 @@ class AcceptanceTests(unittest.TestCase):
 
 
 class RepairStateTests(unittest.TestCase):
+    def test_lower_total_cannot_replace_seed_even_when_hard_gates_improve(self) -> None:
+        state = quality_optimizer.RepairState()
+        higher_total = candidate(
+            23,
+            {
+                "hook_strength": 4,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 5,
+                "voice_fidelity": 4,
+            },
+            gates_pass=False,
+            text="Keep the higher-total seed while its factual gate is repaired.",
+        )
+        lower_total = candidate(
+            22,
+            {
+                "hook_strength": 4,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 4,
+                "voice_fidelity": 4,
+            },
+            gates_pass=True,
+            text="Do not replace the seed with a lower-total edit.",
+        )
+
+        state.observe(attempt(higher_total))
+        retained = state.observe(attempt(lower_total))
+
+        self.assertEqual(retained.effective_total, 23)
+        self.assertEqual(
+            retained.text,
+            "Keep the higher-total seed while its factual gate is repaired.",
+        )
+
     def test_highest_total_with_voice_three_is_rejected_and_recorded(self) -> None:
         high = candidate(
             22,
@@ -421,6 +455,37 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(retained.text, "Keep the candidate that clears the values gate.")
         self.assertEqual(retained.axes["voice_fidelity"], 4)
 
+    def test_hook_four_seed_is_not_replaced_by_a_hook_regression(self) -> None:
+        state = quality_optimizer.RepairState()
+        hook_pass = candidate(
+            21,
+            {
+                "hook_strength": 4,
+                "middle_escalation": 4,
+                "earned_closer": 4,
+                "specificity_and_source_quality": 5,
+                "voice_fidelity": 4,
+            },
+            text="Keep the candidate whose hook clears the mandatory floor.",
+        )
+        hook_fail = candidate(
+            22,
+            {
+                "hook_strength": 3,
+                "middle_escalation": 5,
+                "earned_closer": 5,
+                "specificity_and_source_quality": 5,
+                "voice_fidelity": 4,
+            },
+            text="Do not trade away the hook floor for a higher total.",
+        )
+
+        state.observe(attempt(hook_pass))
+        retained = state.observe(attempt(hook_fail))
+
+        self.assertEqual(retained.text, hook_pass.text)
+        self.assertEqual(retained.axes["hook_strength"], 4)
+
     def test_feedback_carries_full_best_text_scores_and_gate_failures(self) -> None:
         seed = candidate(
             18,
@@ -446,33 +511,17 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(repair_seed["weak_axes"], {"voice_fidelity": 3})  # type: ignore[index]
         self.assertEqual(
             repair_seed["passing_axes"],  # type: ignore[index]
-            {
-                "hook_strength": 5,
-                "middle_escalation": 4,
-                "earned_closer": 3,
-                "specificity_and_source_quality": 3,
-            },
+            {"hook_strength": 5},
         )
         self.assertEqual(
             repair_seed["preserve_axes"],  # type: ignore[index]
-            [
-                "hook_strength",
-                "middle_escalation",
-                "earned_closer",
-                "specificity_and_source_quality",
-            ],
+            ["hook_strength"],
         )
         self.assertNotIn("quality_target", feedback)
         self.assertEqual(feedback["acceptable_floor"], 18)
         self.assertEqual(
             feedback["axis_floors"],
-            {
-                "hook_strength": 4,
-                "middle_escalation": 3,
-                "earned_closer": 3,
-                "specificity_and_source_quality": 3,
-                "voice_fidelity": 4,
-            },
+            {"hook_strength": 4, "voice_fidelity": 4},
         )
 
     def test_feedback_attaches_exact_anti_slop_findings_to_retained_seed(self) -> None:
@@ -516,7 +565,7 @@ class RepairPromptTests(unittest.TestCase):
         self.assertIn("QUALITY_REPAIR_CYCLE_CONTRACT", prompt)
         self.assertIn("not a fresh brainstorm", prompt)
         self.assertIn("Retain this grounded mechanism", prompt)
-        self.assertIn("do not chase 5/5", prompt)
+        self.assertIn("Do not chase 5/5", prompt)
         self.assertIn("Stop once the shared acceptance contract passes", prompt)
         self.assertIn("Never invent evidence", prompt)
         self.assertIn("Supported abstraction", prompt)

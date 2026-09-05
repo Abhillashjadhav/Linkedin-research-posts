@@ -46,7 +46,8 @@ If live prerequisites are missing, report the exact missing input. Do not replac
 The CLI runs up to four live candidate cycles. Each cycle still owns exactly three candidates and at most one light revision. A candidate is returned only when all of these are true:
 
 - effective Critic score is at least 18;
-- hook and voice are at least 4, and the other three axes are at least 3;
+- hook and voice are at least 4; the other three axes remain scored and may trade
+  off inside the total, with no independent floor;
 - every required authority, proof, honesty, citation, and relevance gate passes; and
 - its opening does not repeat one rejected in an earlier cycle.
 
