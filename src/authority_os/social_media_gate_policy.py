@@ -1,7 +1,8 @@
 """V1 social-media release policy overlay.
 
-This overlay keeps deterministic factual diagnostics available for human review while
-preserving honesty and citation as hard acceptance gates.
+This overlay keeps deterministic factual diagnostics available for human review.  Only
+the exact ``unsupported-factual-marker`` wording finding can become advisory after a
+bounded rewrite; every other honesty and citation failure stays blocking.
 It also permits explicit quantitative placeholders such as ``XX%`` or ``XXx`` in hooks
 so the human reviewer can replace them with a real internal metric before publishing.
 """
@@ -10,20 +11,21 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from . import quality_cli, workflow
+from . import acceptance_policy, quality_cli, workflow
 
 _INSTALLED = False
 _ORIGINAL_PARSE_ATTEMPT_OUTPUT = quality_cli.parse_attempt_output
 _ORIGINAL_BUILD_WRITER_PROMPT = workflow.build_writer_prompt
 
-ADVISORY_GATES = frozenset({"honesty", "citation"})
+ADVISORY_GATES = acceptance_policy.ADVISORY_FACTUAL_WORDING_GATES
 
 
 _PLACEHOLDER_GUIDANCE = """
 SOCIAL_MEDIA_HUMAN_REVIEW_POLICY
 This output is for a human-reviewed social-media draft, not automatic publication.
-Strong qualitative and rhetorical emphasis is allowed. Preserve honesty and citation
-diagnostics for human review, but never treat a HUMAN_REVIEW label as a gate pass.
+Strong qualitative and rhetorical emphasis is allowed. Rewrite wording that extends
+beyond the supplied evidence. If the exact unsupported-factual-marker remains after the
+bounded repair attempt, preserve it as a visible advisory; do not invent a replacement fact.
 Do not invent a precise numeric result. When a quantitative hook would materially improve
 attention but the supplied evidence does not contain the exact number, use an explicit
 placeholder such as `XX%`, `XXx`, `XX minutes`, or `XX days` instead. The human reviewer
@@ -51,14 +53,21 @@ def _build_writer_prompt_social(
 
 def _soften_candidate(candidate: quality_cli.CandidateResult) -> quality_cli.CandidateResult:
     gates = dict(candidate.gates)
-    softened = False
+    can_be_advisory = acceptance_policy.hard_candidate_gates_pass(
+        gates,
+        passes_required_gates=candidate.passes_required_gates,
+        reason_codes=candidate.gate_reasons,
+        allow_factual_wording_advisory=True,
+    ) and bool(
+        acceptance_policy.factual_wording_advisories(
+            gates, reason_codes=candidate.gate_reasons
+        )
+    )
+    if not can_be_advisory:
+        return candidate
     for name in ADVISORY_GATES:
         if gates.get(name) == "FAIL":
             gates[name] = "HUMAN_REVIEW"
-            softened = True
-
-    if not softened:
-        return candidate
 
     return quality_cli.CandidateResult(
         candidate_id=candidate.candidate_id,
@@ -88,6 +97,24 @@ def soften_gate_result(gate_result: Mapping[str, object]) -> dict[str, object]:
     if not isinstance(raw_gates, Mapping):
         return softened
     gates = {str(name): str(status) for name, status in raw_gates.items()}
+    raw_reasons = gate_result.get("reason_codes", ())
+    reasons = (
+        tuple(str(reason) for reason in raw_reasons)
+        if isinstance(raw_reasons, Sequence)
+        and not isinstance(raw_reasons, (str, bytes))
+        else ()
+    )
+    if not acceptance_policy.hard_candidate_gates_pass(
+        gates,
+        passes_required_gates=(
+            gate_result.get("passes_required_gates")
+            if type(gate_result.get("passes_required_gates")) is bool
+            else None
+        ),
+        reason_codes=reasons,
+        allow_factual_wording_advisory=True,
+    ):
+        return softened
     for name in ADVISORY_GATES:
         if gates.get(name) == "FAIL":
             gates[name] = "HUMAN_REVIEW"

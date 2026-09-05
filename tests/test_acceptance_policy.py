@@ -50,6 +50,48 @@ class AcceptancePolicyTests(unittest.TestCase):
             )
         )
 
+    def test_unsupported_factual_wording_is_advisory_only_after_rewrite(self) -> None:
+        gates = {
+            "authority_conversion": "PASS",
+            "proof": "NOT_REQUIRED",
+            "honesty": "FAIL",
+            "citation": "FAIL",
+            "relevance": "PASS",
+        }
+        reasons = ("unsupported-factual-marker",)
+        self.assertFalse(
+            acceptance_policy.hard_candidate_gates_pass(
+                gates,
+                passes_required_gates=False,
+                reason_codes=reasons,
+            )
+        )
+        self.assertTrue(
+            acceptance_policy.hard_candidate_gates_pass(
+                gates,
+                passes_required_gates=False,
+                reason_codes=reasons,
+                allow_factual_wording_advisory=True,
+            )
+        )
+
+    def test_mixed_factual_failure_never_becomes_advisory(self) -> None:
+        gates = {
+            "authority_conversion": "PASS",
+            "proof": "NOT_REQUIRED",
+            "honesty": "FAIL",
+            "citation": "FAIL",
+            "relevance": "PASS",
+        }
+        self.assertFalse(
+            acceptance_policy.hard_candidate_gates_pass(
+                gates,
+                passes_required_gates=False,
+                reason_codes=("unsupported-factual-marker", "untraceable-incident"),
+                allow_factual_wording_advisory=True,
+            )
+        )
+
     def test_record_names_every_axis_shortfall_and_total_deficit(self) -> None:
         decision = acceptance_policy.acceptance_decision(
             scorecard(3, 2, 2, 3, 3), hard_gates_pass=True

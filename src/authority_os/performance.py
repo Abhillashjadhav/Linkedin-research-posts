@@ -442,7 +442,7 @@ def _validate_package_context(
             gate["passes_required_gates"] is not computed_pass
         ):
             raise workflow.WorkflowError("The performance package gate results are invalid.")
-        gates_by_id[gate_id] = computed_pass
+        gates_by_id[gate_id] = gate
     if set(gates_by_id) != set(ranking):
         raise workflow.WorkflowError("The performance package gate results are invalid.")
     scorecards_by_id = {
@@ -453,7 +453,13 @@ def _validate_package_context(
         for ranked_id in ranking
         if acceptance_policy.scorecard_is_acceptable(
             scorecards_by_id[ranked_id],
-            hard_gates_pass=gates_by_id[ranked_id],
+            hard_gates_pass=acceptance_policy.hard_candidate_gates_pass(
+                gates_by_id[ranked_id]["gates"],
+                passes_required_gates=bool(
+                    gates_by_id[ranked_id]["passes_required_gates"]
+                ),
+                allow_factual_wording_advisory=True,
+            ),
         )
     ]
     if eligible != computed_eligible:

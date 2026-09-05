@@ -13,11 +13,13 @@ class SocialMediaGatePolicyTests(unittest.TestCase):
                 "candidate_id": "candidate-1",
                 "gates": {
                     "authority_conversion": "PASS",
+                    "proof": "NOT_REQUIRED",
                     "honesty": "FAIL",
                     "citation": "FAIL",
                     "relevance": "PASS",
                 },
                 "passes_required_gates": False,
+                "reason_codes": ["unsupported-factual-marker"],
             }
         )
         self.assertEqual(softened["gates"]["honesty"], "HUMAN_REVIEW")  # type: ignore[index]
@@ -29,9 +31,13 @@ class SocialMediaGatePolicyTests(unittest.TestCase):
             {
                 "gates": {"authority_conversion": "FAIL", "honesty": "FAIL"},
                 "passes_required_gates": False,
+                "reason_codes": [
+                    "product-decision-not-reflected",
+                    "unsupported-factual-marker",
+                ],
             }
         )
-        self.assertEqual(softened["gates"]["honesty"], "HUMAN_REVIEW")  # type: ignore[index]
+        self.assertEqual(softened["gates"]["honesty"], "FAIL")  # type: ignore[index]
         self.assertIs(softened["passes_required_gates"], False)
 
     def test_honesty_and_citation_failures_become_human_review(self) -> None:
@@ -86,8 +92,8 @@ class SocialMediaGatePolicyTests(unittest.TestCase):
         )
         softened = social_media_gate_policy._soften_candidate(candidate)  # type: ignore[attr-defined]
         self.assertEqual(softened.gates["authority_conversion"], "FAIL")
-        self.assertEqual(softened.gates["honesty"], "HUMAN_REVIEW")
-        self.assertEqual(softened.gates["citation"], "HUMAN_REVIEW")
+        self.assertEqual(softened.gates["honesty"], "FAIL")
+        self.assertEqual(softened.gates["citation"], "FAIL")
         self.assertFalse(softened.passes_required_gates)
 
     def test_writer_policy_allows_explicit_xx_placeholders_without_inventing_numbers(self) -> None:
