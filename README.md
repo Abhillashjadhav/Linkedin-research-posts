@@ -94,8 +94,8 @@ exact timestamp; otherwise the command fails closed rather than guessing.
 A live invocation runs at most four scored iterations. Writing acceptance has one rule:
 
 - effective Critic score of at least **18/25**;
-- hook and voice scores of at least **4/5**; middle escalation, earned closer,
-  and specificity/source quality remain scored and may trade off inside the total.
+- hook and voice scores of at least **4/5**;
+- middle escalation, earned closer, and specificity/source quality scores of at least **3/5**.
 
 Authority, proof, honesty, citation, relevance, resonance, hook-register and anti-slop checks are editorial advisories. Their raw findings remain visible; they cannot veto score acceptance or discard an improving edit. Passing text is returned immediately, except that frozen repair may attempt one automatic rewrite for unsupported factual wording. On exhaustion, the best draft is delivered with unmet score targets recorded honestly. Successful artifact delivery returns exit code 0 even when writing scores remain below target; missing inputs, malformed model output, authorization and secure-file errors still fail.
 
@@ -255,9 +255,12 @@ At most three bounded edits follow, for four scored iterations total:
   --repair
 ```
 
-Every retained edit keeps the same candidate ID, angle, and claim IDs. Only the overall
-total must not decrease; individual axes may trade off. An edit must improve a score or
-reduce a finding. Hook and voice remain final acceptance targets. Editorial findings
+Every retained edit keeps the same candidate ID, angle, and claim IDs. Repair targets
+come first: hook and voice 4/5; middle, closer and specificity 3/5. Edit below-target
+sections using the exact Critic anchors and preserve passing sections. A reduced axis
+deficit can outweigh a lower total when other axes remain at or above their targets.
+Once all targets are met, optimize the overall total to at least 18/25 and stop.
+Repeated editorial findings never terminate the four-cycle budget early. Editorial findings
 stay advisory, including after the automatic factual rewrite. A rejected edit never
 replaces the retained best candidate. If targets remain unmet after repair, the draft is
 delivered with `COMPLETED_WITH_WARNINGS`, not a false score pass or a workflow failure.

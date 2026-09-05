@@ -126,6 +126,25 @@ def _raw_score(values: tuple[int, int, int, int, int]) -> list[dict[str, object]
 
 
 class EvalPackageTests(unittest.TestCase):
+    def test_hook_target_repair_beats_higher_total_with_stalled_hook(self) -> None:
+        before = _evaluated_result((3, 5, 5, 5, 4))
+        after = _evaluated_result((4, 4, 4, 5, 4))
+        self.assertEqual(eval_package._monotonic_edit_decision(before, after), (True, []))
+        self.assertEqual(after["acceptance"]["status"], "PASS")
+        plan = eval_package._repair_feedback(2, before)["axis_repair_plan"]
+        self.assertEqual(plan["focus_axes"], ["hook_strength"])
+        self.assertEqual(plan["phase"], "axis_targets")
+        self.assertIn("first two lines", plan["edits"][0]["target_anchor"])
+        self.assertEqual(set(plan["preserve_axes"]), set(workflow.CRITIC_AXES) - {"hook_strength"})
+        self.assertEqual(eval_package._repair_feedback(3, after)["axis_repair_plan"]["focus_axes"], [])
+
+    def test_better_passing_axes_do_not_mask_stalled_hook(self) -> None:
+        before = _evaluated_result((3, 4, 4, 4, 4))
+        polished = _evaluated_result((3, 5, 5, 5, 4))
+        accepted, reasons = eval_package._monotonic_edit_decision(before, polished)
+        self.assertFalse(accepted)
+        self.assertIn("unmet-axis-targets-did-not-improve", reasons)
+
     def test_screenshot_candidate_advances_despite_new_editorial_findings(self) -> None:
         previous = _evaluated_result((3, 5, 5, 5, 4))
         proposed = _evaluated_result((5, 4, 5, 4, 4), hard_gates_pass=False)
@@ -165,7 +184,7 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(captured["results"][0]["candidate"]["text"], context["selected_candidates"][0]["text"])
 
     def test_total_only_shortfall_is_named_in_progressive_feedback(self) -> None:
-        result = _evaluated_result((4, 2, 3, 4, 4))
+        result = _evaluated_result((4, 3, 3, 3, 4))
 
         feedback = eval_package._repair_feedback(2, result)
 
@@ -174,14 +193,14 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(feedback["total_shortfall"], 1)
         self.assertEqual(feedback["axis_shortfalls"], {})
 
-    def test_higher_total_can_trade_off_hook_or_voice_during_repair(self) -> None:
+    def test_higher_total_cannot_lose_a_met_axis_target(self) -> None:
         previous = _evaluated_result((4, 4, 4, 4, 4))
         for axes in ((3, 5, 5, 5, 4), (4, 5, 5, 5, 3)):
             with self.subTest(axes=axes):
                 proposed = _evaluated_result(axes)
                 accepted, reasons = eval_package._monotonic_edit_decision(previous, proposed)
-                self.assertTrue(accepted)
-                self.assertEqual(reasons, [])
+                self.assertFalse(accepted)
+                self.assertTrue(reasons[0].startswith("axis-target-regressed:"))
                 self.assertEqual(proposed["acceptance"]["status"], "FAIL")
 
     def test_equal_total_can_advance_when_a_mandatory_shortfall_or_gate_improves(self) -> None:
@@ -519,7 +538,7 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(len(editor_inputs), 3)
         self.assertEqual(editor_inputs[0], _candidate(2)["text"])
         self.assertEqual(editor_inputs[1], "progressive revision 1")
-        self.assertEqual(editor_inputs[2], "progressive revision 2")
+        self.assertEqual(editor_inputs[2], "progressive revision 1")
         history = captured["repair_history"]
         self.assertEqual(len(history), 4)
         self.assertTrue(history[1]["accepted_as_next_seed"])
@@ -527,7 +546,7 @@ class EvalPackageTests(unittest.TestCase):
             "monotonic-improvement",
             history[1]["editorial_decision_reasons"],
         )
-        self.assertTrue(history[2]["accepted_as_next_seed"])
+        self.assertFalse(history[2]["accepted_as_next_seed"])
         self.assertTrue(history[3]["accepted_as_next_seed"])
         final = captured["results"][0]
         self.assertEqual(final["candidate_id"], "candidate-2")

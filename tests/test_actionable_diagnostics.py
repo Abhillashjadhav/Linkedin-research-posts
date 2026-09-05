@@ -74,7 +74,7 @@ class ActionableDiagnosticsTests(unittest.TestCase):
         self.assertIn("repository demonstrates one bounded path", spans[0].lower())
         self.assertIn("repair_action", diagnostics[0])
 
-    def test_same_signature_twice_without_progress_stops_early(self) -> None:
+    def test_same_signature_never_stops_bounded_repair(self) -> None:
         base_feedback = {
             "repair_seed": {
                 "candidate_id": "candidate-1",
@@ -93,8 +93,48 @@ class ActionableDiagnosticsTests(unittest.TestCase):
         ):
             first = actionable_diagnostics._quality_feedback(attempt(21), 1)  # type: ignore[attr-defined]
             self.assertEqual(first["repeated_failure_signature_count"], 1)
-            with self.assertRaisesRegex(workflow.WorkflowError, "stopped early"):
-                actionable_diagnostics._quality_feedback(attempt(21), 2)  # type: ignore[attr-defined]
+            for cycle in (2, 3, 4):
+                repeated = actionable_diagnostics._quality_feedback(attempt(21), cycle)
+                self.assertEqual(repeated["repeated_failure_signature_count"], cycle)
+                self.assertIn("stalled_repair", repeated)
+
+    def test_live_loop_repeated_findings_reaches_later_hook_repair_or_delivers(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+        from dataclasses import replace
+        from types import SimpleNamespace
+
+        stalled = replace(candidate(22), axes={
+            "hook_strength": 3, "middle_escalation": 5, "earned_closer": 5,
+            "specificity_and_source_quality": 5, "voice_fidelity": 4,
+        })
+        repaired = replace(stalled, text="A materially different opening.\nIts supported reader consequence.",
+                           axes={**stalled.axes, "hook_strength": 4, "middle_escalation": 4,
+                                 "earned_closer": 4}, raw_total=21, effective_total=21)
+        for succeeds in (True, False):
+            rows = [stalled, stalled, repaired] if succeeds else [stalled] * 4
+            attempts = [replace(attempt(), candidates=(item,)) for item in rows]
+            output = io.StringIO()
+            with (
+                patch.object(quality_cli, "_run_attempt", side_effect=attempts) as run,
+                patch.object(quality_cli, "_qualifying_candidates", quality_optimizer._qualifying_candidates),
+                patch.object(quality_cli, "_quality_feedback", actionable_diagnostics._quality_feedback),
+                patch.object(quality_optimizer.best_effort, "write",
+                             return_value=workflow.REPO_ROOT / "data/private/best-effort-post.md") as write,
+                patch.object(quality_optimizer.v1_completion, "record_decision") as record,
+                redirect_stdout(output),
+            ):
+                result = quality_optimizer._command_draft(SimpleNamespace(dry_run=False, package=False, run_spec=None))
+            self.assertEqual(result, 0)
+            self.assertEqual(run.call_count, 3 if succeeds else 4)
+            self.assertNotIn("stopped early", output.getvalue())
+            if succeeds:
+                self.assertIn("Quality search passed on cycle 3/4", output.getvalue())
+                self.assertIn("score=21/25", output.getvalue())
+                write.assert_not_called()
+            else:
+                write.assert_called_once()
+                self.assertEqual(record.call_args.args[0]["observed_status"], "COMPLETED_WITH_WARNINGS")
 
     def test_score_improvement_resets_repeat_counter(self) -> None:
         base_feedback = {"repair_seed": {"candidate_id": "candidate-1", "gate_reasons": []}}

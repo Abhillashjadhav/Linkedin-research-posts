@@ -101,7 +101,7 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(quality_optimizer.MIN_HOOK_SCORE, 4)
         self.assertEqual(
             dict(quality_optimizer.AXIS_FLOORS),
-            {"hook_strength": 4, "voice_fidelity": 4},
+            {"hook_strength": 4, "middle_escalation": 3, "earned_closer": 3, "specificity_and_source_quality": 3, "voice_fidelity": 4},
         )
         self.assertEqual(quality_optimizer.MIN_VOICE_FIDELITY_SCORE, 4)
 
@@ -434,6 +434,19 @@ class RepairStateTests(unittest.TestCase):
             "unsupported-factual-marker", advisory_honesty["advisory_codes"]
         )
 
+    def test_seed_selection_repairs_hook_before_optimizing_total(self) -> None:
+        from dataclasses import replace
+        stalled = candidate(22, {"hook_strength": 3, "middle_escalation": 5,
+                                 "earned_closer": 5, "specificity_and_source_quality": 5,
+                                 "voice_fidelity": 4})
+        repaired = replace(stalled, text="Repaired hook.", effective_total=21, raw_total=21,
+                           axes={**stalled.axes, "hook_strength": 4, "middle_escalation": 4, "earned_closer": 4})
+        state = quality_optimizer.RepairState()
+        state.observe(attempt(stalled))
+        self.assertEqual(state.observe(attempt(repaired)), repaired)
+        fresh = quality_optimizer.RepairState()
+        self.assertEqual(fresh.observe(replace(attempt(stalled), candidates=(stalled, repaired))), repaired)
+
     def test_best_so_far_survives_a_later_score_regression(self) -> None:
         state = quality_optimizer.RepairState()
         first = candidate(
@@ -464,7 +477,7 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(retained.text, "Keep this stronger repair seed.")
         self.assertEqual(state.cycle_best_scores, [18, 16])
 
-    def test_higher_total_can_trade_off_voice_during_repair(self) -> None:
+    def test_higher_total_cannot_lose_voice_target(self) -> None:
         state = quality_optimizer.RepairState()
         voice_pass = candidate(
             21,
@@ -490,10 +503,10 @@ class RepairStateTests(unittest.TestCase):
         )
         state.observe(attempt(voice_pass))
         retained = state.observe(attempt(voice_fail))
-        self.assertEqual(retained.text, voice_fail.text)
-        self.assertEqual(retained.axes["voice_fidelity"], 3)
+        self.assertEqual(retained.text, voice_pass.text)
+        self.assertEqual(retained.axes["voice_fidelity"], 4)
 
-    def test_higher_total_can_trade_off_hook_during_repair(self) -> None:
+    def test_higher_total_cannot_lose_hook_target(self) -> None:
         state = quality_optimizer.RepairState()
         hook_pass = candidate(
             21,
@@ -521,8 +534,8 @@ class RepairStateTests(unittest.TestCase):
         state.observe(attempt(hook_pass))
         retained = state.observe(attempt(hook_fail))
 
-        self.assertEqual(retained.text, hook_fail.text)
-        self.assertEqual(retained.axes["hook_strength"], 3)
+        self.assertEqual(retained.text, hook_pass.text)
+        self.assertEqual(retained.axes["hook_strength"], 4)
 
     def test_feedback_carries_full_best_text_scores_and_gate_failures(self) -> None:
         seed = candidate(
@@ -549,17 +562,17 @@ class RepairStateTests(unittest.TestCase):
         self.assertEqual(repair_seed["weak_axes"], {"voice_fidelity": 3})  # type: ignore[index]
         self.assertEqual(
             repair_seed["passing_axes"],  # type: ignore[index]
-            {"hook_strength": 5},
+            {"hook_strength": 5, "middle_escalation": 4, "earned_closer": 3, "specificity_and_source_quality": 3},
         )
         self.assertEqual(
             repair_seed["preserve_axes"],  # type: ignore[index]
-            ["hook_strength"],
+            ["hook_strength", "middle_escalation", "earned_closer", "specificity_and_source_quality"],
         )
         self.assertNotIn("quality_target", feedback)
         self.assertEqual(feedback["acceptable_floor"], 18)
         self.assertEqual(
             feedback["axis_floors"],
-            {"hook_strength": 4, "voice_fidelity": 4},
+            {"hook_strength": 4, "middle_escalation": 3, "earned_closer": 3, "specificity_and_source_quality": 3, "voice_fidelity": 4},
         )
 
     def test_feedback_attaches_exact_anti_slop_findings_to_retained_seed(self) -> None:
@@ -644,7 +657,7 @@ class RepairPromptTests(unittest.TestCase):
         feedback = {
             "repair_seed": {
                 "text": "This candidate already sounds human.",
-                "critic_axes": {"hook_strength": 4, "voice_fidelity": 4},
+                "critic_axes": {"hook_strength": 4, "middle_escalation": 3, "earned_closer": 3, "specificity_and_source_quality": 3, "voice_fidelity": 4},
             }
         }
         with patch.object(workflow, "build_writer_prompt", lambda *a, **k: "BASE"):

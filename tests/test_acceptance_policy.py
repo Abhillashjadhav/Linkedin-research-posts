@@ -30,7 +30,7 @@ class AcceptancePolicyTests(unittest.TestCase):
         cases = (
             ((5, 4, 4, 4, 4), True),
             ((5, 3, 3, 3, 4), True),
-            ((4, 1, 4, 5, 4), True),
+            ((4, 1, 4, 5, 4), False),
             ((5, 4, 4, 4, 2), False),
             ((4, 4, 4, 4, 2), False),
         )
@@ -110,7 +110,7 @@ class AcceptancePolicyTests(unittest.TestCase):
         self.assertEqual(decision["total_shortfall"], 5)
         self.assertEqual(
             set(decision["axis_shortfalls"]),
-            {"hook_strength", "voice_fidelity"},
+            {"hook_strength", "middle_escalation", "earned_closer", "voice_fidelity"},
         )
         self.assertEqual(
             decision["axis_shortfalls"]["voice_fidelity"]["shortfall"], 1

@@ -11,12 +11,14 @@ ACCEPTABLE_QUALITY_FLOOR = 18
 MIN_HOOK_SCORE = 4
 MIN_VOICE_FIDELITY_SCORE = 4
 
-# All five axes remain scored and contribute to the 18/25 total. Only hook and
-# voice have independent floors; the other three axes may trade off inside the
-# total. Editorial findings are advisory and never add a second acceptance bar.
+# Repair reaches every axis target before optimizing the overall total.
+# Editorial findings remain advisory and never block draft delivery.
 AXIS_FLOORS: Mapping[str, int] = MappingProxyType(
     {
         "hook_strength": MIN_HOOK_SCORE,
+        "middle_escalation": 3,
+        "earned_closer": 3,
+        "specificity_and_source_quality": 3,
         "voice_fidelity": MIN_VOICE_FIDELITY_SCORE,
     }
 )
@@ -24,7 +26,7 @@ AXIS_FLOORS: Mapping[str, int] = MappingProxyType(
 HARD_GATES = frozenset({"honesty", "citation", "proof", "privacy", "relevance"})
 ADVISORY_FACTUAL_WORDING_CODE = "unsupported-factual-marker"
 ADVISORY_FACTUAL_WORDING_GATES = frozenset({"honesty", "citation"})
-ACCEPTANCE_CONTRACT_VERSION = "five-axis-v5"
+ACCEPTANCE_CONTRACT_VERSION = "five-axis-v6"
 
 
 def axis_shortfalls(axes: Mapping[str, object]) -> dict[str, dict[str, int]]:
@@ -41,6 +43,59 @@ def axis_shortfalls(axes: Mapping[str, object]) -> dict[str, dict[str, int]]:
                 "shortfall": required - observed,
             }
     return shortfalls
+
+
+def repair_score_decision(
+    previous: Mapping[str, object], proposed: Mapping[str, object]
+) -> tuple[bool, list[str]]:
+    """Reach axis targets first, then optimize total without losing a target."""
+    before = axis_shortfalls(previous)
+    after = axis_shortfalls(proposed)
+    worsened = [
+        axis for axis, item in after.items()
+        if item["shortfall"] > before.get(axis, {}).get("shortfall", 0)
+    ]
+    if worsened:
+        return False, [f"axis-target-regressed:{axis}" for axis in worsened]
+    if before:
+        if sum(x["shortfall"] for x in after.values()) < sum(x["shortfall"] for x in before.values()):
+            return True, []
+        return False, ["unmet-axis-targets-did-not-improve"]
+    old_total = int(previous["effective_total"])
+    new_total = int(proposed["effective_total"])
+    if new_total < old_total:
+        return False, [f"total-regressed-{old_total}-to-{new_total}"]
+    if new_total > old_total:
+        return True, []
+    return False, ["no-score-improvement"]
+
+
+def axis_repair_plan(axes: Mapping[str, object]) -> dict[str, object]:
+    """Give both live Writer and frozen Editor concrete, bounded edit targets."""
+    shortfalls = axis_shortfalls(axes)
+    actions = {
+        "hook_strength": "Replace the first two lines with a materially different opening: a supported concrete event or observation and its immediate reader consequence. Avoid a topic summary, generic question, or synonym-only rewrite. Preserve the passing body and closer.",
+        "middle_escalation": "Edit the middle to explain the supported mechanism and its consequence; remove repetition. Preserve the passing opening and closer.",
+        "earned_closer": "Edit the ending into a specific judgment or decision earned by this post. Preserve the passing opening and body; avoid a generic engagement question.",
+        "specificity_and_source_quality": "Replace vague claims with precise details already supported by the supplied evidence, or narrow the claim. Never invent a fact or source.",
+        "voice_fidelity": "Edit only the passages with generic, consultant, or machine-like language into plain conversational judgment using the canonical voice rubric. Never invent experience or emotion.",
+    }
+    return {
+        "phase": "axis_targets" if shortfalls else "overall_total",
+        "targets": dict(AXIS_FLOORS),
+        "focus_axes": list(shortfalls),
+        "preserve_axes": [axis for axis in AXIS_FLOORS if axis not in shortfalls],
+        "edits": [
+            {"axis": axis, **deficit, "action": actions[axis]}
+            for axis, deficit in shortfalls.items()
+        ],
+        "instruction": (
+            "Repair only below-target axes first. Do not spend an edit pushing a passing axis toward 5. "
+            "Keep passing sections unchanged unless a focused repair needs a minimal connecting edit. "
+            "A reduced axis deficit takes priority over total; passing scores may trade down to their targets. "
+            "Once every axis reaches its target, improve the overall total only if below 18, then stop."
+        ),
+    }
 
 
 def _gate_status_and_reasons(

@@ -1,10 +1,9 @@
-"""V1-only actionable failure diagnostics and repeated-failure fast stop.
+"""V1-only actionable failure diagnostics and non-blocking repeated-failure feedback.
 
 The legacy gate envelope flattens PASS, NOT_REQUIRED, and FAIL reason strings into one
 list. That made the repair loop treat success markers as failures. This overlay keeps
-release gates authoritative while projecting only failure reasons into repair feedback,
-adds sentence-level repair targets for unsupported-claim failures, and stops a live run
-when the same best-candidate failure signature repeats twice without score progress.
+raw editorial findings visible while projecting only failure reasons into repair feedback,
+adds sentence-level repair targets for unsupported-claim failures, and changes repair guidance when a failure repeats. The bounded loop owns exhaustion.
 """
 
 from __future__ import annotations
@@ -105,6 +104,10 @@ def _quality_feedback(attempt: quality_cli.AttemptResult, cycle: int) -> dict[st
 
     feedback = dict(_ORIGINAL_QUALITY_FEEDBACK(attempt, cycle))
     seed = max(attempt.candidates, key=quality_optimizer._candidate_rank)  # type: ignore[attr-defined]
+    repair_seed = feedback.get("repair_seed")
+    retained = quality_optimizer._state().best
+    if retained is not None and isinstance(repair_seed, Mapping) and repair_seed.get("text") == retained.text:
+        seed = retained
     diagnostics = _failed_reasons(seed)
     signature = _signature(seed)
     score = seed.effective_total
@@ -124,9 +127,9 @@ def _quality_feedback(attempt: quality_cli.AttemptResult, cycle: int) -> dict[st
     feedback["repeated_failure_signature_count"] = _REPEAT_COUNT
 
     if _REPEAT_COUNT >= 2:
-        raise workflow.WorkflowError(
-            "Quality repair stopped early: the same failed-gate signature repeated twice without score improvement. "
-            "Inspect actionable gate diagnostics before another model run."
+        feedback["stalled_repair"] = (
+            "Repeated findings are advisory. Use a materially different targeted edit; "
+            "continue within the four-cycle budget and deliver the best draft on exhaustion."
         )
     return feedback
 

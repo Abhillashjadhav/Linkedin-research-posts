@@ -664,6 +664,7 @@ def _repair_feedback(iteration: int, result: Mapping[str, object]) -> dict[str, 
         ),
         "axis_shortfalls": dict(acceptance.get("axis_shortfalls", {})),
         "passing_axes_to_preserve": passing_axes,
+        "axis_repair_plan": workflow.build_axis_repair_plan(scorecard),
         "failed_gates": _failed_gate_details(result),
         "factual_support_diagnostics": list(
             result.get("factual_support_diagnostics", [])  # type: ignore[arg-type]
@@ -675,8 +676,9 @@ def _repair_feedback(iteration: int, result: Mapping[str, object]) -> dict[str, 
             "Edit only the named failures. Keep the candidate ID, angle, claim IDs, "
             "selected thesis, evidence boundary, and passing material. Do not invent facts, "
             "experience, emotion, sources, scale, causality, or impact. The next revision is "
-            "eligible to become the new seed only if its overall total does not regress. Hook "
-            "and voice remain final acceptance targets, not iteration vetoes. Editorial findings are "
+            "eligible to become the new seed when it reduces the below-target axis deficits first. "
+            "Follow axis_repair_plan; do not polish already-passing sections. After all targets are met, "
+            "the overall total must not regress. Editorial findings are "
             "advisory feedback, never reasons to discard score progress. Individual "
             "axis scores may trade off inside the overall total."
         ),
@@ -716,12 +718,11 @@ def _monotonic_edit_decision(
     proposed_score = proposed.get("scorecard")
     if not isinstance(previous_score, Mapping) or not isinstance(proposed_score, Mapping):
         raise workflow.WorkflowError("Progressive editor score comparison is malformed.")
-    regressions: list[str] = []
+    progresses, reasons = acceptance_policy.repair_score_decision(previous_score, proposed_score)
+    if progresses or reasons != ["no-score-improvement"]:
+        return progresses, reasons
     previous_total = int(previous_score["effective_total"])
     proposed_total = int(proposed_score["effective_total"])
-    if proposed_total < previous_total:
-        regressions.append(f"total-regressed-{previous_total}-to-{proposed_total}")
-
     previous_gate_result = previous.get("gates")
     proposed_gate_result = proposed.get("gates")
     if not isinstance(previous_gate_result, Mapping) or not isinstance(
@@ -734,8 +735,6 @@ def _monotonic_edit_decision(
         raise workflow.WorkflowError("Progressive editor gate comparison is incomplete.")
     previous_slop = _finding_keys(previous.get("anti_slop_findings"))
     proposed_slop = _finding_keys(proposed.get("anti_slop_findings"))
-    if regressions:
-        return False, regressions
 
     previous_failed = len(_failed_gate_details(previous))
     proposed_failed = len(_failed_gate_details(proposed))

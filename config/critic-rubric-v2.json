@@ -64,7 +64,7 @@
     },
     "specificity_and_source_quality": {
       "type": "outcome_gate",
-      "floor": null,
+      "floor": 3,
       "1": "The post is largely abstract or generic, and consequential factual claims are difficult to inspect or depend on weak, social-only, title-only, or unsupported evidence.",
       "2": "Some concrete details exist, but the central situation or claim remains weakly inspectable, generic, or only partially supported by the supplied evidence.",
       "3": "The reader can picture the core situation and inspect the main claim through supplied evidence, but mechanism detail, source quality, precision, or translation to an understandable consequence is incomplete.",
@@ -73,7 +73,7 @@
     },
     "middle_escalation": {
       "type": "outcome_gate",
-      "floor": null,
+      "floor": 3,
       "1": "The body is mostly a list, specification, architecture walkthrough, summary, repetition, or disconnected observations; understanding does not deepen and technical detail is not translated into why it matters.",
       "2": "There is some useful detail, but the body is flat, jargon-heavy, or repetitive and adds little understandable mechanism, trade-off, consequence, or decision depth.",
       "3": "The body forms a coherent explanation and adds at least one meaningful mechanism, implication, or trade-off, but progression is uneven or some technical detail still makes the reader work too hard.",
@@ -82,7 +82,7 @@
     },
     "earned_closer": {
       "type": "outcome_gate",
-      "floor": null,
+      "floor": 3,
       "note": "Scored and recorded, but not independently gated. It contributes to the overall 18/25 total and may trade off with the other non-mandatory axes. Across 26 clean closers the best rule reached kappa 0.20 against outcomes, and the owner's own closer scores ran inverted: 3.73 on posts that flopped against 3.33 on posts that landed.",
       "1": "The ending is a generic CTA, generic question, slogan, or unrelated kicker that is not earned by the body.",
       "2": "The ending mostly restates the post or uses familiar engagement bait such as a generic invitation for opinions.",
@@ -94,7 +94,10 @@
   "release_rule": {
     "hard_floors": {
       "voice_fidelity": 4,
-      "hook_strength": 4
+      "hook_strength": 4,
+      "specificity_and_source_quality": 3,
+      "middle_escalation": 3,
+      "earned_closer": 3
     },
     "scored": [
       "hook_strength",
@@ -103,6 +106,6 @@
       "specificity_and_source_quality",
       "voice_fidelity"
     ],
-    "note": "All five axes are scored and contribute to the 18/25 total. Only hook strength and voice fidelity have independent 4/5 floors. Middle escalation, earned closer, and specificity/source quality may trade off inside the total. Hard factual gates remain separate and cannot be waived by score."
+    "note": "Writing acceptance requires total >=18, hook and voice >=4, and middle, closer and specificity >=3. Repair below-target axes first, then total; do not polish passing axes. Editorial findings remain advisory and never prevent best-draft delivery."
   }
 }
