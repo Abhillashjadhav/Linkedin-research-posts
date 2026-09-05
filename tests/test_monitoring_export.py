@@ -62,11 +62,13 @@ class MonitoringExportTests(unittest.TestCase):
             {item["definition_id"] for item in case["checks"]},
             {
                 "research-trust",
+                "claim-body-support",
                 "atomic-value-novelty",
                 "critic-anchor-integrity",
                 "critic-reproducibility",
                 "solution-plausibility",
                 "reader-attention",
+                "tool-trajectory",
             },
         )
         by_definition = {item["definition_id"]: item for item in case["checks"]}

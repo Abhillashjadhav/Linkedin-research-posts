@@ -13,19 +13,21 @@ import json
 import os
 import re
 import stat
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping
 
 from . import v1_completion, workflow
 
 CONTRACTS = {
     "research_trust": "research-trust",
+    "claim_body_support": "claim-body-support",
     "atomic_value_novelty": "atomic-value-novelty",
     "critic_anchor_integrity": "critic-anchor-integrity",
     "critic_reproducibility": "critic-reproducibility",
     "solution_plausibility": "solution-plausibility",
     "reader_attention": "reader-attention",
+    "tool_trajectory": "tool-trajectory",
 }
 CASE_TYPE = "linkedin-run"
 CONTEXT_FIELDS = {
@@ -48,6 +50,9 @@ CONTEXT_FIELDS = {
     "since",
     "through",
 }
+
+
+OPTIONAL_CONTEXT_FIELDS = {"case_id", "input_fingerprint", "comparison_sha256"}
 
 
 def _digest(data: bytes) -> str:
@@ -76,7 +81,9 @@ def _timestamp(value: object, *, field: str) -> datetime:
             f"Monitoring context {field} must be an ISO timestamp."
         ) from exc
     if parsed.tzinfo is None:
-        raise workflow.WorkflowError(f"Monitoring context {field} must include a timezone.")
+        raise workflow.WorkflowError(
+            f"Monitoring context {field} must include a timezone."
+        )
     return parsed.astimezone(timezone.utc)
 
 
@@ -84,11 +91,19 @@ def load_context(path: Path) -> dict[str, str]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise workflow.WorkflowError("Monitoring context is unavailable or invalid.") from exc
-    if not isinstance(payload, dict) or set(payload) != CONTEXT_FIELDS:
+        raise workflow.WorkflowError(
+            "Monitoring context is unavailable or invalid."
+        ) from exc
+    if (
+        not isinstance(payload, dict)
+        or not CONTEXT_FIELDS <= set(payload)
+        or set(payload) - CONTEXT_FIELDS - OPTIONAL_CONTEXT_FIELDS
+    ):
         raise workflow.WorkflowError("Monitoring context has an invalid schema.")
     if not all(isinstance(value, str) and value.strip() for value in payload.values()):
-        raise workflow.WorkflowError("Monitoring context values must be non-empty text.")
+        raise workflow.WorkflowError(
+            "Monitoring context values must be non-empty text."
+        )
     for key, value in payload.items():
         if key in {"observed_at", "since", "through"}:
             continue
@@ -96,17 +111,80 @@ def load_context(path: Path) -> dict[str, str]:
             raise workflow.WorkflowError(
                 f"Monitoring context {key} must be a bounded public-safe label."
             )
+    if ("case_id" in payload) != ("input_fingerprint" in payload):
+        raise workflow.WorkflowError(
+            "Comparable cases require both case_id and input_fingerprint."
+        )
+    for field in ("input_fingerprint", "comparison_sha256"):
+        if (
+            field in payload
+            and re.fullmatch(r"sha256:[0-9a-f]{64}", payload[field]) is None
+        ):
+            raise workflow.WorkflowError(
+                f"Monitoring context {field} must be a SHA-256 digest."
+            )
     _timestamp(payload["observed_at"], field="observed_at")
     since = _timestamp(payload["since"], field="since")
     through = _timestamp(payload["through"], field="through")
     if through < since:
-        raise workflow.WorkflowError("Monitoring context through must not precede since.")
+        raise workflow.WorkflowError(
+            "Monitoring context through must not precede since."
+        )
     return {str(key): str(value) for key, value in payload.items()}
 
 
 def _reason_code(value: object) -> str:
     code = re.sub(r"[^A-Z0-9]+", "_", str(value).upper()).strip("_")
     return code[:120] or "NO_REASON_RECORDED"
+
+
+def source_fact(row: Mapping[str, object]) -> dict[str, object]:
+    """Preserve native semantics without exporting text, private paths, or subjects."""
+    evidence = row.get("evidence")
+    evidence = evidence if isinstance(evidence, dict) else {}
+    digest = _digest(json.dumps(row, sort_keys=True, separators=(",", ":")).encode())
+    mode = str(row.get("mode", "enforce"))
+    if mode not in {"enforce", "diagnostic", "shadow"}:
+        mode = "diagnostic"
+    value = evidence.get("score")
+    cycle = evidence.get("cycle", 0)
+    raw_codes = evidence.get("reason_codes", [])
+    codes = (
+        [
+            str(code)
+            for code in raw_codes
+            if isinstance(code, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", code)
+        ]
+        if isinstance(raw_codes, list)
+        else []
+    )
+    return {
+        "contract": _reason_code(row.get("contract", "UNKNOWN")).lower(),
+        "subject_id": "subject-"
+        + _digest(str(row.get("subject_id", "run")).encode())[7:31],
+        "cycle": cycle if type(cycle) is int and 0 <= cycle <= 10000 else 0,
+        "reason_codes": codes[:40],
+        "recorded_status": _reason_code(row.get("status", "NOT_EVALUATED")),
+        "observed_status": _reason_code(
+            evidence.get("observed_status") or row.get("status", "NOT_EVALUATED")
+        ),
+        "mode": mode,
+        "value": value if type(value) in {int, float} else None,
+        "evidence_refs": [
+            {"uri": "urn:linkedin-os:decision:" + digest[7:], "sha256": digest}
+        ],
+    }
+
+
+def delivery_outcome(rows: list[dict[str, object]]) -> str | None:
+    for row in reversed(rows):
+        if row.get("contract") == "draft_delivery":
+            evidence = row.get("evidence")
+            evidence = evidence if isinstance(evidence, dict) else {}
+            status = evidence.get("observed_status", row.get("status"))
+            if status in {"PASS", "FAIL", "BLOCKED", "COMPLETED_WITH_WARNINGS"}:
+                return str(status)
+    return None
 
 
 def build_normalized_export(
@@ -136,8 +214,6 @@ def build_normalized_export(
         contract = str(row.get("contract", ""))
         if contract in CONTRACTS:
             latest[contract] = row
-    if not latest:
-        raise workflow.WorkflowError("The selected run contains no supported V1 contracts.")
 
     checks: list[dict[str, object]] = []
     for contract, definition_id in CONTRACTS.items():
@@ -162,7 +238,11 @@ def build_normalized_export(
             {
                 "definition_id": definition_id,
                 "status": status,
-                "current_value": 1.0 if status == "PASS" else 0.0 if status == "FAIL" else None,
+                "current_value": 1.0
+                if status == "PASS"
+                else 0.0
+                if status == "FAIL"
+                else None,
                 "expected_value": 1.0,
                 "reason_code": _reason_code(row.get("reason")),
                 "evidence_refs": [
@@ -185,27 +265,39 @@ def build_normalized_export(
         {
             "case_type": CASE_TYPE,
             "case": {
-                "case_id": f"linkedin-{fingerprint[7:31]}",
+                "case_id": context.get("case_id", f"linkedin-{fingerprint[7:31]}"),
                 "display_name": "LinkedIn V1 end-to-end run",
                 "use_case_id": "linkedin-authority-post",
                 "segment": CASE_TYPE,
-                "input_fingerprint": fingerprint,
+                "input_fingerprint": context.get("input_fingerprint", fingerprint),
             },
             "checks": checks,
         }
     ]
 
-    selected_bytes = json.dumps(selected, sort_keys=True, separators=(",", ":")).encode()
+    selected_bytes = json.dumps(
+        selected, sort_keys=True, separators=(",", ":")
+    ).encode()
     return {
         "format_version": "normalized-eval-run/0.1",
         "run_id": context["run_id"],
-        "observed_at": _timestamp(context["observed_at"], field="observed_at").isoformat(),
+        "observed_at": _timestamp(
+            context["observed_at"], field="observed_at"
+        ).isoformat(),
         "product_version": context["product_version"],
-        "comparison": {"run_id": context["comparison_run_id"], "label": "Last approved good run", "sha256": None},
+        "comparison": {
+            "run_id": context["comparison_run_id"],
+            "label": "Last approved good run",
+            "sha256": context.get("comparison_sha256"),
+        },
         "change_manifest": {
             "use_case_version": context["use_case_version"],
             "deployment_id": context["deployment_id"],
-            "model": {"provider": context["model_provider"], "name": context["model_name"], "snapshot": context["model_snapshot"]},
+            "model": {
+                "provider": context["model_provider"],
+                "name": context["model_name"],
+                "snapshot": context["model_snapshot"],
+            },
             "prompt_version": context["prompt_version"],
             "config_version": context["config_version"],
             "toolset_version": context["toolset_version"],
@@ -216,13 +308,21 @@ def build_normalized_export(
         },
         "provenance": {
             "contract_digest": _file_digest(workflow.REPO_ROOT / "config/eval-v1.json"),
-            "config_digest": _file_digest(workflow.REPO_ROOT / "config/eval-v1-calibration.json"),
+            "config_digest": _file_digest(
+                workflow.REPO_ROOT / "config/eval-v1-calibration.json"
+            ),
             "production_data_digest": _digest(selected_bytes),
-            "golden_dataset_digest": _ledger_digest(v1_completion.STATE_ROOT / v1_completion.PUBLISHED_ATOMIC_LEDGER_NAME),
-            "prompt_digest": _file_digest(workflow.REPO_ROOT / "config/critic-rubric-v2.json"),
+            "golden_dataset_digest": _ledger_digest(
+                v1_completion.STATE_ROOT / v1_completion.PUBLISHED_ATOMIC_LEDGER_NAME
+            ),
+            "prompt_digest": _file_digest(
+                workflow.REPO_ROOT / "config/critic-rubric-v2.json"
+            ),
             "toolset_digest": _file_digest(workflow.REPO_ROOT / "bin/linkedin-os"),
         },
         "cases": cases,
+        "source_facts": [source_fact(row) for row in selected],
+        "delivery_outcome": delivery_outcome(selected),
     }
 
 
@@ -230,7 +330,9 @@ def _write_private(path: Path, payload: Mapping[str, object]) -> None:
     root = v1_completion.STATE_ROOT.resolve()
     target = path.resolve()
     if target.parent != root:
-        raise workflow.WorkflowError("Monitoring export must stay in the private V1 state root.")
+        raise workflow.WorkflowError(
+            "Monitoring export must stay in the private V1 state root."
+        )
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
@@ -244,7 +346,9 @@ def _write_private(path: Path, payload: Mapping[str, object]) -> None:
         while written < len(data):
             count = os.write(descriptor, data[written:])
             if count == 0:
-                raise workflow.WorkflowError("Monitoring export write did not make progress.")
+                raise workflow.WorkflowError(
+                    "Monitoring export write did not make progress."
+                )
             written += count
         os.fsync(descriptor)
         os.fchmod(descriptor, 0o600)
@@ -252,7 +356,9 @@ def _write_private(path: Path, payload: Mapping[str, object]) -> None:
         if not stat.S_ISREG(metadata.st_mode):
             raise workflow.WorkflowError("Monitoring export is not a regular file.")
     except FileExistsError as exc:
-        raise workflow.WorkflowError("Monitoring export already exists; choose a new run ID.") from exc
+        raise workflow.WorkflowError(
+            "Monitoring export already exists; choose a new run ID."
+        ) from exc
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -262,18 +368,31 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="linkedin-os export-monitoring")
     parser.add_argument("--context", type=Path, required=True)
     parser.add_argument("--allow-monitoring-export", action="store_true")
+    parser.add_argument(
+        "--run-folder",
+        type=Path,
+        help="Read one completed local dashboard instead of the decision ledger",
+    )
     args = parser.parse_args(argv)
     if not args.allow_monitoring_export:
         raise workflow.WorkflowError("Monitoring export requires explicit consent.")
     context = load_context(args.context)
-    rows = v1_completion._read_jsonl(
-        v1_completion.STATE_ROOT / v1_completion.DECISION_LEDGER_NAME
-    )
-    payload = build_normalized_export(context, rows)
-    output = v1_completion.STATE_ROOT / f"monitoring-{context['run_id']}.normalized.json"
+    if args.run_folder:
+        from .monitoring_dashboard_export import export_completed_dashboard
+
+        payload = export_completed_dashboard(context, args.run_folder)
+    else:
+        rows = v1_completion._read_jsonl(
+            v1_completion.STATE_ROOT / v1_completion.DECISION_LEDGER_NAME
+        )
+        payload = build_normalized_export(context, rows)
+    prefix = "monitoring-dashboard-v2" if args.run_folder else "monitoring"
+    output = v1_completion.STATE_ROOT / f"{prefix}-{context['run_id']}.normalized.json"
     _write_private(output, payload)
     print(f"Redacted monitoring export: {output.relative_to(workflow.REPO_ROOT)}")
-    print("Network transmission: DISABLED. No private content or local path was exported.")
+    print(
+        "Network transmission: DISABLED. No private content or local path was exported."
+    )
     return 0
 
 
