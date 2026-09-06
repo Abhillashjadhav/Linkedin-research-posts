@@ -2,7 +2,7 @@
   "metadata": {
     "contract_id": "linkedin-post-contract",
     "schema_version": 1,
-    "version": "1.6.1",
+    "version": "1.6.2",
     "status": "APPROVED",
     "purpose": "One product and runtime contract for discovery, evidence, selection, drafting, evaluation, repair, packaging, and release.",
     "hash_algorithm": "sha256",
@@ -482,7 +482,7 @@
     "retain_best_grounded_candidate": true,
     "progressive_editor_candidate_count": 1,
     "progressive_editor_identity_rule": "Every edit keeps the selected candidate ID, angle, and claim IDs exactly.",
-    "progressive_editor_monotonic_rule": "Repair axis deficits first: hook and voice target 4, middle, closer and specificity target 3. Retain an edit that reduces a deficit without worsening another; passing scores may trade off down to their targets even if the overall total decreases. Once all targets are met, the overall total must not decrease and a score or finding improves. Editorial findings never veto progress.",
+    "progressive_editor_monotonic_rule": "Repair axis deficits first: hook and voice target 4, middle, closer and specificity target 3. Retain an edit that reduces a deficit without worsening another; the overall total must never decrease, including while repairing below-target axes. Once all targets are met, the overall total must not decrease and a score or finding improves. Editorial findings never veto progress.",
     "first_iteration_pass_rule": "If the frozen candidate passes on iteration 1, stop unless unsupported factual wording needs one automatic rewrite attempt. Findings remain advisory, and the shared limit is three edits.",
     "repair_only_failed_mandatory_floors_and_gates": true,
     "repair_named_total_deficit": true,

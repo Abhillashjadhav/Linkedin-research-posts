@@ -126,10 +126,10 @@ def _raw_score(values: tuple[int, int, int, int, int]) -> list[dict[str, object]
 
 
 class EvalPackageTests(unittest.TestCase):
-    def test_hook_target_repair_beats_higher_total_with_stalled_hook(self) -> None:
+    def test_hook_target_repair_cannot_lower_total(self) -> None:
         before = _evaluated_result((3, 5, 5, 5, 4))
         after = _evaluated_result((4, 4, 4, 5, 4))
-        self.assertEqual(eval_package._monotonic_edit_decision(before, after), (True, []))
+        self.assertEqual(eval_package._monotonic_edit_decision(before, after), (False, ["total-regressed-22-to-21"]))
         self.assertEqual(after["acceptance"]["status"], "PASS")
         plan = eval_package._repair_feedback(2, before)["axis_repair_plan"]
         self.assertEqual(plan["focus_axes"], ["hook_strength"])

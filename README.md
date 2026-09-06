@@ -259,8 +259,8 @@ At most three bounded edits follow, for four scored iterations total:
 
 Every retained edit keeps the same candidate ID, angle, and claim IDs. Repair targets
 come first: hook and voice 4/5; middle, closer and specificity 3/5. Edit below-target
-sections using the exact Critic anchors and preserve passing sections. A reduced axis
-deficit can outweigh a lower total when other axes remain at or above their targets.
+sections using the exact Critic anchors and preserve passing sections. Every retained edit must keep the overall total from decreasing and reduce an axis
+deficit without worsening another. A lower total is rejected even if the hook improves.
 Once all targets are met, optimize the overall total to at least 18/25 and stop.
 Repeated editorial findings never terminate the four-cycle budget early. Editorial findings
 stay advisory, including after the automatic factual rewrite. A rejected edit never
