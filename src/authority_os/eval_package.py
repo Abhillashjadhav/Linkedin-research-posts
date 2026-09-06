@@ -676,7 +676,7 @@ def _repair_feedback(iteration: int, result: Mapping[str, object]) -> dict[str, 
             "Edit only the named failures. Keep the candidate ID, angle, claim IDs, "
             "selected thesis, evidence boundary, and passing material. Do not invent facts, "
             "experience, emotion, sources, scale, causality, or impact. The next revision is "
-            "eligible to become the new seed when it reduces the below-target axis deficits first. "
+            "eligible to become the new seed only when its total does not decrease and it reduces below-target axis deficits. "
             "Follow axis_repair_plan; do not polish already-passing sections. After all targets are met, "
             "the overall total must not regress. Editorial findings are "
             "advisory feedback, never reasons to discard score progress. Individual "

@@ -443,7 +443,14 @@ class RepairStateTests(unittest.TestCase):
                            axes={**stalled.axes, "hook_strength": 4, "middle_escalation": 4, "earned_closer": 4})
         state = quality_optimizer.RepairState()
         state.observe(attempt(stalled))
-        self.assertEqual(state.observe(attempt(repaired)), repaired)
+        self.assertEqual(state.observe(attempt(repaired)), stalled)
+        self.assertEqual(state.best_safe()[1], stalled)
+        with patch.object(quality_optimizer, "_ACTIVE_STATE", state):
+            self.assertEqual(quality_optimizer._qualifying_candidates(
+                attempt(repaired), rejected_openings=set(), package_requested=False, fixture_mode=False), ())
+        improved = replace(repaired, effective_total=22, raw_total=22,
+                           axes={**repaired.axes, "earned_closer": 5})
+        self.assertEqual(state.observe(attempt(improved)), improved)
         fresh = quality_optimizer.RepairState()
         self.assertEqual(fresh.observe(replace(attempt(stalled), candidates=(stalled, repaired))), repaired)
 

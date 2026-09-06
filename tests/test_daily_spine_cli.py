@@ -134,7 +134,7 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual(
             versions["acceptance"],
             {
-                "contract_version": "five-axis-v6",
+                "contract_version": "five-axis-v7",
                 "floor": 18,
                 "axis_floors": {
                     "hook_strength": 4,

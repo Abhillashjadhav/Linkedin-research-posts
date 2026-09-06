@@ -139,7 +139,7 @@ class RepairState:
         eligible = [
             item
             for item in self.observed
-            if not best_effort.blocking_failures(item[1])
+            if item[1] == self.best and not best_effort.blocking_failures(item[1])
         ]
         return max(eligible, key=lambda item: _candidate_rank(item[1])) if eligible else None
 
@@ -485,7 +485,9 @@ def _qualifying_candidates(
     qualifying = tuple(
         candidate
         for candidate in attempt.candidates
-        if candidate_is_acceptable(
+        if (_ACTIVE_STATE is None or _ACTIVE_STATE.best is None
+            or _candidate_progresses(_ACTIVE_STATE.best, candidate))
+        and candidate_is_acceptable(
             candidate,
             allow_factual_wording_advisory=allow_factual_wording_advisory,
         )

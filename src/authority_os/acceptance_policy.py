@@ -26,7 +26,7 @@ AXIS_FLOORS: Mapping[str, int] = MappingProxyType(
 HARD_GATES = frozenset({"honesty", "citation", "proof", "privacy", "relevance"})
 ADVISORY_FACTUAL_WORDING_CODE = "unsupported-factual-marker"
 ADVISORY_FACTUAL_WORDING_GATES = frozenset({"honesty", "citation"})
-ACCEPTANCE_CONTRACT_VERSION = "five-axis-v6"
+ACCEPTANCE_CONTRACT_VERSION = "five-axis-v7"
 
 
 def axis_shortfalls(axes: Mapping[str, object]) -> dict[str, dict[str, int]]:
@@ -49,6 +49,10 @@ def repair_score_decision(
     previous: Mapping[str, object], proposed: Mapping[str, object]
 ) -> tuple[bool, list[str]]:
     """Reach axis targets first, then optimize total without losing a target."""
+    old_total = int(previous["effective_total"])
+    new_total = int(proposed["effective_total"])
+    if new_total < old_total:
+        return False, [f"total-regressed-{old_total}-to-{new_total}"]
     before = axis_shortfalls(previous)
     after = axis_shortfalls(proposed)
     worsened = [
@@ -61,10 +65,6 @@ def repair_score_decision(
         if sum(x["shortfall"] for x in after.values()) < sum(x["shortfall"] for x in before.values()):
             return True, []
         return False, ["unmet-axis-targets-did-not-improve"]
-    old_total = int(previous["effective_total"])
-    new_total = int(proposed["effective_total"])
-    if new_total < old_total:
-        return False, [f"total-regressed-{old_total}-to-{new_total}"]
     if new_total > old_total:
         return True, []
     return False, ["no-score-improvement"]
@@ -92,7 +92,7 @@ def axis_repair_plan(axes: Mapping[str, object]) -> dict[str, object]:
         "instruction": (
             "Repair only below-target axes first. Do not spend an edit pushing a passing axis toward 5. "
             "Keep passing sections unchanged unless a focused repair needs a minimal connecting edit. "
-            "A reduced axis deficit takes priority over total; passing scores may trade down to their targets. "
+            "The overall total must never decrease, including while repairing an axis deficit. "
             "Once every axis reaches its target, improve the overall total only if below 18, then stop."
         ),
     }

@@ -111,8 +111,10 @@ class ActionableDiagnosticsTests(unittest.TestCase):
         repaired = replace(stalled, text="A materially different opening.\nIts supported reader consequence.",
                            axes={**stalled.axes, "hook_strength": 4, "middle_escalation": 4,
                                  "earned_closer": 4}, raw_total=21, effective_total=21)
+        improving = replace(repaired, axes={**repaired.axes, "earned_closer": 5},
+                            raw_total=22, effective_total=22)
         for succeeds in (True, False):
-            rows = [stalled, stalled, repaired] if succeeds else [stalled] * 4
+            rows = [stalled, stalled, repaired, improving] if succeeds else [stalled] * 4
             attempts = [replace(attempt(), candidates=(item,)) for item in rows]
             output = io.StringIO()
             with (
@@ -126,11 +128,11 @@ class ActionableDiagnosticsTests(unittest.TestCase):
             ):
                 result = quality_optimizer._command_draft(SimpleNamespace(dry_run=False, package=False, run_spec=None))
             self.assertEqual(result, 0)
-            self.assertEqual(run.call_count, 3 if succeeds else 4)
+            self.assertEqual(run.call_count, 4)
             self.assertNotIn("stopped early", output.getvalue())
             if succeeds:
-                self.assertIn("Quality search passed on cycle 3/4", output.getvalue())
-                self.assertIn("score=21/25", output.getvalue())
+                self.assertIn("Quality search passed on cycle 4/4", output.getvalue())
+                self.assertIn("score=22/25", output.getvalue())
                 write.assert_not_called()
             else:
                 write.assert_called_once()
