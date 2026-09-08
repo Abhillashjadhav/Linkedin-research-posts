@@ -155,11 +155,11 @@ class LinkedInPostContractTests(unittest.TestCase):
         )
         monotonic = repair["progressive_editor_monotonic_rule"]
         for requirement in (
-            "overall total",
-            "hook and voice",
-            "must never decrease",
-            "never veto",
-            "improves",
+            "strictly increase the total",
+            "hook >=4, voice >=4",
+            "never lower any individual axis score",
+            "retain the previous draft",
+            "reduce an axis deficit",
         ):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, monotonic)

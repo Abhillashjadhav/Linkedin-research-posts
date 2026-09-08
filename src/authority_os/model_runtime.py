@@ -13,6 +13,10 @@ from typing import Mapping
 from .workflow import WorkflowError
 
 
+class ModelTimeoutError(WorkflowError):
+    """A model deadline expired; callers may recover without hiding other failures."""
+
+
 ALLOWED_REASONING = {"low", "medium", "high", "xhigh", "max", "ultra"}
 NON_WEB_TOOL_FEATURES = frozenset(
     {
@@ -148,7 +152,7 @@ def invoke_structured(
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            raise WorkflowError(f"{label} timed out.") from exc
+            raise ModelTimeoutError(f"{label} timed out.") from exc
         except OSError as exc:
             raise WorkflowError(f"{label} could not start.") from exc
         if completed.returncode:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
@@ -181,6 +182,29 @@ class MomentumValidationTests(unittest.TestCase):
 
 
 class MomentumRuntimeTests(unittest.TestCase):
+    def test_authority_request_and_response_cardinality_match_every_batch(self) -> None:
+        candidates = momentum.rank_candidates(momentum.validate_candidates(momentum_candidates()))
+        for count in (1, 5, 7, 10):
+            requests = []
+            def invoke(**kwargs):
+                batch = json.loads(kwargs["task_prompt"].split("UNTRUSTED_MOMENTUM_TOPICS\n", 1)[1].split("\nEND_UNTRUSTED_MOMENTUM_TOPICS")[0])
+                contract = kwargs["schema"]["properties"]["scorecards"]
+                self.assertEqual(contract["minItems"], len(batch))
+                self.assertEqual(contract["maxItems"], len(batch))
+                self.assertLessEqual(len(batch), 5)
+                requests.append(batch)
+                return {"scorecards": authority_scores(batch)}
+            with self.subTest(count=count), patch.object(momentum, "invoke_structured", side_effect=invoke):
+                result = momentum.score_authority_fit(candidates[:count], profile())
+            self.assertEqual([item["topic_id"] for item in result], [item["id"] for item in candidates[:count]])
+            self.assertEqual(len(requests), (count + 4) // 5)
+
+    def test_authority_malformed_scores_are_not_a_timeout_fallback(self) -> None:
+        candidates = momentum.rank_candidates(momentum.validate_candidates(momentum_candidates()))
+        with patch.object(momentum, "invoke_structured", return_value={"scorecards": []}):
+            with self.assertRaisesRegex(workflow.WorkflowError, "must score every"):
+                momentum.score_authority_fit(candidates, profile())
+
     @patch("authority_os.momentum.invoke_structured")
     def test_momentum_scout_is_live_web_and_receives_no_private_profile(self, invoke: object) -> None:
         invoke.return_value = {"candidates": momentum_candidates()}  # type: ignore[attr-defined]

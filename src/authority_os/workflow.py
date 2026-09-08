@@ -18,6 +18,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from . import acceptance_policy
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -2392,7 +2393,7 @@ def validate_critic_scorecards(
     raw_scorecards: Sequence[Mapping[str, object]],
     candidates: Sequence[Mapping[str, object]],
 ) -> list[dict[str, object]]:
-    """Validate strict Critic scores and compute the single 18/25 total boundary."""
+    """Validate strict Critic scores and compute the shared total boundary."""
 
     safe_candidates = _critic_candidate_projection(candidates)
     if not isinstance(raw_scorecards, Sequence) or isinstance(
@@ -2426,7 +2427,7 @@ def validate_critic_scorecards(
         raw_total = sum(int(validated[axis]) for axis in CRITIC_AXES)
         hook_cap_applied = False
         effective_total = raw_total
-        band = "advance-to-gates" if effective_total >= 18 else "below-critic-bar"
+        band = "advance-to-gates" if effective_total >= acceptance_policy.ACCEPTABLE_QUALITY_FLOOR else "below-critic-bar"
         validated.update(
             {
                 "raw_total": raw_total,
@@ -2486,7 +2487,7 @@ def rank_critic_scorecards(
         raw_total = sum(int(scorecard[axis]) for axis in CRITIC_AXES)
         hook_cap = False
         effective_total = raw_total
-        expected_band = "advance-to-gates" if effective_total >= 18 else "below-critic-bar"
+        expected_band = "advance-to-gates" if effective_total >= acceptance_policy.ACCEPTABLE_QUALITY_FLOOR else "below-critic-bar"
         if (
             scorecard["raw_total"] != raw_total
             or scorecard["effective_total"] != effective_total

@@ -533,7 +533,12 @@ def _record_performance_many_v1(db_path, records, *, replace=False):
 
 
 def _record_topic_decisions(candidates) -> None:
-    for candidate in candidates:
+    # The dashboard's current contract verdict must describe the selected topic.
+    # Keep every excluded candidate's original finding earlier in the history.
+    ordered = sorted(candidates, key=lambda item: bool(
+        isinstance(item, Mapping) and item.get("selected") is True
+    ))
+    for candidate in ordered:
         if not isinstance(candidate, Mapping):
             continue
         subject = str(candidate.get("id", ""))
@@ -546,7 +551,7 @@ def _record_topic_decisions(candidates) -> None:
                 record_decision(decision, stage="topic-value", subject_id=subject)
 
 
-def _topic_evaluator_v1(candidates, evidence, *, decision_observer=None):
+def _topic_evaluator_v1(candidates, evidence, *, decision_observer=None, ranked_selection=False):
     def observe(evaluated) -> None:
         try:
             _record_topic_decisions(evaluated)
@@ -563,6 +568,7 @@ def _topic_evaluator_v1(candidates, evidence, *, decision_observer=None):
         candidates,
         evidence,
         decision_observer=observe,
+        ranked_selection=ranked_selection,
     )
 
 

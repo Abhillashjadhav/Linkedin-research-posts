@@ -83,6 +83,15 @@ def scorecards(total: int = 25) -> list[dict[str, object]]:
 
 
 class ProfileValidationTests(unittest.TestCase):
+    def test_author_proof_is_not_a_required_input(self) -> None:
+        raw = profile()
+        del raw["proof_inventory"]
+        validated = daily_cli.validate_profile(raw)
+        self.assertEqual(validated["proof_inventory"], [])
+        grounded = [{**card, "proof_id": "NOT_REQUIRED"} for card in cards()]
+        self.assertEqual(len(daily_cli.validate_cards(grounded, signals(), validated)), 3)
+        self.assertEqual(daily_cli._schema("cards")["properties"]["cards"]["items"]["properties"]["proof_id"]["enum"], ["NOT_REQUIRED"])
+
     def test_profile_requires_exact_schema_and_distinct_proof_ids(self) -> None:
         validated = daily_cli.validate_profile(profile())
         self.assertEqual(validated["target_audience"], profile()["target_audience"])

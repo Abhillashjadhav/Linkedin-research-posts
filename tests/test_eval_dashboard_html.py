@@ -17,6 +17,17 @@ class EvalDashboardHtmlTests(unittest.TestCase):
         self.assertIn("COMPLETED_WITH_WARNINGS", rendered)
         self.assertIn("No blocker recorded", rendered)
         self.assertIn("voice short by one", rendered)
+        self.assertIn('status not-evaluated">ADVISORY', rendered)
+        self.assertIn('recorded result: FAIL', rendered)
+        self.assertNotIn('status fail">FAIL', rendered)
+
+    def test_enforced_error_keeps_red_fail_badge(self) -> None:
+        rendered = eval_dashboard_html.render_dashboard(
+            {"outcome": "FAIL", "checks": []},
+            {"checks": [{"status": "FAIL", "mode": "enforce", "label": "Provider", "reason": "unavailable"}]},
+        )
+        self.assertIn('status fail">FAIL', rendered)
+        self.assertNotIn('>ADVISORY<', rendered)
 
     def test_empty_scorecard_says_drafting_stopped_before_critic(self) -> None:
         rendered = eval_dashboard_html.render_dashboard(

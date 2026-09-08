@@ -27,7 +27,8 @@ from .model_runtime import ModelConfig, invoke_structured
 MAX_CANDIDATE_CYCLES = 4
 # First comments use a different five-axis rubric. The owner set the same total
 # acceptance floor while leaving per-axis comment calibration for later.
-MIN_COMMENT_SCORE = acceptance_policy.ACCEPTABLE_QUALITY_FLOOR
+# The first-comment rubric is separate from the five post-writing axes.
+MIN_COMMENT_SCORE = 18
 EXPECTED_DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")
 COMMENT_AXES = (
     "continuity_with_post",

@@ -147,7 +147,7 @@ class EvalPackageTests(unittest.TestCase):
 
     def test_screenshot_candidate_advances_despite_new_editorial_findings(self) -> None:
         previous = _evaluated_result((3, 5, 5, 5, 4))
-        proposed = _evaluated_result((5, 4, 5, 4, 4), hard_gates_pass=False)
+        proposed = _evaluated_result((4, 5, 5, 5, 4), hard_gates_pass=False)
         proposed["anti_slop_findings"] = [{"code": "new-slop", "excerpt": "A phrase"}]
         accepted, reasons = eval_package._monotonic_edit_decision(previous, proposed)
         self.assertTrue(accepted)
@@ -183,14 +183,14 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(captured["results"][0]["acceptance"]["status"], "FAIL")
         self.assertEqual(captured["results"][0]["candidate"]["text"], context["selected_candidates"][0]["text"])
 
-    def test_total_only_shortfall_is_named_in_progressive_feedback(self) -> None:
+    def test_seventeen_has_no_total_or_axis_shortfall(self) -> None:
         result = _evaluated_result((4, 3, 3, 3, 4))
 
         feedback = eval_package._repair_feedback(2, result)
 
         self.assertEqual(feedback["current_total"], 17)
-        self.assertEqual(feedback["required_total"], 18)
-        self.assertEqual(feedback["total_shortfall"], 1)
+        self.assertEqual(feedback["required_total"], 17)
+        self.assertEqual(feedback["total_shortfall"], 0)
         self.assertEqual(feedback["axis_shortfalls"], {})
 
     def test_higher_total_cannot_lose_a_met_axis_target(self) -> None:
@@ -203,7 +203,7 @@ class EvalPackageTests(unittest.TestCase):
                 self.assertTrue(reasons[0].startswith("axis-target-regressed:"))
                 self.assertEqual(proposed["acceptance"]["status"], "FAIL")
 
-    def test_equal_total_can_advance_when_a_mandatory_shortfall_or_gate_improves(self) -> None:
+    def test_equal_total_is_rejected_even_when_a_shortfall_or_gate_improves(self) -> None:
         cases = (
             (
                 _evaluated_result((3, 4, 5, 4, 3)),
@@ -219,8 +219,8 @@ class EvalPackageTests(unittest.TestCase):
                 accepted, reasons = eval_package._monotonic_edit_decision(
                     previous, proposed
                 )
-                self.assertTrue(accepted)
-                self.assertEqual(reasons, [])
+                self.assertFalse(accepted)
+                self.assertEqual(reasons, ["total-did-not-increase"])
 
     def test_lower_total_is_rejected_even_when_a_hard_gate_improves(self) -> None:
         previous = _evaluated_result((4, 5, 5, 5, 4), hard_gates_pass=False)
@@ -450,7 +450,7 @@ class EvalPackageTests(unittest.TestCase):
             result = eval_package.command(
                 args,
                 persist=persist,
-                score_provider=lambda *_args, **_kwargs: _raw_score((4, 4, 4, 3, 4)),
+                score_provider=lambda *_args, **_kwargs: _raw_score((4, 3, 3, 3, 4)),
                 editor=editor,
             )
 
@@ -463,8 +463,8 @@ class EvalPackageTests(unittest.TestCase):
         scores = iter(
             (
                 _raw_score((3, 4, 5, 4, 3)),
-                _raw_score((4, 3, 5, 4, 3)),
                 _raw_score((4, 4, 5, 4, 3)),
+                _raw_score((4, 4, 5, 5, 3)),
                 _raw_score((4, 4, 5, 4, 4)),
             )
         )
@@ -553,7 +553,7 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(final["scorecard"]["effective_total"], 21)
         self.assertEqual(final["acceptance"]["status"], "PASS")
 
-    def test_unsupported_wording_gets_one_advisory_rewrite(self) -> None:
+    def test_passing_axes_stop_even_with_visible_wording_advisories(self) -> None:
         context = _repair_context()
         captured: dict[str, object] = {}
 
@@ -567,8 +567,7 @@ class EvalPackageTests(unittest.TestCase):
             )
 
         def editor(candidate: object, *_args: object, **_kwargs: object):
-            self.assertIsInstance(candidate, dict)
-            return {**candidate, "text": "A grounded edit that still fails honesty."}
+            raise AssertionError("A passing draft must not trigger further repair")
 
         args = SimpleNamespace(
             allow_model_egress=True, repair=True, candidate="candidate-2"
@@ -612,8 +611,7 @@ class EvalPackageTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         history = captured["repair_history"]
-        self.assertEqual(len(history), 2)
-        self.assertFalse(history[1]["accepted_as_next_seed"])
+        self.assertEqual(len(history), 1)
         self.assertEqual(captured["results"][0]["candidate"]["text"], context["selected_candidates"][0]["text"])
         self.assertEqual(history[0]["acceptance"]["status"], "PASS")
         self.assertTrue(history[0]["acceptance"]["advisory_warnings"])

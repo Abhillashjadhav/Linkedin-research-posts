@@ -2,7 +2,7 @@
 
 The V0 baseline stays frozen. This overlay changes only the current live V1 path:
 failed cycles carry the best grounded candidate forward as repair context instead of
-starting from a blank page. A repair reaches all five axis targets first, then the 18/25 total.
+starting from a blank page. A repair stops as soon as all five axis targets are met.
 Editorial findings remain advisory, and exhaustion delivers the best draft with warnings.
 """
 
@@ -56,29 +56,11 @@ def _candidate_progresses(
 ) -> bool:
     """Retain score progress; editorial findings are feedback, never vetoes."""
 
-    progresses, reasons = acceptance_policy.repair_score_decision(
+    progresses, _reasons = acceptance_policy.repair_score_decision(
         {**previous.axes, "effective_total": previous.effective_total},
         {**proposed.axes, "effective_total": proposed.effective_total},
     )
-    if progresses or reasons != ["no-score-improvement"]:
-        return progresses
-    previous_slop = {(item.code, item.excerpt) for item in anti_slop.audit(previous.text)}
-    proposed_slop = {(item.code, item.excerpt) for item in anti_slop.audit(proposed.text)}
-
-    previous_shortfall = sum(
-        item["shortfall"]
-        for item in acceptance_policy.axis_shortfalls(previous.axes).values()
-    )
-    proposed_shortfall = sum(
-        item["shortfall"]
-        for item in acceptance_policy.axis_shortfalls(proposed.axes).values()
-    )
-    return (
-        proposed.effective_total > previous.effective_total
-        or proposed_shortfall < previous_shortfall
-        or _failed_gate_count(proposed) < _failed_gate_count(previous)
-        or len(proposed_slop) < len(previous_slop)
-    )
+    return progresses
 
 
 def candidate_is_acceptable(
@@ -402,7 +384,7 @@ def _quality_feedback(
             "Repair the best-so-far candidate instead of starting over. Preserve its grounded "
             "atomic value and strongest passages, remove every unsupported or failing claim, "
             "and repair the named total deficit, mandatory-axis shortfalls, and explicit gate findings. "
-            "Do not chase 5/5 on a mandatory axis already listed in preserve_axes. A result at or above 18/25 is "
+            "Do not chase 5/5 on a mandatory axis already listed in preserve_axes. A result at or above 17/25 is "
             "acceptable when hook and voice are at least 4 and middle, closer, and specificity at least 3. Editorial findings "
             "are advisory. Follow axis_repair_plan: fix the below-target axes before optimizing total. "
             "Never repeat a rejected opening when hook is still below 4; change its framing, not just its words. "

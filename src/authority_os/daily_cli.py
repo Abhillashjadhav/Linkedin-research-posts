@@ -63,7 +63,8 @@ def _schema(kind: str) -> dict[str, object]:
         return {"type": "object", "properties": {"items": {"type": "array", "minItems": 1, "maxItems": 7, "items": item}}, "required": ["items"], "additionalProperties": False}
     if kind == "cards":
         props = {key: {"type": "string"} for key in CARD_KEYS - {"signal_ids"}}
-        props["signal_ids"] = {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "string"}}
+        props["proof_id"] = {"type": "string", "enum": ["NOT_REQUIRED"]}
+        props["signal_ids"] = {"type": "array", "minItems": 1, "maxItems": 7, "items": {"type": "string"}}
         card = {"type": "object", "properties": props, "required": sorted(CARD_KEYS), "additionalProperties": False}
         return {"type": "object", "properties": {"cards": {"type": "array", "minItems": 3, "maxItems": 3, "items": card}}, "required": ["cards"], "additionalProperties": False}
     score = {
@@ -121,16 +122,17 @@ def _private_json(path: Path, label: str) -> object:
 
 
 def validate_profile(raw: object) -> dict[str, object]:
-    if not isinstance(raw, Mapping) or set(raw) != PROFILE_KEYS:
+    if not isinstance(raw, Mapping) or set(raw) not in (PROFILE_KEYS, PROFILE_KEYS - {"proof_inventory"}):
         raise workflow.WorkflowError("Authority profile has an invalid schema.")
     profile = dict(raw)
+    profile.setdefault("proof_inventory", [])
     for key in ("target_audience", "authority_goal"):
         if not isinstance(profile[key], str) or not str(profile[key]).strip():
             raise workflow.WorkflowError(f"Authority profile {key} is blank.")
         profile[key] = str(profile[key]).strip()
     proofs, seen = profile["proof_inventory"], set()
-    if not isinstance(proofs, Sequence) or isinstance(proofs, (str, bytes)) or not proofs:
-        raise workflow.WorkflowError("proof_inventory must be a non-empty list.")
+    if not isinstance(proofs, Sequence) or isinstance(proofs, (str, bytes)):
+        raise workflow.WorkflowError("Optional proof_inventory must be a list.")
     cleaned = []
     for proof in proofs:
         if not isinstance(proof, Mapping) or set(proof) != PROOF_KEYS:
@@ -186,7 +188,7 @@ def validate_cards(raw: object, signals: Sequence[Mapping[str, object]], profile
     if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)) or len(raw) != 3:
         raise workflow.WorkflowError("Thesis generator must return exactly three cards.")
     signal_ids = {str(signal["id"]) for signal in signals}
-    proof_ids = {str(proof["id"]) for proof in profile["proof_inventory"] if isinstance(proof, Mapping)}  # type: ignore[index]
+    proof_ids = {"NOT_REQUIRED"} | {str(proof["id"]) for proof in profile.get("proof_inventory", []) if isinstance(proof, Mapping)}
     expected, seen, thesis_texts, cards = {"thesis-1", "thesis-2", "thesis-3"}, set(), set(), []
     for raw_card in raw:
         if not isinstance(raw_card, Mapping) or set(raw_card) != CARD_KEYS:
@@ -200,14 +202,14 @@ def validate_cards(raw: object, signals: Sequence[Mapping[str, object]], profile
             raise workflow.WorkflowError("Thesis IDs must be thesis-1 through thesis-3.")
         seen.add(card["id"])
         ids = card["signal_ids"]
-        if not isinstance(ids, Sequence) or isinstance(ids, (str, bytes)) or not 1 <= len(ids) <= 2:
-            raise workflow.WorkflowError("Each thesis must use one or two signal IDs.")
+        if not isinstance(ids, Sequence) or isinstance(ids, (str, bytes)) or not 1 <= len(ids) <= 7:
+            raise workflow.WorkflowError("Each thesis must use one to seven signal IDs.")
         ids = [str(value).strip() for value in ids]
         if any(value not in signal_ids for value in ids) or len(ids) != len(set(ids)):
             raise workflow.WorkflowError("Thesis signal IDs are invalid.")
         card["signal_ids"] = ids
         if card["proof_id"] not in proof_ids or _words(card["plain_language_summary"]) > 25:
-            raise workflow.WorkflowError("Each thesis needs a valid proof and a summary of 25 words or fewer.")
+            raise workflow.WorkflowError("Use NOT_REQUIRED or a supplied legacy proof ID, and a summary of 25 words or fewer.")
         if _generic_conversation_surface(card["conversation_surface"]):
             raise workflow.WorkflowError(
                 "Conversation surface must name a substantive assumption, trade-off, counterexample, implementation experience, or unresolved evidence."
@@ -224,9 +226,9 @@ def validate_cards(raw: object, signals: Sequence[Mapping[str, object]], profile
 
 def generate_cards(profile: Mapping[str, object], signals: Sequence[Mapping[str, object]], feedback: Mapping[str, object] | None) -> list[dict[str, object]]:
     retry = f"\nUNTRUSTED_PREVIOUS_SCORES\n{json.dumps(feedback, indent=2, sort_keys=True)}\nEND_UNTRUSTED_PREVIOUS_SCORES\nCreate genuinely different theses." if feedback else ""
-    prompt = f"""Create exactly three one-idea authority thesis cards. Turn current signals into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. Prefer the broadest audience-relevant formulation that preserves the evidence: omit incidental precision or map an instance to its true parent category, but never add severity, prevalence, causality, scope, materiality, or certainty. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. It must not be a CTA or a generic question. The topic field must express the underlying evidence-supported atomic idea in a concise audience-relevant phrase. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
+    prompt = f"""Create exactly three one-idea authority thesis cards. Turn current signals into original product judgment, name a concrete reader problem, state what a team should do differently, set proof_id to NOT_REQUIRED; author proof is not a prerequisite. Ground judgments in the supplied public signals and never invent personal experience, and include a non-technical summary of no more than 25 words. Prefer the broadest audience-relevant formulation that preserves the evidence: omit incidental precision or map an instance to its true parent category, but never add severity, prevalence, causality, scope, materiality, or certainty. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. It must not be a CTA or a generic question. The topic field must express the underlying evidence-supported atomic idea in a concise audience-relevant phrase. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
 UNTRUSTED_PROFILE
-{json.dumps(dict(profile), indent=2, sort_keys=True)}
+{json.dumps({key: value for key, value in profile.items() if key != 'proof_inventory'}, indent=2, sort_keys=True)}
 END_UNTRUSTED_PROFILE
 UNTRUSTED_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}
@@ -266,9 +268,9 @@ def validate_scores(raw: object, cards: Sequence[Mapping[str, object]]) -> list[
 
 
 def score_cards(cards: Sequence[Mapping[str, object]], profile: Mapping[str, object], signals: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
-    prompt = f"""Score each thesis from 1 to 5 on exactly {", ".join(AXES)}. Audience fit means useful to the target audience. Distinctiveness rejects generic AI-news summaries and also requires a substantive conversation surface: a credible practitioner can disagree, add a counterexample, contribute implementation experience, or expose a real trade-off. If conversation_surface is only a CTA, generic question, or empty debate bait, distinctiveness must be 2 or lower. Decision strength requires a concrete choice. Proof fit must be natural and honest. Simplicity must work for a non-engineer. Return scores only; do not rewrite, browse, select or draft.
+    prompt = f"""Score each thesis from 1 to 5 on exactly {", ".join(AXES)}. Audience fit means useful to the target audience. Distinctiveness rejects generic AI-news summaries and also requires a substantive conversation surface: a credible practitioner can disagree, add a counterexample, contribute implementation experience, or expose a real trade-off. If conversation_surface is only a CTA, generic question, or empty debate bait, distinctiveness must be 2 or lower. Decision strength requires a concrete choice. Proof fit measures grounding in the supplied public signals, not the author's personal achievements. Author proof is not required; do not penalize NOT_REQUIRED or an absent proof inventory. Simplicity must work for a non-engineer. Return scores only; do not rewrite, browse, select or draft.
 UNTRUSTED_PROFILE
-{json.dumps(dict(profile), indent=2, sort_keys=True)}
+{json.dumps({key: value for key, value in profile.items() if key != 'proof_inventory'}, indent=2, sort_keys=True)}
 END_UNTRUSTED_PROFILE
 UNTRUSTED_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}

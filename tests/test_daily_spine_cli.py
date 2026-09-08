@@ -9,11 +9,11 @@ import stat
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import ExitStack, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from authority_os import daily_spine_cli, topic_value, workflow
+from authority_os import daily_cli, daily_spine_cli, topic_value, workflow
 
 
 def profile() -> dict[str, object]:
@@ -134,8 +134,8 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual(
             versions["acceptance"],
             {
-                "contract_version": "five-axis-v7",
-                "floor": 18,
+                "contract_version": "five-axis-v8",
+                "floor": 17,
                 "axis_floors": {
                     "hook_strength": 4,
                     "middle_escalation": 3,
@@ -529,7 +529,7 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in result], ["thesis-1"])
         self.assertEqual(result[0]["total"], 23)
 
-    def test_failed_thesis_search_persists_every_score_and_best_overall(self) -> None:
+    def test_below_23_thesis_is_selected_by_rank_without_a_cutoff(self) -> None:
         weak_scores = [
             {
                 "thesis_id": f"thesis-{index}",
@@ -560,57 +560,237 @@ class SpineCardTests(unittest.TestCase):
             "write_private_json",
             return_value=trace_path,
         ) as write:
-            with self.assertRaisesRegex(workflow.WorkflowError, "No thesis cleared"):
-                daily_spine_cli.search_theses(
-                    profile(),
-                    signals(),
-                    trace_path=trace_path,
-                )
+            retained = daily_spine_cli.search_theses(
+                profile(), signals(), trace_path=trace_path,
+            )
 
         payload = write.call_args.args[1]
-        self.assertEqual(payload["outcome"], "FAIL")
+        self.assertEqual(payload["outcome"], "PASS")
+        self.assertEqual(payload["thresholds"], {})
+        self.assertEqual(payload["selected_id"], "thesis-1")
+        self.assertEqual(retained, [payload["best_overall"]])
+        self.assertTrue(retained[0]["selected"])
         self.assertEqual(len(payload["cycles"][0]["candidates"]), 3)
         self.assertEqual(payload["best_overall"]["id"], "thesis-1")
-        self.assertEqual(
-            payload["best_overall"]["rejection_reasons"],
-            ["total 21/25 is below 23/25"],
-        )
+        self.assertNotIn("rejection_reasons", payload["best_overall"])
 
-    def test_topic_scope_prefers_momentum_then_authority_fallback(self) -> None:
-        candidates = [
-            {
-                "id": "topic-1",
-                "momentum_eligible": False,
-                "observed_axes": 4,
-                "authority_fit": {"total": 23},
-            },
-            {
-                "id": "topic-2",
-                "momentum_eligible": False,
-                "observed_axes": 4,
-                "authority_fit": {"total": 19},
-            },
+    def test_thesis_selection_never_spends_a_second_score_cycle(self) -> None:
+        scores = [
+            {"thesis_id": f"thesis-{i}", **{axis: 4 for axis in daily_spine_cli.base.AXES}, "total": 20}
+            for i in range(1, 4)
         ]
-        selected, route = daily_spine_cli.select_topic_scope(candidates)
-        self.assertEqual([item["id"] for item in selected], ["topic-1"])
-        self.assertEqual(route, "authority-fit fallback")
+        worse = [
+            {**score, **{axis: 3 for axis in daily_spine_cli.base.AXES}, "total": 15}
+            for score in scores
+        ]
+        with (
+            patch.object(daily_spine_cli, "generate_cards", return_value=cards()) as generate,
+            patch.object(daily_spine_cli.base, "score_cards", side_effect=[scores, worse]),
+            patch.object(daily_spine_cli.base, "MAX_CYCLES", 2),
+            redirect_stdout(io.StringIO()),
+        ):
+            retained = daily_spine_cli.search_theses(profile(), signals())
+        self.assertEqual(generate.call_count, 1)
+        self.assertEqual(retained[0]["total"], 20)
+        self.assertTrue(retained[0]["selected"])
 
-        candidates[1]["momentum_eligible"] = True
-        selected, route = daily_spine_cli.select_topic_scope(candidates)
-        self.assertEqual([item["id"] for item in selected], ["topic-2"])
-        self.assertEqual(route, "momentum-qualified")
+    def test_malformed_thesis_output_still_stops(self) -> None:
+        with patch.object(daily_spine_cli, "generate_cards", side_effect=workflow.WorkflowError("invalid schema")):
+            with self.assertRaisesRegex(workflow.WorkflowError, "invalid schema"):
+                daily_spine_cli.search_theses(profile(), signals())
 
-        candidates[1]["momentum_eligible"] = False
+    def test_thesis_warning_survives_passing_draft_but_not_execution_error(self) -> None:
+        for code, expected in ((0, "COMPLETED_WITH_WARNINGS"), (2, "FAIL")):
+            dashboard = daily_spine_cli.new_run_dashboard()
+            daily_spine_cli.mark_run_stage(
+                dashboard, "thesis_search", "COMPLETED_WITH_WARNINGS", "total 21/25 below 23/25",
+            )
+            outcome = daily_spine_cli.finalize_draft_evaluation(
+                dashboard, {"checks": []}, return_code=code, failure_reason="provider unavailable",
+            )
+            self.assertEqual(outcome, expected)
+            self.assertEqual(dashboard["stopped_at"], "final_evals" if code else None)
+
+    def test_discovery_continues_into_drafting_after_one_ranked_thesis_batch(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary, ExitStack() as stack:
+            root = Path(temporary)
+            output = root / "run"
+            profile_path = root / "profile.json"
+            profile_path.write_text(json.dumps(profile()), encoding="utf-8")
+            topic = {"id": "topic-1", "topic": "Agent reliability", "total": 20,
+                     "observed_axes": 5, "authority_fit": {"total": 22},
+                     "representative_urls": ["https://example.com/1"]}
+            resume = daily_spine_cli.DiscoveryResume(
+                root / "previous", "2026-09-08T09:04:06Z", (topic,), (topic,), "momentum-qualified", (),
+            )
+            stack.enter_context(patch.object(daily_spine_cli, "load_discovery_resume", return_value=resume))
+            stack.enter_context(patch.object(daily_spine_cli, "resolve_signal_evidence", return_value=
+                daily_spine_cli.EvidenceResolution(tuple(signals()), "fixture", 0, "fixture")))
+            stack.enter_context(patch.object(daily_spine_cli.base, "project_signals", return_value=signals()))
+            stack.enter_context(patch.object(daily_spine_cli.base.legacy_cli, "initialise_paths"))
+            stack.enter_context(patch.object(daily_spine_cli.storage, "insert_research_items", return_value=(3, 0)))
+            stack.enter_context(patch.object(topic_value, "invoke_discovery_selector", return_value=value_candidates()))
+            stack.enter_context(patch.object(topic_value, "project_discovery_signals", return_value=signals()))
+            stack.enter_context(patch.object(daily_spine_cli, "generate_cards", return_value=cards()))
+            stack.enter_context(patch.object(daily_spine_cli.base, "score_cards", return_value=[
+                {"thesis_id": f"thesis-{i}", **{axis: 4 for axis in daily_spine_cli.base.AXES}, "total": 20}
+                for i in range(1, 4)
+            ]))
+            stack.enter_context(patch.object(daily_spine_cli.base, "MAX_CYCLES", 1))
+            stack.enter_context(patch.object(daily_spine_cli.v1_completion, "_read_jsonl", return_value=[]))
+            stack.enter_context(patch.object(workflow, "load_voice_guidance", return_value={}))
+            stack.enter_context(patch.object(daily_spine_cli.eval_dashboard_html, "open_dashboard", return_value=False))
+            child = stack.enter_context(patch.object(daily_spine_cli, "run_drafting_child", return_value=
+                daily_spine_cli.DraftingRun(0, "completed", "fixture.log", ())))
+            stack.enter_context(redirect_stdout(io.StringIO()))
+            code = daily_spine_cli.main([
+                "--profile", str(profile_path), "--resume-from", str(resume.source_folder),
+                "--output-dir", str(output), "--db", str(root / "db.sqlite"),
+                "--allow-web-research", "--allow-model-egress", "--generate-post",
+            ])
+            dashboard = json.loads((output / "run-dashboard.json").read_text())
+            trace = json.loads((output / "thesis-evaluations.json").read_text())
+            html = (output / "eval-dashboard.html").read_text()
+        self.assertEqual(code, 0)
+        child.assert_called_once()
+        self.assertEqual(dashboard["outcome"], "PASS")
+        self.assertIsNone(dashboard["stopped_at"])
+        self.assertEqual(trace["selection_policy"], "highest-score-valid-thesis")
+        self.assertEqual(len(trace["cycles"]), 1)
+        self.assertEqual(trace["best_overall"]["total"], 20)
+        self.assertIn("no score cutoff", html)
+        # The mocked child emits no eval ledger: missing critic data stays visible.
+        self.assertIn("INCOMPLETE", html)
+        thesis_stage = next(item for item in dashboard["checks"] if item["stage"] == "thesis_search")
+        self.assertEqual(thesis_stage["status"], "PASS")
+
+    def test_authority_timeout_preserves_topics_and_reaches_drafting(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary, ExitStack() as stack:
+            root = Path(temporary)
+            output = root / "run"
+            profile_path = root / "profile.json"
+            profile_path.write_text(json.dumps(profile()), encoding="utf-8")
+            topic = {"id": "topic-1", "topic": "Agent reliability", "total": 20,
+                     "observed_axes": 5, "authority_fit": {"total": 22},
+                     "representative_urls": ["https://example.com/1"]}
+            topic.update(why_now="Current source evidence.", confidence="HIGH",
+                         platforms=["Primary source"], caveats="Fixture")
+            stack.enter_context(patch.object(daily_spine_cli.momentum, "invoke_scout", return_value=[topic]))
+            stack.enter_context(patch.object(daily_spine_cli.momentum, "score_authority_fit",
+                side_effect=daily_spine_cli.ModelTimeoutError("Authority topic critic timed out.")))
+            update_inventory = daily_spine_cli.update_candidate_inventory
+            stack.enter_context(patch.object(daily_spine_cli, "update_candidate_inventory",
+                side_effect=lambda rows, **kw: update_inventory(rows, **kw, path=root / "inventory.json")))
+            stack.enter_context(patch.object(daily_spine_cli, "resolve_signal_evidence", return_value=
+                daily_spine_cli.EvidenceResolution(tuple(signals()), "fixture", 0, "fixture")))
+            stack.enter_context(patch.object(daily_spine_cli.base, "project_signals", return_value=signals()))
+            stack.enter_context(patch.object(daily_spine_cli.base.legacy_cli, "initialise_paths"))
+            stack.enter_context(patch.object(daily_spine_cli.storage, "insert_research_items", return_value=(3, 0)))
+            stack.enter_context(patch.object(topic_value, "invoke_discovery_selector", return_value=value_candidates()))
+            stack.enter_context(patch.object(topic_value, "project_discovery_signals", return_value=signals()))
+            stack.enter_context(patch.object(daily_spine_cli, "generate_cards", return_value=cards()))
+            stack.enter_context(patch.object(daily_spine_cli.base, "score_cards", return_value=[
+                {"thesis_id": f"thesis-{i}", **{axis: 4 for axis in daily_spine_cli.base.AXES}, "total": 20}
+                for i in range(1, 4)
+            ]))
+            stack.enter_context(patch.object(daily_spine_cli.base, "MAX_CYCLES", 1))
+            stack.enter_context(patch.object(daily_spine_cli.v1_completion, "_read_jsonl", return_value=[]))
+            stack.enter_context(patch.object(workflow, "load_voice_guidance", return_value={}))
+            stack.enter_context(patch.object(daily_spine_cli.eval_dashboard_html, "open_dashboard", return_value=False))
+            child = stack.enter_context(patch.object(daily_spine_cli, "run_drafting_child", return_value=
+                daily_spine_cli.DraftingRun(0, "completed", "fixture.log", ())))
+            stack.enter_context(redirect_stdout(io.StringIO()))
+            code = daily_spine_cli.main([
+                "--profile", str(profile_path), "--as-of", "2026-09-08T09:04:06Z",
+                "--output-dir", str(output), "--db", str(root / "db.sqlite"),
+                "--allow-web-research", "--allow-model-egress", "--generate-post",
+            ])
+            dashboard = json.loads((output / "run-dashboard.json").read_text())
+            trace = json.loads((output / "thesis-evaluations.json").read_text())
+            html = (output / "eval-dashboard.html").read_text()
+            self.assertTrue((output / "discovery-ranked.json").exists())
+            checkpoint = json.loads((output / "authority-ranking.json").read_text())
+            inventory = json.loads((root / "inventory.json").read_text())
+            scope = json.loads((output / "admitted-topics.json").read_text())
+        self.assertEqual(code, 0)
+        child.assert_called_once()
+        self.assertEqual(dashboard["outcome"], "COMPLETED_WITH_WARNINGS")
+        self.assertIsNone(dashboard["stopped_at"])
+        self.assertEqual(trace["selection_policy"], "highest-score-valid-thesis")
+        self.assertEqual(len(trace["cycles"]), 1)
+        self.assertEqual(trace["best_overall"]["total"], 20)
+        self.assertIn("no score cutoff", html)
+        self.assertEqual(checkpoint["authority_status"], "UNAVAILABLE")
+        self.assertIsNone(checkpoint["candidates"][0]["authority_fit"])
+        self.assertIsNone(inventory["candidates"][0]["combined_total"])
+        self.assertIn("momentum only", scope["route"])
+        self.assertIn("authority scorer timed out", html)
+        thesis_stage = next(item for item in dashboard["checks"] if item["stage"] == "thesis_search")
+        self.assertEqual(thesis_stage["status"], "PASS")
+
+    def test_seven_day_pool_ranks_retained_and_fresh_together_without_floors(self) -> None:
+        current = [
+            {"topic": "Fresh popular", "total": 15, "observed_axes": 5,
+             "authority_fit": {"total": 20}, "momentum_eligible": True,
+             "representative_urls": ["https://example.com/fresh"]},
+            {"topic": "Quiet strong idea", "total": 11, "observed_axes": 4,
+             "authority_fit": {"total": 25}, "momentum_eligible": False,
+             "representative_urls": ["https://example.com/quiet"]},
+        ]
         inventory = [
-            {
-                "topic": "Retained topic",
-                "status": "AVAILABLE",
-                "combined_total": 42,
-            }
+            {"topic": "Earlier strong idea", "status": "AVAILABLE", "combined_total": 39,
+             "representative_urls": ["https://example.com/earlier"]},
+            {"topic": "Already used", "status": "USED", "combined_total": 50,
+             "representative_urls": ["https://example.com/used"]},
+            {"topic": "No evidence leads", "status": "AVAILABLE", "combined_total": 50},
         ]
-        selected, route = daily_spine_cli.select_topic_scope(candidates, inventory)
-        self.assertEqual([item["topic"] for item in selected], ["Retained topic"])
-        self.assertEqual(route, "rolling seven-day inventory")
+        selected, route = daily_spine_cli.select_topic_scope(current, inventory)
+        self.assertEqual(route, "ranked seven-day pool")
+        self.assertEqual([item["topic"] for item in selected], [
+            "Earlier strong idea", "Quiet strong idea", "Fresh popular",
+        ])
+
+    def test_small_pool_with_unknown_engagement_uses_common_authority_basis(self) -> None:
+        topics = [{"topic": "Primary finding", "total": None,
+                   "authority_fit": {"total": 22}, "representative_urls": ["https://example.com/primary"]},
+                  {"topic": "Popular weaker finding", "total": 25,
+                   "authority_fit": {"total": 18}, "representative_urls": ["https://example.com/other"]}]
+        selected, route = daily_spine_cli.select_topic_scope(topics)
+        self.assertEqual([item["topic"] for item in selected], ["Primary finding", "Popular weaker finding"])
+        self.assertIn("authority only", route)
+        self.assertIsNone(selected[0]["momentum_total"])
+        self.assertIsNone(selected[0]["combined_total"])
+
+    def test_live_theses_do_not_require_an_author_proof_inventory(self) -> None:
+        raw_profile = profile()
+        del raw_profile["proof_inventory"]
+        validated = daily_cli.validate_profile(raw_profile)
+        grounded = [{**card, "proof_id": "NOT_REQUIRED"} for card in cards()]
+        with patch.object(daily_cli, "invoke_structured", return_value={"cards": grounded}) as invoke:
+            selected = daily_spine_cli.generate_cards(validated, signals(), None)
+        self.assertEqual(len(selected), 3)
+        self.assertNotIn("proof_inventory", invoke.call_args.kwargs["task_prompt"])
+        self.assertEqual(invoke.call_args.kwargs["schema"]["properties"]["cards"]["items"]["properties"]["proof_id"]["enum"], ["NOT_REQUIRED"])
+
+    def test_inventory_retains_six_day_candidate_and_excludes_eight_day_candidate(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            path = Path(temporary) / "inventory.json"
+            def entry(topic, timestamp):
+                return {"topic": topic, "last_seen_at": timestamp,
+                        "status": "AVAILABLE", "combined_total": 30,
+                        "representative_urls": ["https://example.com/" + topic]}
+            path.write_text(json.dumps({"candidates": [
+                entry("six-days-old", "2026-09-02T09:00:00Z"),
+                entry("eight-days-old", "2026-08-31T09:00:00Z"),
+                entry("future", "2026-09-09T09:00:00Z"),
+            ]}))
+            _, retained = daily_spine_cli.update_candidate_inventory(
+                [], as_of="2026-09-08T09:00:00Z", days=7, path=path,
+            )
+        self.assertEqual([item["topic"] for item in retained], ["six-days-old"])
 
     def test_generate_post_is_explicitly_opt_in(self) -> None:
         parsed = daily_spine_cli.parser().parse_args(
@@ -621,6 +801,7 @@ class SpineCardTests(unittest.TestCase):
             ]
         )
         self.assertTrue(parsed.generate_post)
+        self.assertEqual(parsed.days, 7)
 
     def test_thursday_is_exposed_as_authority_week_slot_three(self) -> None:
         parsed = daily_spine_cli.parser().parse_args(
@@ -632,7 +813,7 @@ class SpineCardTests(unittest.TestCase):
                 ["--profile", "data/private/authority-profile.json", "--week-slot", "4"]
             )
 
-    def test_candidate_inventory_keeps_every_topic_at_or_above_40(self) -> None:
+    def test_candidate_inventory_keeps_scored_topics_below_40(self) -> None:
         candidates = [
             {
                 "topic": "Qualified topic",
@@ -662,7 +843,7 @@ class SpineCardTests(unittest.TestCase):
                 path=target,
             )
             payload = json.loads(target.read_text(encoding="utf-8"))
-        self.assertEqual([item["topic"] for item in retained], ["Qualified topic"])
+        self.assertEqual([item["topic"] for item in retained], ["Qualified topic", "Below floor"])
         self.assertEqual(payload["candidates"][0]["combined_total"], 41)
 
     def test_extended_card_contract_accepts_only_stable_spines(self) -> None:
@@ -684,6 +865,26 @@ class SpineCardTests(unittest.TestCase):
         long[0]["spine_fit_reason"] = "x" * 321
         with self.assertRaisesRegex(workflow.WorkflowError, "spine_fit_reason"):
             daily_spine_cli.validate_cards(long, signals(), profile())
+
+    def test_three_corroborating_sources_survive_thesis_and_drafting_handoff(self) -> None:
+        supplied = cards()
+        supplied[0]["signal_ids"] = ["signal-1", "signal-2", "signal-3"]
+        retained = daily_spine_cli.validate_cards(supplied, signals(), profile())
+        manifest = daily_spine_cli.base.evidence_manifest_for(retained[0], signals(), signals())
+        self.assertEqual(manifest["source_urls"], [f"https://example.com/{i}" for i in range(1, 4)])
+        self.assertEqual(daily_spine_cli._schema("cards")["properties"]["cards"]["items"]["properties"]["signal_ids"]["maxItems"], 7)
+
+    def test_missing_authority_uses_a_common_momentum_basis_without_zero_imputation(self) -> None:
+        selected, route = daily_spine_cli.select_topic_scope([
+            {"topic": "Unscored authority", "total": 15, "authority_fit": None,
+             "representative_urls": ["https://example.com/one"]},
+            {"topic": "Known authority", "total": 10, "authority_fit": {"total": 25},
+             "representative_urls": ["https://example.com/two"]},
+        ])
+        self.assertIn("momentum only", route)
+        self.assertEqual(selected[0]["topic"], "Unscored authority")
+        self.assertIsNone(selected[0]["combined_total"])
+        self.assertEqual(selected[1]["combined_total"], 35)
 
     def test_schema_exposes_exact_five_spines(self) -> None:
         schema = daily_spine_cli._schema("cards")

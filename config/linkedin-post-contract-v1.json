@@ -76,6 +76,7 @@
     ],
     "minimum_observed_axes": 4,
     "authority_momentum_floor": 14,
+    "daily_discovery_selection": "Rank all scored fresh and unexpired seven-day topics by the existing momentum plus authority-fit axes; these legacy momentum floors are diagnostic, not admission gates. Select the highest-scoring evidence-valid novel Topic Value candidate, then rank one thesis batch without a score cutoff.",
     "reach_momentum_floor": 20,
     "unknown_observation_policy": "UNKNOWN, never fabricated zero",
     "acceleration_definition": "Observed percentage growth across a comparable 24-72 hour interval; otherwise UNKNOWN.",
@@ -135,7 +136,8 @@
     "coverage_shortfall_action": "Keep source-level findings visible and continue; never block Topic Value or the candidate batch."
   },
   "topic_value": {
-    "class": "selector_and_hard_gate",
+    "class": "ranked_discovery_selector_with_grounding_and_novelty_checks",
+    "score_floor_scope": "The recorded floors and minimum_total describe the legacy score diagnostic and explicit campaign validation. Daily discovery ranks these axes without score cutoffs.",
     "axes": {
       "reader_relevance": {
         "floor": 4,
@@ -168,14 +170,14 @@
       "feed_value_possible": "The reader receives the core value without clicking away.",
       "supports_authority_goal": "The situation supports the configured authority goal."
     },
-    "selection_rule": "Retain every passing situation. A weaker sibling cannot veto a passing candidate."
+    "selection_rule": "Daily discovery selects the highest-scoring grounded novel situation. Repeated candidates are excluded individually before selecting the winner."
   },
   "thesis": {
     "axes": {
       "audience_fit": "Useful to the target audience.",
       "distinctiveness": "Adds a real judgment, trade-off, counterexample, or decision surface rather than a generic news summary.",
       "decision_strength": "Makes a concrete choice or recommendation.",
-      "proof_fit": "Uses evidence or author proof naturally and honestly.",
+      "proof_fit": "Uses supplied public evidence naturally and honestly; no author proof inventory is required or scored.",
       "simplicity": "The atomic idea works for a non-specialist."
     },
     "axis_range": [
@@ -183,14 +185,14 @@
       5
     ],
     "current_live_rule": {
-      "minimum_total": 23,
-      "minimum_simplicity": 4,
-      "maximum_cycles": 3
+      "selection": "highest-ranked valid thesis",
+      "score_cutoff": null,
+      "maximum_cycles": 1
     },
     "role": "selector_not_publication_acceptance",
     "auto_selection": "When post generation is requested, choose the highest-ranked eligible thesis deterministically. Otherwise present the ranked eligible set.",
     "author_proof": {
-      "rule": "Required only when the thesis makes an author-owned capability, result, customer, or implementation claim. Evidence-led incident and analysis posts may use NOT_REQUIRED.",
+      "rule": "Not required for discovery or thesis selection. Generate evidence-led analysis with proof_id NOT_REQUIRED. Never invent author experience or results; use sourced facts and clearly stated recommendations.",
       "decision_status": "RESOLVED"
     },
     "qualification_rule": "Use the five thesis axes to rank candidates, not as a second publication threshold. Require the selected thesis to pass audience relevance, claim support, simplicity, and non-duplication checks.",
@@ -328,7 +330,7 @@
     ],
     "total_formula": "sum_of_five_axes",
     "total_out_of": 25,
-    "minimum_total": 18,
+    "minimum_total": 17,
     "optimization_target": null,
     "legacy_24_or_25_approval_path": "DELETED",
     "legacy_hook_total_cap": "DELETED",
@@ -482,8 +484,8 @@
     "retain_best_grounded_candidate": true,
     "progressive_editor_candidate_count": 1,
     "progressive_editor_identity_rule": "Every edit keeps the selected candidate ID, angle, and claim IDs exactly.",
-    "progressive_editor_monotonic_rule": "Repair axis deficits first: hook and voice target 4, middle, closer and specificity target 3. Retain an edit that reduces a deficit without worsening another; the overall total must never decrease, including while repairing below-target axes. Once all targets are met, the overall total must not decrease and a score or finding improves. Editorial findings never veto progress.",
-    "first_iteration_pass_rule": "If the frozen candidate passes on iteration 1, stop unless unsupported factual wording needs one automatic rewrite attempt. Findings remain advisory, and the shared limit is three edits.",
+    "progressive_editor_monotonic_rule": "Stop at hook >=4, voice >=4, middle >=3, closer >=3, specificity >=3 (minimum total 17). Before then, accept only edits that strictly increase the total, reduce an axis deficit and never lower any individual axis score. Otherwise retain the previous draft; keep the bounded attempt budget and deliver it with warnings if needed.",
+    "first_iteration_pass_rule": "If the frozen candidate meets all five axis targets on iteration 1, stop immediately. Findings remain visible as advisory warnings.",
     "repair_only_failed_mandatory_floors_and_gates": true,
     "repair_named_total_deficit": true,
     "preserve_passing_mandatory_floors": true,
@@ -491,10 +493,10 @@
     "never_change_the_locked_thesis_without_a_recorded_claim_support_decision": true,
     "campaign_and_single_post_use_same_policy": true,
     "on_exhaustion": "Complete with warnings and return the best draft, exact scorecards, unmet score targets and editorial findings. Exit successfully when artifacts were written; do not claim the writing score passed. Publication remains manual.",
-    "priority": "axis_targets_then_overall_total"
+    "priority": "axis_targets_then_stop"
   },
   "acceptance": {
-    "formula": "critic_total_at_least_18 AND hook_at_least_4 AND voice_at_least_4 AND middle_at_least_3 AND closer_at_least_3 AND specificity_at_least_3",
+    "formula": "critic_total_at_least_17 AND hook_at_least_4 AND voice_at_least_4 AND middle_at_least_3 AND closer_at_least_3 AND specificity_at_least_3",
     "model_reported_status_is_authoritative": false,
     "python_computes_acceptance": true,
     "model_scores_and_evidence_are_inputs": true,
@@ -587,7 +589,7 @@
       "question": "What should qualify a thesis before drafting?",
       "resolution": "Use the five thesis axes to rank candidates, not as a second publication threshold. Require the selected thesis to pass audience relevance, claim support, simplicity, and non-duplication checks.",
       "decision_status": "RESOLVED",
-      "current_behavior": "23/25 plus simplicity at least 4, up to three cycles.",
+      "current_behavior": "Rank one valid thesis batch on the existing five axes and select the highest score. No 23/25 cutoff or score-driven retries. Discovery chooses the highest-scoring grounded novel situation from the seven-day ranked pool.",
       "why": "The thesis axes differ from the final Critic axes, so copying 18/25 automatically would be arbitrary."
     },
     {
@@ -635,7 +637,7 @@
     {
       "id": "OD-9",
       "question": "Should editorial checks independently block draft delivery or reject score progress?",
-      "resolution": "Every editorial finding is advisory. Writing acceptance requires total >=18, hook and voice >=4, and middle, closer and specificity >=3. Repair below-target axes first, then overall total; do not polish passing axes. Repeated findings never abort the four-cycle budget. Deliver the best draft with honest warnings on exhaustion, preserve filesystem security and model-egress consent, and leave publication manual.",
+      "resolution": "Every editorial finding is advisory. Writing acceptance requires total >=17, hook and voice >=4, and middle, closer and specificity >=3. Stop as soon as all axis minima are met. Until then accept only a strictly higher total with improved deficits and no individual axis decrease. Repeated findings never abort the four-cycle budget. Deliver the best draft with honest warnings on exhaustion, preserve filesystem security and model-egress consent, and leave publication manual.",
       "decision_status": "RESOLVED"
     }
   ]

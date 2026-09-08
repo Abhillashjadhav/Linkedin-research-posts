@@ -83,6 +83,28 @@ class TopicValueThresholdTests(unittest.TestCase):
 
 
 class TopicValueRuntimeTests(unittest.TestCase):
+    def test_three_source_topic_can_reach_the_coverage_evaluator(self) -> None:
+        from authority_os import v1_gates
+        supplied = []
+        for i in range(1, 4):
+            item = candidate()
+            item.update(id=f"topic-{i}", situation=f"A distinct grounded situation {i}.",
+                        source_ids=["signal-1", "signal-2", "signal-3"])
+            supplied.append(item)
+        evidence = [
+            {"id": f"signal-{i}", "canonical_url": f"https://example.com/source-{i}",
+             "source_quality": "secondary", "body": "Inspectable reporting about the situation."}
+            for i in range(1, 4)
+        ]
+        selected = topic_value.invoke_discovery_selector(
+            {"target_audience": "AI PMs", "authority_goal": "Practical judgment"}, evidence,
+            invoker=lambda *_a, **_kw: {"candidates": supplied},
+        )
+        decision = v1_gates.evaluate_research_trust(selected[0], evidence)
+        self.assertEqual(decision["status"], "PASS")
+        self.assertEqual(decision["credible_source_count"], 3)
+        self.assertEqual(topic_value._schema(3)["properties"]["candidates"]["items"]["properties"]["source_ids"]["maxItems"], 7)
+
     def test_live_selector_retries_only_a_timeout_with_explicit_stage_label(self) -> None:
         expected = {"candidates": []}
         with mock.patch.object(
@@ -171,12 +193,12 @@ class TopicValueRuntimeTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual([item["id"] for item in selected], ["topic-1"])
+        self.assertEqual([item["id"] for item in selected], ["topic-1", "topic-2"])
 
     def test_observer_receives_blocked_candidates_before_stage_failure(self) -> None:
         candidates = []
         for index in range(1, 4):
-            item = candidate(reader_relevance=3)
+            item = candidate(feed_value_possible=False)
             item["id"] = f"topic-{index}"
             item["source_ids"] = [f"signal-{index}"]
             item["situation"] = f"A weak situation {index}."
@@ -255,7 +277,7 @@ class TopicValueRuntimeTests(unittest.TestCase):
             observer=observer,
         )
 
-        self.assertEqual([item["id"] for item in selected], ["topic-1"])
+        self.assertEqual([item["id"] for item in selected], ["topic-1", "topic-2", "topic-3"])
         self.assertEqual(
             observer.failures,
             [("pre-gate", "dashboard disk unavailable")],

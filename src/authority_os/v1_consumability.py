@@ -132,7 +132,7 @@ def hook_entry_check(post_text: str) -> dict[str, object]:
 
 def _consolidate(signals: Sequence[Mapping[str, object]], *, as_of: str) -> list[dict[str, object]]:
     ids = [str(signal["id"]) for signal in signals]
-    prompt = f"""Cluster these independently discovered public-web signals into exactly {surface.MOMENTUM_CANDIDATES} materially distinct current GenAI/product conversations.
+    prompt = f"""Cluster these independently discovered public-web signals into at least {surface.MIN_CONVERSATIONS} materially distinct current GenAI/product conversations. Six is a minimum, not a maximum. Retain additional meaningful conversations when supported. Never pad the list, invent evidence, or split the same idea merely to meet the minimum.
 Do not browse. Do not add facts or signals. Merge only signals that describe the same underlying conversation. Each input signal may be assigned to at most one cluster; unused weak/duplicate signals may be omitted.
 
 Selection goal: preserve conversations that can become useful, widely enterable product content without becoming generic. Rank the clusters using the supplied evidence and these priorities:
@@ -140,7 +140,7 @@ Selection goal: preserve conversations that can become useful, widely enterable 
 2. a real product/team/customer/cost/quality/risk decision or a useful inspectable capability;
 3. something non-obvious enough to teach the reader one step beyond what they likely already know;
 4. one central argument rather than several parallel evidence threads;
-5. cross-surface repetition, visible engagement, and freshness as of {as_of}.
+5. cross-surface repetition, visible engagement, and freshness as of {as_of}. Prefer evidence of substantive public discussion over unsupported popularity claims. Missing engagement remains unknown and must not be invented.
 
 Do not reward technical sophistication by itself. Do not let a famous vendor name substitute for reader consequence. Individual/small-team launches can rank highly when they are inspectable and useful even with lower raw engagement. Preserve at most one unusually important deep-track conversation whose consequence is not yet broadly legible; the remaining clusters should be understandable without specialist prerequisite knowledge.
 
@@ -148,7 +148,7 @@ Write each topic as a concise plain-English situation. In why_now, state what ch
 
 Social/community popularity is momentum evidence only, not factual corroboration.
 
-Use topic-1 through topic-{surface.MOMENTUM_CANDIDATES} exactly once.
+Use consecutive topic-1 through topic-N exactly once for the actual number of retained conversations, with N >= {surface.MIN_CONVERSATIONS} and no more conversations than supplied signals.
 
 UNTRUSTED_SURFACE_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}

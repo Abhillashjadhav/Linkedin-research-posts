@@ -97,7 +97,7 @@ def attempt_output(*, axes: tuple[int, int, int, int, int], text: str) -> str:
 
 class AcceptanceTests(unittest.TestCase):
     def test_named_acceptance_constants_match_the_owner_decision(self) -> None:
-        self.assertEqual(quality_optimizer.ACCEPTABLE_QUALITY_FLOOR, 18)
+        self.assertEqual(quality_optimizer.ACCEPTABLE_QUALITY_FLOOR, 17)
         self.assertEqual(quality_optimizer.MIN_HOOK_SCORE, 4)
         self.assertEqual(
             dict(quality_optimizer.AXIS_FLOORS),
@@ -448,8 +448,8 @@ class RepairStateTests(unittest.TestCase):
         with patch.object(quality_optimizer, "_ACTIVE_STATE", state):
             self.assertEqual(quality_optimizer._qualifying_candidates(
                 attempt(repaired), rejected_openings=set(), package_requested=False, fixture_mode=False), ())
-        improved = replace(repaired, effective_total=22, raw_total=22,
-                           axes={**repaired.axes, "earned_closer": 5})
+        improved = replace(repaired, effective_total=23, raw_total=23,
+                           axes={**stalled.axes, "hook_strength": 4})
         self.assertEqual(state.observe(attempt(improved)), improved)
         fresh = quality_optimizer.RepairState()
         self.assertEqual(fresh.observe(replace(attempt(stalled), candidates=(stalled, repaired))), repaired)
@@ -576,7 +576,7 @@ class RepairStateTests(unittest.TestCase):
             ["hook_strength", "middle_escalation", "earned_closer", "specificity_and_source_quality"],
         )
         self.assertNotIn("quality_target", feedback)
-        self.assertEqual(feedback["acceptable_floor"], 18)
+        self.assertEqual(feedback["acceptable_floor"], 17)
         self.assertEqual(
             feedback["axis_floors"],
             {"hook_strength": 4, "middle_escalation": 3, "earned_closer": 3, "specificity_and_source_quality": 3, "voice_fidelity": 4},
@@ -689,6 +689,17 @@ class RepairPromptTests(unittest.TestCase):
 
 
 class FourCycleConvergenceTests(unittest.TestCase):
+    def test_minimum_seventeen_stops_live_loop_on_first_attempt(self) -> None:
+        item = candidate(17, dict(zip(workflow.CRITIC_AXES, (4, 3, 3, 3, 4), strict=True)))
+        with (
+            patch.object(quality_cli, "_run_attempt", return_value=attempt(item)) as run,
+            patch.object(quality_cli, "_qualifying_candidates", quality_optimizer._qualifying_candidates),
+            patch.object(quality_cli, "_quality_feedback", side_effect=AssertionError("repair requested")),
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(quality_optimizer._command_draft(SimpleNamespace(dry_run=False, package=False, run_spec=None)), 0)
+        run.assert_called_once()
+
     def test_voice_gate_keeps_18_out_but_21_advances_on_cycle_three(self) -> None:
         responses = [
             attempt_output(
