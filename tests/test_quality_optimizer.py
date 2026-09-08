@@ -689,6 +689,50 @@ class RepairPromptTests(unittest.TestCase):
 
 
 class FourCycleConvergenceTests(unittest.TestCase):
+    def test_later_critic_timeout_delivers_prior_scored_draft_with_honest_warning(self) -> None:
+        import os
+        import tempfile
+        from pathlib import Path
+        from authority_os.model_runtime import ModelTimeoutError
+        prior = candidate(20, dict(zip(workflow.CRITIC_AXES, (3, 4, 5, 4, 4), strict=True)), text="Retain this previously scored draft.")
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as folder:
+            target = Path(folder) / "best-effort-post.md"
+            with (
+                patch.dict(os.environ, {quality_optimizer.best_effort.OUTPUT_ENV: str(target)}),
+                patch.object(quality_cli, "_run_attempt", side_effect=[attempt(prior), ModelTimeoutError("Single-topic Critic timed out.")]) as run,
+                patch.object(quality_cli, "_quality_feedback", quality_optimizer._quality_feedback),
+                patch.object(quality_cli, "_qualifying_candidates", quality_optimizer._qualifying_candidates),
+                patch.object(v1_completion, "record_decision") as record,
+                redirect_stdout(io.StringIO()),
+            ):
+                result = quality_optimizer._command_draft(SimpleNamespace(dry_run=False, package=False, run_spec=None))
+            saved = target.read_text()
+            self.assertEqual(result, 0)
+            self.assertEqual(run.call_count, 2)
+            self.assertIn(prior.text, saved)
+            self.assertIn("20/25", saved)
+            self.assertIn("Single-topic Critic timed out.", saved)
+            self.assertIn("hook_strength", saved)
+            delivery = record.call_args.args[0]
+            self.assertEqual(delivery["observed_status"], "COMPLETED_WITH_WARNINGS")
+            self.assertTrue(delivery["interrupted_evaluation"])
+            self.assertIn("evaluation remains incomplete", delivery["reason"])
+
+    def test_timeout_without_prior_score_and_other_errors_do_not_claim_delivery(self) -> None:
+        from authority_os.model_runtime import ModelTimeoutError
+        prior = candidate(20, dict(zip(workflow.CRITIC_AXES, (3, 4, 5, 4, 4), strict=True)))
+        for error, retained in ((ModelTimeoutError("Single-topic Critic timed out."), False),
+                                (workflow.WorkflowError("invalid scorecard"), True)):
+            def fail(_args):
+                if retained:
+                    quality_optimizer._state().observe(attempt(prior))
+                raise error
+            with self.subTest(error=error), patch.object(quality_optimizer, "_ORIGINAL_COMMAND_DRAFT", fail), patch.object(quality_optimizer.best_effort, "write") as write, redirect_stdout(io.StringIO()):
+                with self.assertRaises(type(error)):
+                    quality_optimizer._command_draft(SimpleNamespace())
+                write.assert_not_called()
+
     def test_minimum_seventeen_stops_live_loop_on_first_attempt(self) -> None:
         item = candidate(17, dict(zip(workflow.CRITIC_AXES, (4, 3, 3, 3, 4), strict=True)))
         with (
