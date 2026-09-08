@@ -63,7 +63,7 @@ def _schema(kind: str) -> dict[str, object]:
         return {"type": "object", "properties": {"items": {"type": "array", "minItems": 1, "maxItems": 7, "items": item}}, "required": ["items"], "additionalProperties": False}
     if kind == "cards":
         props = {key: {"type": "string"} for key in CARD_KEYS - {"signal_ids"}}
-        props["signal_ids"] = {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "string"}}
+        props["signal_ids"] = {"type": "array", "minItems": 1, "maxItems": 7, "items": {"type": "string"}}
         card = {"type": "object", "properties": props, "required": sorted(CARD_KEYS), "additionalProperties": False}
         return {"type": "object", "properties": {"cards": {"type": "array", "minItems": 3, "maxItems": 3, "items": card}}, "required": ["cards"], "additionalProperties": False}
     score = {
@@ -200,8 +200,8 @@ def validate_cards(raw: object, signals: Sequence[Mapping[str, object]], profile
             raise workflow.WorkflowError("Thesis IDs must be thesis-1 through thesis-3.")
         seen.add(card["id"])
         ids = card["signal_ids"]
-        if not isinstance(ids, Sequence) or isinstance(ids, (str, bytes)) or not 1 <= len(ids) <= 2:
-            raise workflow.WorkflowError("Each thesis must use one or two signal IDs.")
+        if not isinstance(ids, Sequence) or isinstance(ids, (str, bytes)) or not 1 <= len(ids) <= 7:
+            raise workflow.WorkflowError("Each thesis must use one to seven signal IDs.")
         ids = [str(value).strip() for value in ids]
         if any(value not in signal_ids for value in ids) or len(ids) != len(set(ids)):
             raise workflow.WorkflowError("Thesis signal IDs are invalid.")
