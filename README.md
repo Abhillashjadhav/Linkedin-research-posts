@@ -293,6 +293,13 @@ come first: hook and voice 4/5; middle, closer and specificity 3/5. Edit below-t
 sections using the exact Critic anchors and preserve passing sections. Every retained edit must keep the overall total from decreasing and reduce an axis
 deficit without worsening another. A lower total is rejected even if the hook improves.
 Once all targets are met (4 + 4 + 3 + 3 + 3 = 17), stop immediately. Before then, retain a repair only if its total strictly increases, an unmet axis improves, and no axis decreases.
+
+If a later model call times out after a candidate has already been scored, the
+live quality loop delivers that retained draft privately with its original scores,
+unmet axis targets, and an explicit interrupted-evaluation warning. It never
+accepts an unscored revision or claims the timed-out evaluation passed. Without
+a previously scored candidate, a timeout remains an execution failure. Malformed
+responses and secure-file errors also remain failures.
 Repeated editorial findings never terminate the four-cycle budget early. Editorial findings
 stay advisory and remain visible when writing stops. A rejected edit never
 replaces the retained best candidate. If targets remain unmet after repair, the draft is
