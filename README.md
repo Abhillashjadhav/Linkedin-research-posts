@@ -61,6 +61,12 @@ The dry run is offline and uses visibly synthetic fixtures. It does not invoke a
 ```
 
 V1 uses a seven-day lookback by default and retries unavailable Scout surfaces once.
+Discovery returns up to six meaningful conversations, aiming for five or six when
+the evidence supports them. Smaller pools are valid; engagement is never invented
+to fill a list. No author proof inventory is required: thesis generation uses
+public evidence and marks the legacy proof reference NOT_REQUIRED. Existing
+profiles remain readable. The retained proof_fit axis measures public-evidence
+grounding, not personal achievements.
 All scored topics with source leads compete with the unexpired private inventory,
 ranked by the existing combined momentum and authority-fit scores. The old 14/25
 momentum and 40/50 inventory cutoffs do not determine discovery admission.
@@ -72,7 +78,7 @@ publication history, not inferred from topic names or an empty history.
 Brand-independent reader value, usable evidence, and the author's goal remain required.
 The selected topic produces one thesis batch, scored on the existing five axes.
 The best valid thesis proceeds directly to drafting: no 23/25 cutoff or score retries.
-Final writing still requires total >=18, hook and voice >=4, and the other axes >=3;
+Final writing still requires total >=17, hook and voice >=4, and the other axes >=3;
 best-draft delivery keeps unmet writing targets visible as warnings.
 Invalid model output and missing evidence still stop the run.
 Research coverage is satisfied by one body-read primary source or three distinct
@@ -113,11 +119,11 @@ exact timestamp; otherwise the command fails closed rather than guessing.
 
 A live invocation runs at most four scored iterations. Writing acceptance has one rule:
 
-- effective Critic score of at least **18/25**;
+- effective Critic score of at least **17/25**;
 - hook and voice scores of at least **4/5**;
 - middle escalation, earned closer, and specificity/source quality scores of at least **3/5**.
 
-Authority, proof, honesty, citation, relevance, resonance, hook-register and anti-slop checks are editorial advisories. Their raw findings remain visible; they cannot veto score acceptance or discard an improving edit. Passing text is returned immediately, except that frozen repair may attempt one automatic rewrite for unsupported factual wording. On exhaustion, the best draft is delivered with unmet score targets recorded honestly. Successful artifact delivery returns exit code 0 even when writing scores remain below target; missing inputs, malformed model output, authorization and secure-file errors still fail.
+Authority, proof, honesty, citation, relevance, resonance, hook-register and anti-slop checks are editorial advisories. Their raw findings remain visible; they cannot veto score acceptance or discard an improving edit. Passing text is returned immediately; no repair is requested after all five axis minima are met. On exhaustion, the best draft is delivered with unmet score targets recorded honestly. Successful artifact delivery returns exit code 0 even when writing scores remain below target; missing inputs, malformed model output, authorization and secure-file errors still fail.
 
 `eval-package --repair` scores the saved candidate, then edits that same candidate at most three times. It reuses the saved evidence and never restarts discovery. The dashboard links `evaluated-<candidate-id>.md` and separates score shortfalls from advisory findings. Publication remains manual.
 
@@ -154,7 +160,7 @@ git clone --depth 1 https://github.com/Abhillashjadhav/no-ai-slop.git /tmp/no-ai
 The coordinator runs each in-scope day independently. Every executed day ends
 in either `READY_FOR_HUMAN_REVIEW` or an explicit `BLOCKED` trace; a preserved
 published day may instead carry an aggregate-only out-of-scope status. The
-coordinator uses the same 18/25 total and named per-axis floors as standalone drafting. The separate first-comment rubric also uses an 18/25 total floor while retaining its evidence, anti-slop, and artisanal checks. Rejected prose is omitted from the persisted public trace.
+coordinator uses the same 17/25 total and named per-axis floors as standalone drafting. The separate first-comment rubric uses an 18/25 total floor while retaining its evidence, anti-slop, and artisanal checks. Rejected prose is omitted from the persisted public trace.
 Visual plans are rendered as repository-native SVG files and must pass both
 layout checks and the separate Visual QA stage.
 
@@ -189,7 +195,7 @@ flowchart LR
     E --> F[Critic and deterministic gates]
     F --> G[Integrated and artisanal anti-slop]
     G -->|Below locked bar| D
-    G -->|18+ and axis floors and gates pass| H[First comment and artifact]
+    G -->|17+ and all axis floors pass| H[First comment and artifact]
     H --> I[Visual QA]
     I --> J[Human review package]
     J --> K[Manual fact verification]
@@ -261,7 +267,7 @@ Opportunity drafting additionally requires a validated public-safe proof manifes
 
 Use the existing package, strategy, and evidence when research is already complete. The
 first iteration scores the frozen candidate unchanged. A passing candidate is returned
-immediately unless unsupported factual wording needs one automatic rewrite attempt.
+immediately when all five axis minima pass, including the exact 17-point minimum.
 At most three bounded edits follow, for four scored iterations total:
 
 ```bash
@@ -279,9 +285,9 @@ Every retained edit keeps the same candidate ID, angle, and claim IDs. Repair ta
 come first: hook and voice 4/5; middle, closer and specificity 3/5. Edit below-target
 sections using the exact Critic anchors and preserve passing sections. Every retained edit must keep the overall total from decreasing and reduce an axis
 deficit without worsening another. A lower total is rejected even if the hook improves.
-Once all targets are met, optimize the overall total to at least 18/25 and stop.
+Once all targets are met (4 + 4 + 3 + 3 + 3 = 17), stop immediately. Before then, retain a repair only if its total strictly increases, an unmet axis improves, and no axis decreases.
 Repeated editorial findings never terminate the four-cycle budget early. Editorial findings
-stay advisory, including after the automatic factual rewrite. A rejected edit never
+stay advisory and remain visible when writing stops. A rejected edit never
 replaces the retained best candidate. If targets remain unmet after repair, the draft is
 delivered with `COMPLETED_WITH_WARNINGS`, not a false score pass or a workflow failure.
 Discovery, research, thesis selection, and the original Writer are not rerun.
@@ -351,7 +357,7 @@ make check
 - macOS and Linux are supported; Windows is not currently supported for private-data operation.
 - Legacy single-post live drafting depends on the locally configured Claude service and explicit consent; trace-first campaign mode uses the authenticated Codex CLI with explicit per-stage model settings.
 - The bounded search stops after four live cycles rather than spending indefinitely.
-- Passing the 18/25 total, the hook and voice floors, and every hard gate creates review eligibility; it is not proof that a human will find the post compelling.
+- Passing the 17/25 total, the hook and voice floors, and every hard gate creates review eligibility; it is not proof that a human will find the post compelling.
 - Research ingestion, analytics collection, and publication are not automated.
 - Structural citation checks reduce unsupported claims but cannot prove factual truth.
 - Performance learning depends on manually recorded observations.
