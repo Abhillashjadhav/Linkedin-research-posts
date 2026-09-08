@@ -177,7 +177,7 @@
       "audience_fit": "Useful to the target audience.",
       "distinctiveness": "Adds a real judgment, trade-off, counterexample, or decision surface rather than a generic news summary.",
       "decision_strength": "Makes a concrete choice or recommendation.",
-      "proof_fit": "Uses evidence or author proof naturally and honestly.",
+      "proof_fit": "Uses supplied public evidence naturally and honestly; no author proof inventory is required or scored.",
       "simplicity": "The atomic idea works for a non-specialist."
     },
     "axis_range": [
@@ -192,7 +192,7 @@
     "role": "selector_not_publication_acceptance",
     "auto_selection": "When post generation is requested, choose the highest-ranked eligible thesis deterministically. Otherwise present the ranked eligible set.",
     "author_proof": {
-      "rule": "Required only when the thesis makes an author-owned capability, result, customer, or implementation claim. Evidence-led incident and analysis posts may use NOT_REQUIRED.",
+      "rule": "Not required for discovery or thesis selection. Generate evidence-led analysis with proof_id NOT_REQUIRED. Never invent author experience or results; use sourced facts and clearly stated recommendations.",
       "decision_status": "RESOLVED"
     },
     "qualification_rule": "Use the five thesis axes to rank candidates, not as a second publication threshold. Require the selected thesis to pass audience relevance, claim support, simplicity, and non-duplication checks.",
@@ -330,7 +330,7 @@
     ],
     "total_formula": "sum_of_five_axes",
     "total_out_of": 25,
-    "minimum_total": 18,
+    "minimum_total": 17,
     "optimization_target": null,
     "legacy_24_or_25_approval_path": "DELETED",
     "legacy_hook_total_cap": "DELETED",
@@ -484,8 +484,8 @@
     "retain_best_grounded_candidate": true,
     "progressive_editor_candidate_count": 1,
     "progressive_editor_identity_rule": "Every edit keeps the selected candidate ID, angle, and claim IDs exactly.",
-    "progressive_editor_monotonic_rule": "Repair axis deficits first: hook and voice target 4, middle, closer and specificity target 3. Retain an edit that reduces a deficit without worsening another; the overall total must never decrease, including while repairing below-target axes. Once all targets are met, the overall total must not decrease and a score or finding improves. Editorial findings never veto progress.",
-    "first_iteration_pass_rule": "If the frozen candidate passes on iteration 1, stop unless unsupported factual wording needs one automatic rewrite attempt. Findings remain advisory, and the shared limit is three edits.",
+    "progressive_editor_monotonic_rule": "Stop at hook >=4, voice >=4, middle >=3, closer >=3, specificity >=3 (minimum total 17). Before then, accept only edits that strictly increase the total, reduce an axis deficit and never lower any individual axis score. Otherwise retain the previous draft; keep the bounded attempt budget and deliver it with warnings if needed.",
+    "first_iteration_pass_rule": "If the frozen candidate meets all five axis targets on iteration 1, stop immediately. Findings remain visible as advisory warnings.",
     "repair_only_failed_mandatory_floors_and_gates": true,
     "repair_named_total_deficit": true,
     "preserve_passing_mandatory_floors": true,
@@ -493,10 +493,10 @@
     "never_change_the_locked_thesis_without_a_recorded_claim_support_decision": true,
     "campaign_and_single_post_use_same_policy": true,
     "on_exhaustion": "Complete with warnings and return the best draft, exact scorecards, unmet score targets and editorial findings. Exit successfully when artifacts were written; do not claim the writing score passed. Publication remains manual.",
-    "priority": "axis_targets_then_overall_total"
+    "priority": "axis_targets_then_stop"
   },
   "acceptance": {
-    "formula": "critic_total_at_least_18 AND hook_at_least_4 AND voice_at_least_4 AND middle_at_least_3 AND closer_at_least_3 AND specificity_at_least_3",
+    "formula": "critic_total_at_least_17 AND hook_at_least_4 AND voice_at_least_4 AND middle_at_least_3 AND closer_at_least_3 AND specificity_at_least_3",
     "model_reported_status_is_authoritative": false,
     "python_computes_acceptance": true,
     "model_scores_and_evidence_are_inputs": true,
@@ -637,7 +637,7 @@
     {
       "id": "OD-9",
       "question": "Should editorial checks independently block draft delivery or reject score progress?",
-      "resolution": "Every editorial finding is advisory. Writing acceptance requires total >=18, hook and voice >=4, and middle, closer and specificity >=3. Repair below-target axes first, then overall total; do not polish passing axes. Repeated findings never abort the four-cycle budget. Deliver the best draft with honest warnings on exhaustion, preserve filesystem security and model-egress consent, and leave publication manual.",
+      "resolution": "Every editorial finding is advisory. Writing acceptance requires total >=17, hook and voice >=4, and middle, closer and specificity >=3. Stop as soon as all axis minima are met. Until then accept only a strictly higher total with improved deficits and no individual axis decrease. Repeated findings never abort the four-cycle budget. Deliver the best draft with honest warnings on exhaustion, preserve filesystem security and model-egress consent, and leave publication manual.",
       "decision_status": "RESOLVED"
     }
   ]
