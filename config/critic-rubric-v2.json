@@ -83,7 +83,7 @@
     "earned_closer": {
       "type": "outcome_gate",
       "floor": 3,
-      "note": "Scored and recorded, but not independently gated. It contributes to the overall 18/25 total and may trade off with the other non-mandatory axes. Across 26 clean closers the best rule reached kappa 0.20 against outcomes, and the owner's own closer scores ran inverted: 3.73 on posts that flopped against 3.33 on posts that landed.",
+      "note": "Minimum 3, alongside hook and voice minimum 4 and middle and specificity minimum 3. Stop when all axis minima are met (17/25). Across 26 clean closers the best rule reached kappa 0.20 against outcomes, and the owner's own closer scores ran inverted: 3.73 on posts that flopped against 3.33 on posts that landed.",
       "1": "The ending is a generic CTA, generic question, slogan, or unrelated kicker that is not earned by the body.",
       "2": "The ending mostly restates the post or uses familiar engagement bait such as a generic invitation for opinions.",
       "3": "The ending is relevant and understandable, but predictable; it summarizes or suggests an action without sharply crystallizing the post's value.",
@@ -106,6 +106,6 @@
       "specificity_and_source_quality",
       "voice_fidelity"
     ],
-    "note": "Writing acceptance requires total >=18, hook and voice >=4, and middle, closer and specificity >=3. Repair below-target axes first, then total; do not polish passing axes. Editorial findings remain advisory and never prevent best-draft delivery."
+    "note": "Writing acceptance requires total >=17, hook and voice >=4, and middle, closer and specificity >=3. Stop immediately when all axis targets are met. Until then, accept only repairs with a strictly higher total, an improved deficit, and no axis decrease. Editorial findings remain advisory and never prevent best-draft delivery."
   }
 }
