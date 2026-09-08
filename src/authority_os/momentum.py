@@ -108,7 +108,7 @@ def momentum_schema() -> dict[str, object]:
     }
 
 
-def authority_topic_schema() -> dict[str, object]:
+def authority_topic_schema(count: int = MOMENTUM_TOP_K) -> dict[str, object]:
     score = {
         "type": "object",
         "properties": {
@@ -126,8 +126,8 @@ def authority_topic_schema() -> dict[str, object]:
         "properties": {
             "scorecards": {
                 "type": "array",
-                "minItems": MOMENTUM_TOP_K,
-                "maxItems": MOMENTUM_TOP_K,
+                "minItems": count,
+                "maxItems": count,
                 "items": score,
             }
         },
@@ -367,6 +367,14 @@ def score_authority_fit(
     candidates: Sequence[Mapping[str, object]],
     profile: Mapping[str, object],
 ) -> list[dict[str, object]]:
+    # Keep prompt size bounded while scoring the full returned candidate set.
+    if not candidates:
+        return []
+    if len(candidates) > MOMENTUM_TOP_K:
+        scores = []
+        for offset in range(0, len(candidates), MOMENTUM_TOP_K):
+            scores.extend(score_authority_fit(candidates[offset:offset + MOMENTUM_TOP_K], profile))
+        return scores
     prompt = f"""Score each momentum-ranked topic from 1 to 5 on exactly {', '.join(AUTHORITY_TOPIC_AXES)}. Keep this separate from conversation momentum; do not change momentum order or infer popularity. Audience fit means relevance to the target audience. Judgment fit means the topic permits a differentiated operator judgment rather than news summary. Proof fit means the supplied public-safe proof inventory can support a natural implementation connection without inventing adoption. Decision surface means the topic exposes a concrete product choice/trade-off. Simplicity means the core idea can be explained to a non-engineer. Return scores only; do not browse, rewrite, select, or draft.
 UNTRUSTED_PROFILE
 {json.dumps(dict(profile), indent=2, sort_keys=True)}
@@ -378,8 +386,8 @@ END_UNTRUSTED_MOMENTUM_TOPICS"""
         config=AUTHORITY_TOPIC_MODEL,
         role_prompt="You are a strict authority-fit critic. Popularity and authority fit are separate. Score only.",
         task_prompt=prompt,
-        schema=authority_topic_schema(),
-        timeout=420,
+        schema=authority_topic_schema(len(candidates)),
+        timeout=120,
         web_search=False,
         stage_label="Authority topic critic",
     )
