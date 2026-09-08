@@ -942,7 +942,15 @@ def finalize_draft_evaluation(
         if check["status"] in {"FAIL", "BLOCKED"}
         and check.get("mode") not in {"diagnostic", "shadow"}
     ]
-    warnings = eval_dashboard.get("delivery_outcome") == "COMPLETED_WITH_WARNINGS"
+    upstream_warnings = any(
+        check.get("status") == "COMPLETED_WITH_WARNINGS"
+        for check in run_dashboard["checks"]
+        if check.get("stage") != "final_evals"
+    )
+    warnings = (
+        eval_dashboard.get("delivery_outcome") == "COMPLETED_WITH_WARNINGS"
+        or upstream_warnings
+    )
     if return_code != 0:
         outcome = "FAIL"
         reason = f"draft execution failed: {failure_reason}"
@@ -951,7 +959,11 @@ def finalize_draft_evaluation(
         reason = f"{failed[0]['label']}: {failed[0]['reason']}"
     elif warnings:
         outcome = "COMPLETED_WITH_WARNINGS"
-        reason = "best draft delivered; writing scores remain below target"
+        reason = (
+            "best draft delivered; thesis quality targets remain unmet"
+            if upstream_warnings
+            else "best draft delivered; writing scores remain below target"
+        )
     else:
         outcome = "PASS"
         reason = "writing targets cleared; editorial findings remain advisory"
@@ -1413,7 +1425,7 @@ def search_theses(
     for cycle in range(1, base.MAX_CYCLES + 1):
         cards = generate_cards(profile, signals, feedback)
         if any(base._normal(card["thesis"]) in rejected for card in cards):
-            raise workflow.WorkflowError("Thesis generator reused a rejected thesis.")
+            print("Thesis advisory: a below-target thesis was repeated; attempt budget is unchanged.")
         scores = {
             str(score["thesis_id"]): score
             for score in base.score_cards(cards, profile, signals)
@@ -1534,7 +1546,7 @@ def search_theses(
             trace_path,
             {
                 "schema_version": 1,
-                "outcome": "FAIL",
+                "outcome": "COMPLETED_WITH_WARNINGS" if best_so_far else "FAIL",
                 "thresholds": {
                     "minimum_total": base.MIN_TOTAL,
                     "minimum_simplicity": base.MIN_SIMPLICITY,
@@ -1542,6 +1554,7 @@ def search_theses(
                 "cycles": cycle_traces,
                 "best_overall": best_so_far,
                 "qualifying_ids": [],
+                "selected_id": str(best_so_far["id"]) if best_so_far else None,
             },
         )
         print(
@@ -1555,10 +1568,9 @@ def search_theses(
             f"simplicity={best_so_far['scores']['simplicity']}/5; "  # type: ignore[index]
             f"reasons={'; '.join(best_so_far['rejection_reasons'])}."  # type: ignore[arg-type]
         )
-    raise workflow.WorkflowError(
-        "No thesis cleared the authority bar after the bounded search. "
-        "Improve the audience, proof inventory or signals."
-    )
+        print("Thesis search: continuing with the best valid thesis; quality shortfalls remain warnings.")
+        return [best_so_far]
+    raise workflow.WorkflowError("Thesis search produced no valid candidate.")
 
 
 def evidence_scope_fingerprint(
@@ -2489,12 +2501,20 @@ def command(args: argparse.Namespace) -> int:
         )
         raise
     record_thesis_decisions(run_dashboard, thesis_trace_path)
+    thesis_warning = any(item.get("qualifies") is False for item in theses)
+    thesis_status = "COMPLETED_WITH_WARNINGS" if thesis_warning else "PASS"
     mark_run_stage(
         run_dashboard,
         "thesis_search",
-        "PASS",
-        f"{len(theses)} thesis candidate(s) cleared the authority bar",
-        qualifying_ids=[str(item["id"]) for item in theses],
+        thesis_status,
+        (
+            "Best valid thesis retained for drafting; "
+            + "; ".join(str(reason) for reason in theses[0].get("rejection_reasons", []))
+            if thesis_warning
+            else f"{len(theses)} thesis candidate(s) cleared the authority bar"
+        ),
+        qualifying_ids=[str(item["id"]) for item in theses if item.get("qualifies") is not False],
+        selected_id=str(theses[0]["id"]),
         evaluation_artifact=thesis_trace_path.relative_to(workflow.REPO_ROOT).as_posix(),
     )
 
@@ -2520,7 +2540,7 @@ def command(args: argparse.Namespace) -> int:
         f"Live research stored: inserted={inserted}; duplicates={duplicates}; "
         f"package={package.relative_to(workflow.REPO_ROOT)}."
     )
-    print(f"{len(theses)} thesis candidate(s) cleared the locked authority bar:")
+    print(f"{len(theses)} thesis candidate(s) retained; thesis outcome: {thesis_status}:")
     draft_commands: list[tuple[dict[str, object], list[str], str]] = []
     for card in theses:
         strategy = base.write_private_json(
@@ -2581,13 +2601,16 @@ def command(args: argparse.Namespace) -> int:
             run_dashboard,
             stage="drafting",
             decision="thesis selected for drafting",
-            status="PASS",
-            expected="highest-ranked thesis that cleared the locked authority bar",
+            status=thesis_status,
+            expected="highest qualifying thesis, or best valid thesis after bounded score search",
             observed=(
                 f"candidate={selected[0]['id']}; total={selected[0]['total']}/25; "
                 f"simplicity={selected[0]['scores']['simplicity']}/5"
             ),
-            reason="highest qualifying thesis selected deterministically",
+            reason=(
+                "best valid thesis selected with quality warnings"
+                if thesis_warning else "highest qualifying thesis selected deterministically"
+            ),
             subject_id=str(selected[0]["id"]),
         )
         guidance = workflow.load_voice_guidance()
@@ -2597,7 +2620,7 @@ def command(args: argparse.Namespace) -> int:
         ]
         print(
             f"Auto-selection: {selected[0]['id']} ({selected[0]['total']}/25), "
-            "the highest qualifying thesis."
+            f"selected with status {thesis_status}."
         )
         print(
             f"Voice stage: LOADED ({len(anchors)} non-blank anchor(s)); "
@@ -2700,8 +2723,8 @@ def parser() -> argparse.ArgumentParser:
         "--generate-post",
         action="store_true",
         help=(
-            "Select the highest-scoring qualifying thesis and continue through the "
-            "high-bar drafting workflow."
+            "Select the highest qualifying thesis, or the best valid thesis with "
+            "quality warnings after bounded search, and continue through drafting."
         ),
     )
     return result
