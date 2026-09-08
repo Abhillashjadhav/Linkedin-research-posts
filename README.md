@@ -61,9 +61,9 @@ The dry run is offline and uses visibly synthetic fixtures. It does not invoke a
 ```
 
 V1 uses a seven-day lookback by default and retries unavailable Scout surfaces once.
-Discovery returns up to six meaningful conversations, aiming for five or six when
-the evidence supports them. Smaller pools are valid; engagement is never invented
-to fill a list. No author proof inventory is required: thesis generation uses
+Discovery requires at least six meaningful conversations, with more allowed when
+supported. Insufficient evidence is reported rather than inventing engagement or
+padding the list. No author proof inventory is required: thesis generation uses
 public evidence and marks the legacy proof reference NOT_REQUIRED. Existing
 profiles remain readable. The retained proof_fit axis measures public-evidence
 grounding, not personal achievements.
