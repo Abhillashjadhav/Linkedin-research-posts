@@ -64,7 +64,12 @@ V1 retries unavailable Scout surfaces once, preserves every topic with a
 combined momentum and authority-fit score of at least 40/50 in a rolling
 seven-day private inventory, and selects the highest qualifying thesis before
 continuing through the existing high-bar drafting workflow. A clearly labelled
-authority-fit fallback may nominate a well-evidenced topic when current
+best-thesis fallback continues to drafting after the bounded thesis scoring
+budget is exhausted. Original scores and unmet targets remain visible as
+`COMPLETED_WITH_WARNINGS`; a below-target thesis is never labelled as qualifying.
+Repeated below-target wording consumes the same bounded attempt budget instead
+of stopping delivery. Invalid model output and missing evidence still stop the run.
+A clearly labelled authority-fit fallback may nominate a well-evidenced topic when current
 conversation momentum is insufficient; it never relabels that topic as
 trending. Research coverage is satisfied by one body-read primary source or three distinct
 body-read credible sources. Coverage shortfalls remain visible advisories and never
