@@ -28,6 +28,16 @@ def successful_run(command: list[str], **_kwargs: object) -> subprocess.Complete
 
 
 class ModelRuntimeTests(unittest.TestCase):
+    def test_deadline_has_a_distinct_recoverable_error_type(self) -> None:
+        with (
+            patch.object(model_runtime.shutil, "which", return_value="/opt/codex"),
+            patch.object(model_runtime.subprocess, "run", side_effect=subprocess.TimeoutExpired("codex", 120)),
+            self.assertRaisesRegex(model_runtime.ModelTimeoutError, "Authority topic critic timed out"),
+        ):
+            model_runtime.invoke_structured(config=CONFIG, role_prompt="Score topics.",
+                task_prompt="Return scores.", schema=SCHEMA, timeout=120,
+                stage_label="Authority topic critic")
+
     @patch("authority_os.model_runtime.subprocess.run", side_effect=successful_run)
     @patch("authority_os.model_runtime.shutil.which", return_value="/opt/codex")
     def test_both_comparison_versions_use_sol_high_without_fast_mode(
