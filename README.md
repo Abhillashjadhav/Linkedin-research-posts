@@ -79,6 +79,15 @@ Research coverage is satisfied by one body-read primary source or three distinct
 body-read credible sources. Coverage shortfalls remain visible advisories and never
 stop Topic Value or the candidate batch. Publication remains disabled.
 
+Authority-fit scoring uses batches of at most five topics with matching response
+schemas and a 120-second deadline per call. A timeout preserves the discovered
+topics and continues on observed momentum with an explicit authority-unavailable
+warning; unknown authority scores remain null. Other provider/schema errors still
+stop. Topic and thesis contracts allow up to seven evidence references so three
+credible sources can survive the complete handoff.
+See [the discovery decision map](docs/DISCOVERY_DECISION_MAP.md) for the active
+runtime overrides, stop conditions, and remaining policy discrepancies.
+
 If a run stops at Evidence verification, resume from its preserved run folder
 without repeating conversation discovery or topic admission:
 
