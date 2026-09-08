@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -38,6 +40,89 @@ def research_items(count: int = 3) -> list[dict[str, object]]:
 
 
 class EvidenceScoutRecoveryTests(unittest.TestCase):
+    def test_worker_schema_and_returned_evidence_preserve_global_lead_identity(self) -> None:
+        raw = research_items(1)
+        raw[0].update(lead_id="lead-5", lead_url="https://example.com/momentum")
+        with patch.object(daily_spine_cli.base, "invoke_structured", return_value={"items": raw}) as invoke:
+            items = daily_spine_cli._invoke_signal_scout(None, 7, AS_OF, admitted(), lead_offset=4)
+        self.assertEqual(items[0]["admitted_lead_id"], "lead-5")
+        self.assertEqual(invoke.call_args.kwargs["schema"]["properties"]["items"]["items"]["properties"]["lead_id"]["enum"], ["lead-5"])
+        raw[0]["lead_id"] = "lead-1"
+        with patch.object(daily_spine_cli.base, "invoke_structured", return_value={"items": raw}):
+            with self.assertRaisesRegex(workflow.WorkflowError, "admitted lead identity"):
+                daily_spine_cli._invoke_signal_scout(None, 7, AS_OF, admitted(), lead_offset=4)
+
+    def test_parallel_workers_cover_disjoint_ranked_batches_concurrently(self) -> None:
+        candidates = [{"topic": f"Topic {i}", "representative_urls": [f"https://example.com/lead-{i}"]} for i in range(12)]
+        barrier = threading.Barrier(3)
+        calls = []
+        def scout(_topic, _days, _as_of, batch, **kwargs):
+            calls.append(([item["topic"] for item in batch], kwargs))
+            barrier.wait(timeout=3)
+            items = research_items(3)
+            for i, item in enumerate(items):
+                item["url"] = f"https://example.com/source-{kwargs['lead_offset']}-{i}"
+                item["body"] = f"Distinct body for lead batch {kwargs['lead_offset']} item {i}."
+            return workflow.prepare_research_items(items)
+        trace = []
+        with patch.object(daily_spine_cli, "_invoke_signal_scout", side_effect=scout):
+            result = daily_spine_cli._resolve_parallel_evidence(None, 7, AS_OF, candidates, trace, "scope")
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sorted(kwargs["lead_offset"] for _, kwargs in calls), [0, 4, 8])
+        self.assertEqual(sorted(topic for batch, _ in calls for topic in batch), sorted(item["topic"] for item in candidates))
+        self.assertTrue(all(0 < kwargs["timeout"] <= 180 for _, kwargs in calls))
+        self.assertEqual(len(result.items), 7)
+        self.assertEqual(result.attempts, 3)
+        self.assertEqual(result.warnings, ())
+        self.assertEqual(trace[2]["lead_ids"], ["lead-9", "lead-10", "lead-11", "lead-12"])
+
+    def test_parallel_timeout_keeps_verified_siblings_and_deduplicates(self) -> None:
+        items = workflow.prepare_research_items(research_items(1))
+        def scout(*args, **kwargs):
+            if kwargs["lead_offset"] == 0:
+                raise daily_spine_cli.ModelTimeoutError("worker timed out")
+            return items
+        trace = []
+        with patch.object(daily_spine_cli, "_invoke_signal_scout", side_effect=scout):
+            result = daily_spine_cli._resolve_parallel_evidence(None, 7, AS_OF, admitted() * 3, trace, "scope")
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(len(result.warnings), 1)
+        self.assertEqual([row["status"] for row in trace], ["TIMEOUT", "PASS", "PASS"])
+
+    def test_parallel_deadline_does_not_wait_for_a_stalled_worker(self) -> None:
+        release = threading.Event()
+        def scout(*args, **kwargs):
+            if kwargs["lead_offset"] == 0:
+                release.wait(timeout=5)
+            return workflow.prepare_research_items(research_items(1))
+        trace = []
+        started = time.monotonic()
+        try:
+            with patch.object(daily_spine_cli, "EVIDENCE_TIMEOUT_SECONDS", 1), patch.object(daily_spine_cli, "_invoke_signal_scout", side_effect=scout):
+                result = daily_spine_cli._resolve_parallel_evidence(None, 7, AS_OF, admitted() * 3, trace, "scope")
+            self.assertLess(time.monotonic() - started, 3)
+            self.assertEqual(len(result.items), 1)
+            self.assertEqual(trace[0]["status"], "TIMEOUT")
+        finally:
+            release.set()
+
+    def test_parallel_malformed_evidence_is_not_softened_as_a_timeout(self) -> None:
+        def scout(*args, **kwargs):
+            if kwargs["lead_offset"] == 0:
+                raise workflow.WorkflowError("Evidence Scout item does not match its admitted topic-and-URL lead.")
+            return workflow.prepare_research_items(research_items(1))
+        with patch.object(daily_spine_cli, "_invoke_signal_scout", side_effect=scout):
+            with self.assertRaisesRegex(workflow.WorkflowError, "does not match"):
+                daily_spine_cli._resolve_parallel_evidence(None, 7, AS_OF, admitted() * 3, [], "scope")
+
+    def test_parallel_all_timeouts_cannot_claim_verified_evidence(self) -> None:
+        trace = []
+        with patch.object(daily_spine_cli, "_invoke_signal_scout", side_effect=daily_spine_cli.ModelTimeoutError("worker timed out")):
+            with self.assertRaisesRegex(workflow.WorkflowError, "without verified evidence"):
+                daily_spine_cli._resolve_parallel_evidence(None, 7, AS_OF, admitted() * 3, trace, "scope")
+        self.assertEqual(len(trace), 3)
+        self.assertTrue(all(row["status"] == "TIMEOUT" for row in trace))
+
     def test_one_body_read_primary_source_is_sufficient(self) -> None:
         prepared = daily_spine_cli._validate_body_verified_evidence(
             research_items(1),

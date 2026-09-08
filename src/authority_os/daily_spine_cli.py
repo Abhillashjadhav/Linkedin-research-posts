@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -34,6 +36,7 @@ CARD_KEYS = frozenset((*base.CARD_KEYS, "recommended_spine", "spine_fit_reason")
 MAX_SPINE_FIT_REASON_CHARS = 320
 CANDIDATE_INVENTORY = base.OUTPUT_ROOT / "candidate-inventory.json"
 EVIDENCE_TIMEOUT_SECONDS = 180
+EVIDENCE_MAX_WORKERS = 3
 EVIDENCE_CACHE_NAME = "evidence-research.json"
 ADMITTED_SCOPE_NAME = "admitted-topics.json"
 MIN_VERIFIED_EVIDENCE = 1
@@ -100,6 +103,7 @@ class EvidenceResolution:
     route: str
     attempts: int
     scope_fingerprint: str
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1584,10 +1588,11 @@ def _invoke_signal_scout(
     timeout: int = EVIDENCE_TIMEOUT_SECONDS,
     target_count: int = 3,
     stage_label: str = "Evidence Scout",
+    lead_offset: int = 0,
 ) -> list[dict[str, object]]:
     scope_lines: list[str] = []
     lead_urls: dict[str, set[str]] = {}
-    for index, candidate in enumerate(admitted_candidates, start=1):
+    for index, candidate in enumerate(admitted_candidates, start=lead_offset + 1):
         candidate_topic = str(candidate.get("topic", "")).strip()
         raw_urls = candidate.get("representative_urls", [])
         if not isinstance(raw_urls, Sequence) or isinstance(raw_urls, (str, bytes)):
@@ -1832,6 +1837,87 @@ def _database_evidence_for_scope(
         return []
 
 
+def _resolve_parallel_evidence(
+    topic: str | None,
+    days: int,
+    as_of: str,
+    candidates: Sequence[Mapping[str, object]],
+    trace: list[dict[str, object]],
+    fingerprint: str,
+) -> EvidenceResolution:
+    """Verify disjoint ranked lead batches under one shared wall-clock deadline."""
+    worker_count = min(EVIDENCE_MAX_WORKERS, len(candidates))
+    batch_size = math.ceil(len(candidates) / worker_count)
+    batches = [(offset, candidates[offset:offset + batch_size])
+               for offset in range(0, len(candidates), batch_size)]
+    started = time.monotonic()
+    deadline = started + EVIDENCE_TIMEOUT_SECONDS
+
+    def verify(offset: int, batch: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+        remaining = math.ceil(deadline - time.monotonic())
+        if remaining <= 0:
+            raise ModelTimeoutError("Evidence Scout shared deadline expired.")
+        return _invoke_signal_scout(
+            topic, days, as_of, batch,
+            timeout=min(remaining, EVIDENCE_TIMEOUT_SECONDS), target_count=3,
+            stage_label=f"Evidence Scout worker {offset // batch_size + 1}",
+            lead_offset=offset,
+        )
+
+    print(f"Evidence Scout: {len(batches)} parallel workers; {len(candidates)} ranked topics; shared {EVIDENCE_TIMEOUT_SECONDS}s deadline.", flush=True)
+    executor = ThreadPoolExecutor(max_workers=worker_count)
+    futures = [executor.submit(verify, offset, batch) for offset, batch in batches]
+    try:
+        done, _pending = wait(futures, timeout=max(0, deadline - time.monotonic()))
+    finally:
+        # Each running model call has the remaining subprocess deadline. No queued
+        # task may begin after the overall deadline; workers never write artifacts.
+        executor.shutdown(wait=False, cancel_futures=True)
+    retained: list[dict[str, object]] = []
+    warnings: list[str] = []
+    errors: list[Exception] = []
+    seen_urls: set[str] = set()
+    seen_hashes: set[str] = set()
+    for number, ((offset, batch), future) in enumerate(zip(batches, futures, strict=True), 1):
+        row: dict[str, object] = {
+            "route": "live-targeted-parallel", "worker": number,
+            "lead_ids": [f"lead-{i}" for i in range(offset + 1, offset + len(batch) + 1)],
+            "timeout_seconds": EVIDENCE_TIMEOUT_SECONDS, "target_count": 3,
+            "live_call_started": future.running() or (future.done() and not future.cancelled()),
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+            "model": base.SCOUT_MODEL.trace(), "signal_count": 0,
+        }
+        try:
+            if future not in done:
+                future.cancel()
+                raise ModelTimeoutError("Evidence Scout shared deadline expired.")
+            items = future.result()
+            row.update(status="PASS", signal_count=len(items))
+            for item in items:
+                url, digest = str(item["canonical_url"]), str(item["content_hash"])
+                if url not in seen_urls and digest not in seen_hashes:
+                    retained.append(item)
+                    seen_urls.add(url)
+                    seen_hashes.add(digest)
+        except workflow.WorkflowError as exc:
+            timeout = isinstance(exc, ModelTimeoutError) or _timed_out(exc)
+            row.update(status="TIMEOUT" if timeout else "FAIL", reason=str(exc))
+            if timeout:
+                warnings.append(f"Evidence worker {number} timed out; its lead batch remains unverified.")
+            else:
+                errors.append(exc)
+        trace.append(row)
+    if errors:
+        raise errors[0]
+    if not retained:
+        raise workflow.WorkflowError("Targeted Evidence Scout timed out without verified evidence. Discovery artifacts were preserved; resume this run without repeating discovery.")
+    # Reconcile in ranked batch order, not completion order. Each worker already
+    # validated source bodies, dates and exact lead binding. Deduplicate before
+    # preserving the existing downstream evidence budget.
+    retained = retained[:MAX_VERIFIED_EVIDENCE]
+    return EvidenceResolution(tuple(retained), "live-targeted-parallel", len(batches), fingerprint, tuple(warnings))
+
+
 def resolve_signal_evidence(
     topic: str | None,
     days: int,
@@ -1906,6 +1992,8 @@ def resolve_signal_evidence(
             "live_call_started": False,
         }
     )
+    if len(admitted_candidates) > 1:
+        return _resolve_parallel_evidence(topic, days, as_of, admitted_candidates, trace, fingerprint)
     started = time.monotonic()
     try:
         items = _invoke_signal_scout(
@@ -2263,7 +2351,7 @@ def command(args: argparse.Namespace) -> int:
             "evidence_verification",
             "FAIL",
             str(exc),
-            expected="3-7 research signals pass timestamp, source-body, URL, and source-quality validation",
+            expected="1-7 research signals pass timestamp, source-body, URL, and source-quality validation",
             observed=f"{type(exc).__name__}: {exc}",
             exception_type=type(exc).__name__,
             attempt_trace=evidence_attempt_path.relative_to(
@@ -2282,11 +2370,12 @@ def command(args: argparse.Namespace) -> int:
     mark_run_stage(
         run_dashboard,
         "evidence_verification",
-        "PASS",
-        f"{len(raw_signals)} body-verified signal(s) prepared",
+        "COMPLETED_WITH_WARNINGS" if evidence_resolution.warnings else "PASS",
+        f"{len(raw_signals)} body-verified signal(s) prepared" + ("; " + " ".join(evidence_resolution.warnings) if evidence_resolution.warnings else ""),
         signal_ids=[str(item["id"]) for item in raw_signals],
         acquisition_route=evidence_resolution.route,
         live_attempts=evidence_resolution.attempts,
+        warnings=list(evidence_resolution.warnings),
         evidence_snapshot=evidence_snapshot.relative_to(workflow.REPO_ROOT).as_posix(),
         attempt_trace=evidence_attempt_path.relative_to(workflow.REPO_ROOT).as_posix(),
         database_inserted=inserted,
