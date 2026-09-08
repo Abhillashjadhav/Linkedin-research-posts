@@ -52,7 +52,7 @@ def _candidate_schema() -> dict[str, object]:
             "source_ids": {
                 "type": "array",
                 "minItems": 1,
-                "maxItems": 2,
+                "maxItems": 7,
                 "items": {"type": "string"},
             },
             "situation": {"type": "string"},
@@ -257,8 +257,8 @@ def _validate_candidates(
             raise workflow.WorkflowError("Topic Value IDs must be topic-1 through topic-N exactly once.")
         seen_ids.add(candidate_id)
         source_ids = candidate.get("source_ids")
-        if not isinstance(source_ids, Sequence) or isinstance(source_ids, (str, bytes)) or not 1 <= len(source_ids) <= 2:
-            raise workflow.WorkflowError("Topic Value candidate must cite one or two source IDs.")
+        if not isinstance(source_ids, Sequence) or isinstance(source_ids, (str, bytes)) or not 1 <= len(source_ids) <= 7:
+            raise workflow.WorkflowError("Topic Value candidate must cite one to seven source IDs.")
         cleaned_source_ids = [str(value).strip() for value in source_ids]
         if (
             any(value not in valid_source_ids for value in cleaned_source_ids)
@@ -334,7 +334,9 @@ def invoke_selector(
     config = ModelConfig("codex", "gpt-5.6-sol", "ultra")
     task = (
         f"Extract exactly {count} grounded candidate situation(s) worth considering before any thesis or post is written. "
-        "Use one or two supplied source IDs per situation. Do not draft a hook, thesis, post, CTA, or personal story. "
+        "Use one to seven supplied source IDs per situation. Where available, cite one body-read primary source "
+        "or three distinct body-read credible sources supporting that same situation. Never pad coverage with unrelated sources. "
+        "Do not draft a hook, thesis, post, CTA, or personal story. "
         "A topic name is not a situation. State what changed, who cares, and what the reader gets. Accepted reader-value "
         "routes are capability discovery, decision change, and immediate utility. Gravity is important but not a hard requirement: "
         "a strong medium-gravity discovery can beat a high-gravity abstract topic. HIGH gravity means architecture, operating model, "
