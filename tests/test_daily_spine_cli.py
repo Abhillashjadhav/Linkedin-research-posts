@@ -665,6 +665,71 @@ class SpineCardTests(unittest.TestCase):
         thesis_stage = next(item for item in dashboard["checks"] if item["stage"] == "thesis_search")
         self.assertEqual(thesis_stage["status"], "PASS")
 
+    def test_authority_timeout_preserves_topics_and_reaches_drafting(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary, ExitStack() as stack:
+            root = Path(temporary)
+            output = root / "run"
+            profile_path = root / "profile.json"
+            profile_path.write_text(json.dumps(profile()), encoding="utf-8")
+            topic = {"id": "topic-1", "topic": "Agent reliability", "total": 20,
+                     "observed_axes": 5, "authority_fit": {"total": 22},
+                     "representative_urls": ["https://example.com/1"]}
+            topic.update(why_now="Current source evidence.", confidence="HIGH",
+                         platforms=["Primary source"], caveats="Fixture")
+            stack.enter_context(patch.object(daily_spine_cli.momentum, "invoke_scout", return_value=[topic]))
+            stack.enter_context(patch.object(daily_spine_cli.momentum, "score_authority_fit",
+                side_effect=daily_spine_cli.ModelTimeoutError("Authority topic critic timed out.")))
+            update_inventory = daily_spine_cli.update_candidate_inventory
+            stack.enter_context(patch.object(daily_spine_cli, "update_candidate_inventory",
+                side_effect=lambda rows, **kw: update_inventory(rows, **kw, path=root / "inventory.json")))
+            stack.enter_context(patch.object(daily_spine_cli, "resolve_signal_evidence", return_value=
+                daily_spine_cli.EvidenceResolution(tuple(signals()), "fixture", 0, "fixture")))
+            stack.enter_context(patch.object(daily_spine_cli.base, "project_signals", return_value=signals()))
+            stack.enter_context(patch.object(daily_spine_cli.base.legacy_cli, "initialise_paths"))
+            stack.enter_context(patch.object(daily_spine_cli.storage, "insert_research_items", return_value=(3, 0)))
+            stack.enter_context(patch.object(topic_value, "invoke_discovery_selector", return_value=value_candidates()))
+            stack.enter_context(patch.object(topic_value, "project_discovery_signals", return_value=signals()))
+            stack.enter_context(patch.object(daily_spine_cli, "generate_cards", return_value=cards()))
+            stack.enter_context(patch.object(daily_spine_cli.base, "score_cards", return_value=[
+                {"thesis_id": f"thesis-{i}", **{axis: 4 for axis in daily_spine_cli.base.AXES}, "total": 20}
+                for i in range(1, 4)
+            ]))
+            stack.enter_context(patch.object(daily_spine_cli.base, "MAX_CYCLES", 1))
+            stack.enter_context(patch.object(daily_spine_cli.v1_completion, "_read_jsonl", return_value=[]))
+            stack.enter_context(patch.object(workflow, "load_voice_guidance", return_value={}))
+            stack.enter_context(patch.object(daily_spine_cli.eval_dashboard_html, "open_dashboard", return_value=False))
+            child = stack.enter_context(patch.object(daily_spine_cli, "run_drafting_child", return_value=
+                daily_spine_cli.DraftingRun(0, "completed", "fixture.log", ())))
+            stack.enter_context(redirect_stdout(io.StringIO()))
+            code = daily_spine_cli.main([
+                "--profile", str(profile_path), "--as-of", "2026-09-08T09:04:06Z",
+                "--output-dir", str(output), "--db", str(root / "db.sqlite"),
+                "--allow-web-research", "--allow-model-egress", "--generate-post",
+            ])
+            dashboard = json.loads((output / "run-dashboard.json").read_text())
+            trace = json.loads((output / "thesis-evaluations.json").read_text())
+            html = (output / "eval-dashboard.html").read_text()
+            self.assertTrue((output / "discovery-ranked.json").exists())
+            checkpoint = json.loads((output / "authority-ranking.json").read_text())
+            inventory = json.loads((root / "inventory.json").read_text())
+            scope = json.loads((output / "admitted-topics.json").read_text())
+        self.assertEqual(code, 0)
+        child.assert_called_once()
+        self.assertEqual(dashboard["outcome"], "COMPLETED_WITH_WARNINGS")
+        self.assertIsNone(dashboard["stopped_at"])
+        self.assertEqual(trace["selection_policy"], "highest-score-valid-thesis")
+        self.assertEqual(len(trace["cycles"]), 1)
+        self.assertEqual(trace["best_overall"]["total"], 20)
+        self.assertIn("no score cutoff", html)
+        self.assertEqual(checkpoint["authority_status"], "UNAVAILABLE")
+        self.assertIsNone(checkpoint["candidates"][0]["authority_fit"])
+        self.assertIsNone(inventory["candidates"][0]["combined_total"])
+        self.assertIn("momentum only", scope["route"])
+        self.assertIn("authority scorer timed out", html)
+        thesis_stage = next(item for item in dashboard["checks"] if item["stage"] == "thesis_search")
+        self.assertEqual(thesis_stage["status"], "PASS")
+
     def test_seven_day_pool_ranks_retained_and_fresh_together_without_floors(self) -> None:
         current = [
             {"topic": "Fresh popular", "total": 15, "observed_axes": 5,
@@ -778,6 +843,26 @@ class SpineCardTests(unittest.TestCase):
         long[0]["spine_fit_reason"] = "x" * 321
         with self.assertRaisesRegex(workflow.WorkflowError, "spine_fit_reason"):
             daily_spine_cli.validate_cards(long, signals(), profile())
+
+    def test_three_corroborating_sources_survive_thesis_and_drafting_handoff(self) -> None:
+        supplied = cards()
+        supplied[0]["signal_ids"] = ["signal-1", "signal-2", "signal-3"]
+        retained = daily_spine_cli.validate_cards(supplied, signals(), profile())
+        manifest = daily_spine_cli.base.evidence_manifest_for(retained[0], signals(), signals())
+        self.assertEqual(manifest["source_urls"], [f"https://example.com/{i}" for i in range(1, 4)])
+        self.assertEqual(daily_spine_cli._schema("cards")["properties"]["cards"]["items"]["properties"]["signal_ids"]["maxItems"], 7)
+
+    def test_missing_authority_uses_a_common_momentum_basis_without_zero_imputation(self) -> None:
+        selected, route = daily_spine_cli.select_topic_scope([
+            {"topic": "Unscored authority", "total": 15, "authority_fit": None,
+             "representative_urls": ["https://example.com/one"]},
+            {"topic": "Known authority", "total": 10, "authority_fit": {"total": 25},
+             "representative_urls": ["https://example.com/two"]},
+        ])
+        self.assertIn("momentum only", route)
+        self.assertEqual(selected[0]["topic"], "Unscored authority")
+        self.assertIsNone(selected[0]["combined_total"])
+        self.assertEqual(selected[1]["combined_total"], 35)
 
     def test_schema_exposes_exact_five_spines(self) -> None:
         schema = daily_spine_cli._schema("cards")
