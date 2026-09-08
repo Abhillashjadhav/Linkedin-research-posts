@@ -27,6 +27,7 @@ from . import (
     workflow,
 )
 from .spine_feedback import CONTENT_SPINES
+from .model_runtime import ModelTimeoutError
 
 
 CARD_KEYS = frozenset((*base.CARD_KEYS, "recommended_spine", "spine_fit_reason"))
@@ -425,7 +426,7 @@ def load_discovery_resume(
     conversation = _dashboard_stage(dashboard, "conversation_discovery")
     admission = _dashboard_stage(dashboard, "topic_admission")
     evidence = _dashboard_stage(dashboard, "evidence_verification")
-    if conversation.get("status") != "PASS" or admission.get("status") != "PASS":
+    if conversation.get("status") not in {"PASS", "COMPLETED_WITH_WARNINGS"} or admission.get("status") != "PASS":
         raise workflow.WorkflowError(
             "Resume requires completed conversation discovery and topic admission."
         )
@@ -461,6 +462,7 @@ def load_discovery_resume(
         "momentum-qualified",
         "rolling seven-day inventory",
         "ranked seven-day pool",
+        "ranked seven-day pool (momentum only; authority unavailable)",
         "authority-fit fallback",
     }:
         raise workflow.WorkflowError("Resume topic admission route is invalid.")
@@ -952,7 +954,7 @@ def finalize_draft_evaluation(
     elif warnings:
         outcome = "COMPLETED_WITH_WARNINGS"
         reason = (
-            "best draft delivered; thesis quality targets remain unmet"
+            "best draft delivered; upstream ranking warnings remain visible"
             if upstream_warnings
             else "best draft delivered; writing scores remain below target"
         )
@@ -1178,9 +1180,9 @@ def update_candidate_inventory(
         authority_total = (
             authority.get("total") if isinstance(authority, Mapping) else None
         )
-        if type(momentum_total) is not int or type(authority_total) is not int:
+        if type(momentum_total) is not int:
             continue
-        combined = int(momentum_total) + int(authority_total)
+        combined = int(momentum_total) + authority_total if type(authority_total) is int else None
         topic = str(candidate["topic"]).strip()
         key = " ".join(topic.casefold().split())
         prior = by_topic.get(key)
@@ -1196,8 +1198,8 @@ def update_candidate_inventory(
             "last_seen_at": as_of,
             "expires_at": (now + timedelta(days=days)).isoformat().replace("+00:00", "Z"),
             "momentum_total": int(momentum_total),
-            "authority_fit_total": int(authority_total),
-            "authority_fit": dict(authority),
+            "authority_fit_total": authority_total,
+            "authority_fit": dict(authority) if isinstance(authority, Mapping) else None,
             "observed_axes": candidate.get("observed_axes"),
             "combined_total": combined,
             "representative_urls": list(candidate.get("representative_urls", [])),
@@ -1205,7 +1207,11 @@ def update_candidate_inventory(
         }
     retained = sorted(
         by_topic.values(),
-        key=lambda item: (-int(item["combined_total"]), str(item["topic"]).casefold()),
+        key=lambda item: (
+            item.get("combined_total") is None,
+            -int(item["combined_total"]) if type(item.get("combined_total")) is int else -int(item.get("momentum_total", 0)),
+            str(item["topic"]).casefold(),
+        ),
     )
     payload = {
         "schema_version": 1,
@@ -1245,7 +1251,7 @@ def select_topic_scope(
         " ".join(str(item.get("topic", "")).casefold().split()): dict(item)
         for item in inventory
         if item.get("status") == "AVAILABLE"
-        and type(item.get("combined_total")) is int
+        and (type(item.get("combined_total")) is int or type(item.get("momentum_total")) is int)
         and item.get("topic") and item.get("representative_urls")
     }
     unavailable = {
@@ -1256,11 +1262,20 @@ def select_topic_scope(
         authority = item.get("authority_fit")
         key = " ".join(str(item.get("topic", "")).casefold().split())
         if (not key or key in unavailable or not item.get("representative_urls")
-                or type(item.get("total")) is not int
-                or not isinstance(authority, Mapping)
-                or type(authority.get("total")) is not int):
+                or type(item.get("total")) is not int):
             continue
-        pool[key] = {**item, "combined_total": item["total"] + authority["total"]}
+        authority_total = authority.get("total") if isinstance(authority, Mapping) else None
+        pool[key] = {
+            **item, "momentum_total": item["total"],
+            "combined_total": item["total"] + authority_total if type(authority_total) is int else None,
+        }
+    if any(item.get("combined_total") is None for item in pool.values()):
+        # Compare one common observed basis, never 25-point scores against 50-point scores.
+        ranked = sorted(
+            [item for item in pool.values() if type(item.get("momentum_total")) is int],
+            key=lambda item: (-int(item["momentum_total"]), str(item["topic"]).casefold()),
+        )
+        return ranked, "ranked seven-day pool (momentum only; authority unavailable)"
     ranked = sorted(pool.values(), key=lambda item: (
         -int(item["combined_total"]), str(item["topic"]).casefold(),
     ))
@@ -1278,7 +1293,7 @@ def _schema(kind: str) -> dict[str, object]:
     props["signal_ids"] = {
         "type": "array",
         "minItems": 1,
-        "maxItems": 2,
+        "maxItems": 7,
         "items": {"type": "string"},
     }
     card = {
@@ -1976,12 +1991,15 @@ def command(args: argparse.Namespace) -> int:
             "Resume output must be different from the preserved source run."
         )
     run_dashboard = new_run_dashboard(run_id)
+    authority_warning = ""
 
     try:
         if resume is not None:
             top_five = [dict(item) for item in resume.top_five]
             momentum_candidates = list(top_five)
             ranked = list(top_five)
+            if any(item.get("authority_fit") is None for item in top_five):
+                authority_warning = "Authority ranking remains unavailable in the resumed pool."
         else:
             momentum_candidates = momentum.invoke_scout(args.topic, args.days, as_of)
             ranked = momentum.rank_candidates(
@@ -1990,8 +2008,24 @@ def command(args: argparse.Namespace) -> int:
             )
             # Score the whole returned pool before comparing it with retained topics.
             top_five = ranked
-            authority_scores = momentum.score_authority_fit(top_five, profile)
-            top_five = momentum.attach_authority_fit(top_five, authority_scores)
+            # Save retrieved topics before an optional ranking model can time out.
+            base.write_private_json(folder / "discovery-ranked.json", {
+                "schema_version": 1, "created_at": as_of, "days": args.days,
+                "candidates": ranked, "authority_status": "NOT_EVALUATED",
+            })
+            try:
+                authority_scores = momentum.score_authority_fit(top_five, profile)
+                top_five = momentum.attach_authority_fit(top_five, authority_scores)
+            except ModelTimeoutError as exc:
+                authority_warning = str(exc)
+                top_five = [{**item, "authority_fit": None} for item in ranked]
+                print("Authority ranking unavailable; continuing with observed momentum. No authority scores were inferred.")
+            base.write_private_json(folder / "authority-ranking.json", {
+                "schema_version": 1, "created_at": as_of, "days": args.days,
+                "candidates": top_five,
+                "authority_status": "UNAVAILABLE" if authority_warning else "PASS",
+                "authority_reason": authority_warning,
+            })
     except STAGE_EXCEPTIONS as exc:
         run_dashboard["surface_scouts"] = surface_diagnostics(folder)
         record_surface_decisions(run_dashboard, run_dashboard["surface_scouts"])  # type: ignore[arg-type]
@@ -2021,12 +2055,14 @@ def command(args: argparse.Namespace) -> int:
     mark_run_stage(
         run_dashboard,
         "conversation_discovery",
-        "PASS",
+        "COMPLETED_WITH_WARNINGS" if authority_warning else "PASS",
         (
             "conversation candidates and rankings were resumed from the preserved run"
             if resume is not None
-            else "conversation candidates were collected and ranked"
+            else ("topics collected; authority scorer timed out; ranking uses observed momentum"
+                  if authority_warning else "conversation candidates were collected and ranked")
         ),
+        authority_ranking_warning=authority_warning,
         signal_count=len(momentum_candidates),
         ranked_count=len(ranked),
         resumed_from=(
