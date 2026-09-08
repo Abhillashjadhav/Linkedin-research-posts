@@ -7,11 +7,11 @@ from collections.abc import Sequence
 from typing import Mapping
 
 
-ACCEPTABLE_QUALITY_FLOOR = 18
+ACCEPTABLE_QUALITY_FLOOR = 17
 MIN_HOOK_SCORE = 4
 MIN_VOICE_FIDELITY_SCORE = 4
 
-# Repair reaches every axis target before optimizing the overall total.
+# Repair stops as soon as every axis target is met.
 # Editorial findings remain advisory and never block draft delivery.
 AXIS_FLOORS: Mapping[str, int] = MappingProxyType(
     {
@@ -26,7 +26,7 @@ AXIS_FLOORS: Mapping[str, int] = MappingProxyType(
 HARD_GATES = frozenset({"honesty", "citation", "proof", "privacy", "relevance"})
 ADVISORY_FACTUAL_WORDING_CODE = "unsupported-factual-marker"
 ADVISORY_FACTUAL_WORDING_GATES = frozenset({"honesty", "citation"})
-ACCEPTANCE_CONTRACT_VERSION = "five-axis-v7"
+ACCEPTANCE_CONTRACT_VERSION = "five-axis-v8"
 
 
 def axis_shortfalls(axes: Mapping[str, object]) -> dict[str, dict[str, int]]:
@@ -48,26 +48,26 @@ def axis_shortfalls(axes: Mapping[str, object]) -> dict[str, dict[str, int]]:
 def repair_score_decision(
     previous: Mapping[str, object], proposed: Mapping[str, object]
 ) -> tuple[bool, list[str]]:
-    """Reach axis targets first, then optimize total without losing a target."""
+    """Accept strictly higher totals with no axis regression, until targets are met."""
     old_total = int(previous["effective_total"])
     new_total = int(proposed["effective_total"])
     if new_total < old_total:
         return False, [f"total-regressed-{old_total}-to-{new_total}"]
+    if new_total == old_total:
+        return False, ["total-did-not-increase"]
     before = axis_shortfalls(previous)
     after = axis_shortfalls(proposed)
     worsened = [
-        axis for axis, item in after.items()
-        if item["shortfall"] > before.get(axis, {}).get("shortfall", 0)
+        axis for axis in AXIS_FLOORS
+        if int(proposed.get(axis, 0)) < int(previous.get(axis, 0))
     ]
     if worsened:
         return False, [f"axis-target-regressed:{axis}" for axis in worsened]
-    if before:
-        if sum(x["shortfall"] for x in after.values()) < sum(x["shortfall"] for x in before.values()):
-            return True, []
-        return False, ["unmet-axis-targets-did-not-improve"]
-    if new_total > old_total:
+    if not before:
+        return False, ["axis-targets-already-met"]
+    if sum(x["shortfall"] for x in after.values()) < sum(x["shortfall"] for x in before.values()):
         return True, []
-    return False, ["no-score-improvement"]
+    return False, ["unmet-axis-targets-did-not-improve"]
 
 
 def axis_repair_plan(axes: Mapping[str, object]) -> dict[str, object]:
@@ -81,7 +81,7 @@ def axis_repair_plan(axes: Mapping[str, object]) -> dict[str, object]:
         "voice_fidelity": "Edit only the passages with generic, consultant, or machine-like language into plain conversational judgment using the canonical voice rubric. Never invent experience or emotion.",
     }
     return {
-        "phase": "axis_targets" if shortfalls else "overall_total",
+        "phase": "axis_targets" if shortfalls else "complete",
         "targets": dict(AXIS_FLOORS),
         "focus_axes": list(shortfalls),
         "preserve_axes": [axis for axis in AXIS_FLOORS if axis not in shortfalls],
@@ -92,8 +92,8 @@ def axis_repair_plan(axes: Mapping[str, object]) -> dict[str, object]:
         "instruction": (
             "Repair only below-target axes first. Do not spend an edit pushing a passing axis toward 5. "
             "Keep passing sections unchanged unless a focused repair needs a minimal connecting edit. "
-            "The overall total must never decrease, including while repairing an axis deficit. "
-            "Once every axis reaches its target, improve the overall total only if below 18, then stop."
+            "Every accepted repair must strictly increase the total, reduce an axis deficit, and never decrease any individual axis score. Reject other proposals and retain the previous draft. "
+            "Once every axis reaches its target, stop immediately. The minimum axis scores sum to 17; do not chase an extra total point."
         ),
     }
 
