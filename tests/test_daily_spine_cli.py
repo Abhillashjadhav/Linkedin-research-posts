@@ -529,7 +529,7 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in result], ["thesis-1"])
         self.assertEqual(result[0]["total"], 23)
 
-    def test_below_target_thesis_continues_with_scores_and_warning(self) -> None:
+    def test_below_23_thesis_is_selected_by_rank_without_a_cutoff(self) -> None:
         weak_scores = [
             {
                 "thesis_id": f"thesis-{index}",
@@ -565,19 +565,16 @@ class SpineCardTests(unittest.TestCase):
             )
 
         payload = write.call_args.args[1]
-        self.assertEqual(payload["outcome"], "COMPLETED_WITH_WARNINGS")
-        self.assertEqual(payload["qualifying_ids"], [])
+        self.assertEqual(payload["outcome"], "PASS")
+        self.assertEqual(payload["thresholds"], {})
         self.assertEqual(payload["selected_id"], "thesis-1")
         self.assertEqual(retained, [payload["best_overall"]])
-        self.assertFalse(retained[0]["qualifies"])
+        self.assertTrue(retained[0]["selected"])
         self.assertEqual(len(payload["cycles"][0]["candidates"]), 3)
         self.assertEqual(payload["best_overall"]["id"], "thesis-1")
-        self.assertEqual(
-            payload["best_overall"]["rejection_reasons"],
-            ["total 21/25 is below 23/25"],
-        )
+        self.assertNotIn("rejection_reasons", payload["best_overall"])
 
-    def test_repeated_weak_theses_remain_bounded_and_keep_earlier_best(self) -> None:
+    def test_thesis_selection_never_spends_a_second_score_cycle(self) -> None:
         scores = [
             {"thesis_id": f"thesis-{i}", **{axis: 4 for axis in daily_spine_cli.base.AXES}, "total": 20}
             for i in range(1, 4)
@@ -593,9 +590,9 @@ class SpineCardTests(unittest.TestCase):
             redirect_stdout(io.StringIO()),
         ):
             retained = daily_spine_cli.search_theses(profile(), signals())
-        self.assertEqual(generate.call_count, 2)
+        self.assertEqual(generate.call_count, 1)
         self.assertEqual(retained[0]["total"], 20)
-        self.assertFalse(retained[0]["qualifies"])
+        self.assertTrue(retained[0]["selected"])
 
     def test_malformed_thesis_output_still_stops(self) -> None:
         with patch.object(daily_spine_cli, "generate_cards", side_effect=workflow.WorkflowError("invalid schema")):
@@ -614,7 +611,7 @@ class SpineCardTests(unittest.TestCase):
             self.assertEqual(outcome, expected)
             self.assertEqual(dashboard["stopped_at"], "final_evals" if code else None)
 
-    def test_discovery_continues_into_drafting_after_thesis_budget(self) -> None:
+    def test_discovery_continues_into_drafting_after_one_ranked_thesis_batch(self) -> None:
         workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary, ExitStack() as stack:
             root = Path(temporary)
@@ -657,48 +654,56 @@ class SpineCardTests(unittest.TestCase):
             html = (output / "eval-dashboard.html").read_text()
         self.assertEqual(code, 0)
         child.assert_called_once()
-        self.assertEqual(dashboard["outcome"], "COMPLETED_WITH_WARNINGS")
+        self.assertEqual(dashboard["outcome"], "PASS")
         self.assertIsNone(dashboard["stopped_at"])
-        self.assertEqual(trace["qualifying_ids"], [])
+        self.assertEqual(trace["selection_policy"], "highest-score-valid-thesis")
+        self.assertEqual(len(trace["cycles"]), 1)
         self.assertEqual(trace["best_overall"]["total"], 20)
-        self.assertIn("COMPLETED_WITH_WARNINGS", html)
-        self.assertIn("No blocker recorded", html)
+        self.assertIn("no score cutoff", html)
+        # The mocked child emits no eval ledger: missing critic data stays visible.
+        self.assertIn("INCOMPLETE", html)
+        thesis_stage = next(item for item in dashboard["checks"] if item["stage"] == "thesis_search")
+        self.assertEqual(thesis_stage["status"], "PASS")
 
-    def test_topic_scope_prefers_momentum_then_authority_fallback(self) -> None:
-        candidates = [
-            {
-                "id": "topic-1",
-                "momentum_eligible": False,
-                "observed_axes": 4,
-                "authority_fit": {"total": 23},
-            },
-            {
-                "id": "topic-2",
-                "momentum_eligible": False,
-                "observed_axes": 4,
-                "authority_fit": {"total": 19},
-            },
+    def test_seven_day_pool_ranks_retained_and_fresh_together_without_floors(self) -> None:
+        current = [
+            {"topic": "Fresh popular", "total": 15, "observed_axes": 5,
+             "authority_fit": {"total": 20}, "momentum_eligible": True,
+             "representative_urls": ["https://example.com/fresh"]},
+            {"topic": "Quiet strong idea", "total": 11, "observed_axes": 4,
+             "authority_fit": {"total": 25}, "momentum_eligible": False,
+             "representative_urls": ["https://example.com/quiet"]},
         ]
-        selected, route = daily_spine_cli.select_topic_scope(candidates)
-        self.assertEqual([item["id"] for item in selected], ["topic-1"])
-        self.assertEqual(route, "authority-fit fallback")
-
-        candidates[1]["momentum_eligible"] = True
-        selected, route = daily_spine_cli.select_topic_scope(candidates)
-        self.assertEqual([item["id"] for item in selected], ["topic-2"])
-        self.assertEqual(route, "momentum-qualified")
-
-        candidates[1]["momentum_eligible"] = False
         inventory = [
-            {
-                "topic": "Retained topic",
-                "status": "AVAILABLE",
-                "combined_total": 42,
-            }
+            {"topic": "Earlier strong idea", "status": "AVAILABLE", "combined_total": 39,
+             "representative_urls": ["https://example.com/earlier"]},
+            {"topic": "Already used", "status": "USED", "combined_total": 50,
+             "representative_urls": ["https://example.com/used"]},
+            {"topic": "No evidence leads", "status": "AVAILABLE", "combined_total": 50},
         ]
-        selected, route = daily_spine_cli.select_topic_scope(candidates, inventory)
-        self.assertEqual([item["topic"] for item in selected], ["Retained topic"])
-        self.assertEqual(route, "rolling seven-day inventory")
+        selected, route = daily_spine_cli.select_topic_scope(current, inventory)
+        self.assertEqual(route, "ranked seven-day pool")
+        self.assertEqual([item["topic"] for item in selected], [
+            "Earlier strong idea", "Quiet strong idea", "Fresh popular",
+        ])
+
+    def test_inventory_retains_six_day_candidate_and_excludes_eight_day_candidate(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            path = Path(temporary) / "inventory.json"
+            def entry(topic, timestamp):
+                return {"topic": topic, "last_seen_at": timestamp,
+                        "status": "AVAILABLE", "combined_total": 30,
+                        "representative_urls": ["https://example.com/" + topic]}
+            path.write_text(json.dumps({"candidates": [
+                entry("six-days-old", "2026-09-02T09:00:00Z"),
+                entry("eight-days-old", "2026-08-31T09:00:00Z"),
+                entry("future", "2026-09-09T09:00:00Z"),
+            ]}))
+            _, retained = daily_spine_cli.update_candidate_inventory(
+                [], as_of="2026-09-08T09:00:00Z", days=7, path=path,
+            )
+        self.assertEqual([item["topic"] for item in retained], ["six-days-old"])
 
     def test_generate_post_is_explicitly_opt_in(self) -> None:
         parsed = daily_spine_cli.parser().parse_args(
@@ -709,6 +714,7 @@ class SpineCardTests(unittest.TestCase):
             ]
         )
         self.assertTrue(parsed.generate_post)
+        self.assertEqual(parsed.days, 7)
 
     def test_thursday_is_exposed_as_authority_week_slot_three(self) -> None:
         parsed = daily_spine_cli.parser().parse_args(
@@ -720,7 +726,7 @@ class SpineCardTests(unittest.TestCase):
                 ["--profile", "data/private/authority-profile.json", "--week-slot", "4"]
             )
 
-    def test_candidate_inventory_keeps_every_topic_at_or_above_40(self) -> None:
+    def test_candidate_inventory_keeps_scored_topics_below_40(self) -> None:
         candidates = [
             {
                 "topic": "Qualified topic",
@@ -750,7 +756,7 @@ class SpineCardTests(unittest.TestCase):
                 path=target,
             )
             payload = json.loads(target.read_text(encoding="utf-8"))
-        self.assertEqual([item["topic"] for item in retained], ["Qualified topic"])
+        self.assertEqual([item["topic"] for item in retained], ["Qualified topic", "Below floor"])
         self.assertEqual(payload["candidates"][0]["combined_total"], 41)
 
     def test_extended_card_contract_accepts_only_stable_spines(self) -> None:
