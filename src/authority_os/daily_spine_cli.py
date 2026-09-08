@@ -463,6 +463,7 @@ def load_discovery_resume(
         "rolling seven-day inventory",
         "ranked seven-day pool",
         "ranked seven-day pool (momentum only; authority unavailable)",
+        "ranked seven-day pool (authority only; momentum incomplete)",
         "authority-fit fallback",
     }:
         raise workflow.WorkflowError("Resume topic admission route is invalid.")
@@ -1093,7 +1094,7 @@ def render_eval_dashboard(
                 "total_status": str(row.get("status", "NOT_EVALUATED")),
                 "axis_targets": dict(acceptance_policy.AXIS_FLOORS),
                 "total": int(evidence.get("score", 0)),
-                "threshold": int(evidence.get("threshold", 18)),
+                "threshold": int(evidence.get("threshold", acceptance_policy.ACCEPTABLE_QUALITY_FLOOR)),
                 "axes": {axis: int(axes.get(axis, 0)) for axis in workflow.CRITIC_AXES},
                 "failure_codes": failure_codes,
                 "advisory_codes": list(evidence.get("advisory_codes", [])),
@@ -1180,9 +1181,9 @@ def update_candidate_inventory(
         authority_total = (
             authority.get("total") if isinstance(authority, Mapping) else None
         )
-        if type(momentum_total) is not int:
+        if type(momentum_total) is not int and type(authority_total) is not int:
             continue
-        combined = int(momentum_total) + authority_total if type(authority_total) is int else None
+        combined = momentum_total + authority_total if type(momentum_total) is int and type(authority_total) is int else None
         topic = str(candidate["topic"]).strip()
         key = " ".join(topic.casefold().split())
         prior = by_topic.get(key)
@@ -1197,7 +1198,7 @@ def update_candidate_inventory(
             "first_seen_at": first_seen,
             "last_seen_at": as_of,
             "expires_at": (now + timedelta(days=days)).isoformat().replace("+00:00", "Z"),
-            "momentum_total": int(momentum_total),
+            "momentum_total": momentum_total,
             "authority_fit_total": authority_total,
             "authority_fit": dict(authority) if isinstance(authority, Mapping) else None,
             "observed_axes": candidate.get("observed_axes"),
@@ -1209,7 +1210,7 @@ def update_candidate_inventory(
         by_topic.values(),
         key=lambda item: (
             item.get("combined_total") is None,
-            -int(item["combined_total"]) if type(item.get("combined_total")) is int else -int(item.get("momentum_total", 0)),
+            -int(item["combined_total"]) if type(item.get("combined_total")) is int else -int(item.get("momentum_total") or item.get("authority_fit_total") or 0),
             str(item["topic"]).casefold(),
         ),
     )
@@ -1251,7 +1252,7 @@ def select_topic_scope(
         " ".join(str(item.get("topic", "")).casefold().split()): dict(item)
         for item in inventory
         if item.get("status") == "AVAILABLE"
-        and (type(item.get("combined_total")) is int or type(item.get("momentum_total")) is int)
+        and any(type(item.get(name)) is int for name in ("combined_total", "momentum_total", "authority_fit_total"))
         and item.get("topic") and item.get("representative_urls")
     }
     unavailable = {
@@ -1260,17 +1261,21 @@ def select_topic_scope(
     }
     for item in top_five:
         authority = item.get("authority_fit")
+        authority_total = authority.get("total") if isinstance(authority, Mapping) else None
         key = " ".join(str(item.get("topic", "")).casefold().split())
         if (not key or key in unavailable or not item.get("representative_urls")
-                or type(item.get("total")) is not int):
+                or (type(item.get("total")) is not int and type(authority_total) is not int)):
             continue
         authority_total = authority.get("total") if isinstance(authority, Mapping) else None
         pool[key] = {
-            **item, "momentum_total": item["total"],
-            "combined_total": item["total"] + authority_total if type(authority_total) is int else None,
+            **item, "momentum_total": item.get("total"), "authority_fit_total": authority_total,
+            "combined_total": item["total"] + authority_total if type(item.get("total")) is int and type(authority_total) is int else None,
         }
     if any(item.get("combined_total") is None for item in pool.values()):
         # Compare one common observed basis, never 25-point scores against 50-point scores.
+        if all(type(item.get("authority_fit_total")) is int for item in pool.values()):
+            ranked = sorted(pool.values(), key=lambda item: (-int(item["authority_fit_total"]), str(item["topic"]).casefold()))
+            return ranked, "ranked seven-day pool (authority only; momentum incomplete)"
         ranked = sorted(
             [item for item in pool.values() if type(item.get("momentum_total")) is int],
             key=lambda item: (-int(item["momentum_total"]), str(item["topic"]).casefold()),
@@ -1286,6 +1291,7 @@ def _schema(kind: str) -> dict[str, object]:
     if kind != "cards":
         return base._schema(kind)
     props = {key: {"type": "string"} for key in CARD_KEYS - {"signal_ids"}}
+    props["proof_id"] = {"type": "string", "enum": ["NOT_REQUIRED"]}
     props["recommended_spine"] = {
         "type": "string",
         "enum": list(CONTENT_SPINES),
@@ -1400,9 +1406,9 @@ def generate_cards(
         if feedback
         else ""
     )
-    prompt = f"""Create exactly three one-idea authority thesis cards from the Topic-Value-selected signals. Each supplied signal may contain topic_value annotations naming the selected situation, reader-value route, gravity, reader payoff, and the authority contribution available to this author. Preserve that selected reader value; do not replace it with a generic AI-news thesis. Turn the situation into original product judgment, name a concrete reader problem, state what a team should do differently, connect honestly to one supplied proof ID, and include a non-technical summary of no more than 25 words. Prefer the broadest audience-relevant formulation that preserves the evidence: omit incidental precision or map an instance to its true parent category, but never add severity, prevalence, causality, scope, materiality, or certainty. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. The spine is advisory only; do not force a template or choose by weekday. The topic field must express the underlying evidence-supported atomic idea in a concise audience-relevant phrase. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
+    prompt = f"""Create exactly three one-idea authority thesis cards from the Topic-Value-selected signals. Each supplied signal may contain topic_value annotations naming the selected situation, reader-value route, gravity, reader payoff, and the authority contribution available to this author. Preserve that selected reader value; do not replace it with a generic AI-news thesis. Turn the situation into original product judgment, name a concrete reader problem, state what a team should do differently, set proof_id to NOT_REQUIRED; author proof is not a prerequisite. Ground judgments in public signals and never invent personal experience, and include a non-technical summary of no more than 25 words. Prefer the broadest audience-relevant formulation that preserves the evidence: omit incidental precision or map an instance to its true parent category, but never add severity, prevalence, causality, scope, materiality, or certainty. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. The spine is advisory only; do not force a template or choose by weekday. The topic field must express the underlying evidence-supported atomic idea in a concise audience-relevant phrase. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
 UNTRUSTED_PROFILE
-{json.dumps(dict(profile), indent=2, sort_keys=True)}
+{json.dumps({key: value for key, value in profile.items() if key != 'proof_inventory'}, indent=2, sort_keys=True)}
 END_UNTRUSTED_PROFILE
 UNTRUSTED_TOPIC_VALUE_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}
