@@ -16,6 +16,7 @@ from typing import Iterator, Mapping, Sequence
 from . import acceptance_policy, anti_slop, best_effort
 from . import package as approval_package
 from . import quality_cli, v1_completion, workflow
+from .model_runtime import ModelTimeoutError
 
 ACCEPTABLE_QUALITY_FLOOR = acceptance_policy.ACCEPTABLE_QUALITY_FLOOR
 MIN_HOOK_SCORE = acceptance_policy.MIN_HOOK_SCORE
@@ -634,7 +635,7 @@ def _command_draft(args: object) -> int:
         except workflow.WorkflowError as exc:
             state = _ACTIVE_STATE
             if (
-                str(exc).startswith("No candidate cleared the locked ")
+                (str(exc).startswith("No candidate cleared the locked ") or isinstance(exc, ModelTimeoutError))
                 and state is not None
             ):
                 selected = state.best_safe()
@@ -665,8 +666,13 @@ def _command_draft(args: object) -> int:
                         f"{write_exc}"
                     )
                     raise exc from write_exc
+                interrupted = isinstance(exc, ModelTimeoutError)
+                delivery_reason = (
+                    f"{exc} Previously scored draft delivered; interrupted evaluation remains incomplete."
+                    if interrupted else "best draft delivered; writing scores remain below target"
+                )
                 print(
-                    f"Quality search exhausted; best overall={best.candidate_id} "
+                    f"Quality search {'interrupted by model timeout' if interrupted else 'exhausted'}; best overall={best.candidate_id} "
                     f"score={best.effective_total}/25; "
                     f"hook={best.axes.get('hook_strength', 0)}/5; "
                     "editorial checks are advisory."
@@ -681,7 +687,9 @@ def _command_draft(args: object) -> int:
                         "mode": "diagnostic",
                         "status": "PASS",
                         "observed_status": "COMPLETED_WITH_WARNINGS",
-                        "reason": "best draft delivered; writing scores remain below target",
+                        "reason": delivery_reason,
+                        "execution_warning": str(exc) if interrupted else None,
+                        "interrupted_evaluation": interrupted,
                     },
                     stage="draft-delivery",
                     subject_id=best.candidate_id,
