@@ -17,13 +17,13 @@ MAX_WORKERS = 7
 SURFACE_TIMEOUT = 90
 CONSOLIDATION_TIMEOUT = 60
 MIN_SUCCESSFUL_SURFACES = 4
-MIN_SIGNALS_FOR_CONSOLIDATION = 1
+MIN_SIGNALS_FOR_CONSOLIDATION = 6
 SIGNALS_PER_SURFACE = 5
 MAX_SURFACE_ATTEMPTS = 2
 
 MOMENTUM_AXES = momentum.MOMENTUM_AXES
 MOMENTUM_LABEL = momentum.MOMENTUM_LABEL
-MOMENTUM_CANDIDATES = 6
+MIN_CONVERSATIONS = 6
 MOMENTUM_TOP_K = momentum.MOMENTUM_TOP_K
 MIN_AUTHORITY_MOMENTUM = momentum.MIN_AUTHORITY_MOMENTUM
 MIN_REACH_MOMENTUM = momentum.MIN_REACH_MOMENTUM
@@ -183,8 +183,8 @@ def _cluster_schema(signal_ids: Sequence[str]) -> dict[str, object]:
         "properties": {
             "clusters": {
                 "type": "array",
-                "minItems": 1,
-                "maxItems": min(MOMENTUM_CANDIDATES, len(signal_ids)),
+                "minItems": MIN_CONVERSATIONS,
+                "maxItems": len(signal_ids),
                 "items": cluster,
             }
         },
@@ -384,8 +384,8 @@ Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings
 
 
 def _validate_clusters(raw: object, signals: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
-    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)) or not 1 <= len(raw) <= min(MOMENTUM_CANDIDATES, len(signals)):
-        raise workflow.WorkflowError("Surface consolidation must return one to six supported clusters.")
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)) or not MIN_CONVERSATIONS <= len(raw) <= len(signals):
+        raise workflow.WorkflowError("Surface consolidation requires at least six distinct, evidence-supported conversations; do not pad insufficient evidence.")
     available = {str(signal["id"]) for signal in signals}
     expected = {f"topic-{index}" for index in range(1, len(raw) + 1)}
     seen_ids: set[str] = set()
@@ -424,7 +424,7 @@ def _validate_clusters(raw: object, signals: Sequence[Mapping[str, object]]) -> 
 
 def _consolidate(signals: Sequence[Mapping[str, object]], *, as_of: str) -> list[dict[str, object]]:
     ids = [str(signal["id"]) for signal in signals]
-    prompt = f"""Cluster these independently discovered public-web signals into up to {MOMENTUM_CANDIDATES} materially distinct current GenAI/product conversations. Return fewer when fewer meaningful conversations are supported; never split or invent a topic to fill the list.
+    prompt = f"""Cluster these independently discovered public-web signals into at least {MIN_CONVERSATIONS} materially distinct current GenAI/product conversations. Six is a minimum, not a maximum. Retain additional meaningful conversations when supported; never split or invent a topic to meet the minimum.
 Do not browse. Do not add facts or signals. Merge only signals that describe the same underlying conversation. Preserve meaningful product consequences supported by visible engagement or independent discussion. Use consecutive topic-1 through topic-N exactly once. Each input signal may be assigned to at most one cluster; unused weak/duplicate signals may be omitted. Rank the retained clusters strongest-first using only the supplied evidence: cross-surface repetition, visible engagement, observable acceleration, and freshness as of {as_of}. Unknown engagement is not evidence of popularity.
 
 UNTRUSTED_SURFACE_SIGNALS
@@ -545,7 +545,7 @@ def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, obj
     )
     if len(signals) < MIN_SIGNALS_FOR_CONSOLIDATION:
         raise workflow.WorkflowError(
-            "No usable public signals were collected; there is no evidence to consolidate."
+            f"Only {len(signals)} usable public signals were collected; at least {MIN_CONVERSATIONS} distinct supported conversations are required."
         )
     if len(successful) < MIN_SUCCESSFUL_SURFACES:
         warning = (
@@ -564,7 +564,7 @@ def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, obj
             }
         )
 
-    print(f"Momentum: consolidating surface signals into up to {MOMENTUM_CANDIDATES} meaningful conversations...", flush=True)
+    print(f"Momentum: consolidating surface signals into at least {MIN_CONVERSATIONS} meaningful conversations...", flush=True)
     clusters = _consolidate(signals, as_of=as_of)
     candidates = _project_candidates(clusters, signals)
     _trace_event({"event": "surface_consolidation_finished", "candidate_count": len(candidates)})
