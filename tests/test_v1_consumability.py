@@ -8,6 +8,28 @@ from authority_os import v1_consumability as tuning
 
 
 class V1ConsumabilityTests(unittest.TestCase):
+    def test_one_three_or_six_conversations_survive_the_live_mapper(self) -> None:
+        for count in (1, 3, 6):
+            with self.subTest(count=count):
+                signals = [{
+                    "id": f"s-{i}", "topic": f"Useful product decision {i}",
+                    "why_now": "A current workflow changed.", "platform": "Google Search",
+                    "url": f"https://example.com/{i}", "source": "Example",
+                    "published_at": "2026-09-08T00:00:00Z", "freshness_hours": 1.0,
+                    "engagement_units": None, "acceleration_percent": None,
+                } for i in range(1, count + 1)]
+                clusters = [{"id": f"topic-{i}", "topic": f"Useful product decision {i}",
+                             "why_now": "A current workflow changed.", "signal_ids": [f"s-{i}"]}
+                            for i in range(1, count + 1)]
+                with patch.object(surface, "invoke_structured", return_value={"clusters": clusters}) as invoke:
+                    selected = tuning._consolidate(signals, as_of="2026-09-08T01:00:00Z")
+                projected = surface._project_candidates(selected, signals)
+                self.assertEqual(len(projected), count)
+                self.assertTrue(all(item["total"] is None for item in projected))
+                schema = invoke.call_args.kwargs["schema"]["properties"]["clusters"]
+                self.assertEqual(schema["minItems"], 1)
+                self.assertEqual(schema["maxItems"], count)
+
     def test_plain_consequence_hook_passes(self) -> None:
         result = tuning.hook_entry_check(
             "Your AI agent can hit its budget and stop a customer workflow.\nBefore production, prove you can stop spending safely."
