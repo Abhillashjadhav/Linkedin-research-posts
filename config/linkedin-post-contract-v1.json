@@ -76,6 +76,7 @@
     ],
     "minimum_observed_axes": 4,
     "authority_momentum_floor": 14,
+    "daily_discovery_selection": "Rank all scored fresh and unexpired seven-day topics by the existing momentum plus authority-fit axes; these legacy momentum floors are diagnostic, not admission gates. Select the highest-scoring evidence-valid novel Topic Value candidate, then rank one thesis batch without a score cutoff.",
     "reach_momentum_floor": 20,
     "unknown_observation_policy": "UNKNOWN, never fabricated zero",
     "acceleration_definition": "Observed percentage growth across a comparable 24-72 hour interval; otherwise UNKNOWN.",
@@ -135,7 +136,8 @@
     "coverage_shortfall_action": "Keep source-level findings visible and continue; never block Topic Value or the candidate batch."
   },
   "topic_value": {
-    "class": "selector_and_hard_gate",
+    "class": "ranked_discovery_selector_with_grounding_and_novelty_checks",
+    "score_floor_scope": "The recorded floors and minimum_total describe the legacy score diagnostic and explicit campaign validation. Daily discovery ranks these axes without score cutoffs.",
     "axes": {
       "reader_relevance": {
         "floor": 4,
@@ -168,7 +170,7 @@
       "feed_value_possible": "The reader receives the core value without clicking away.",
       "supports_authority_goal": "The situation supports the configured authority goal."
     },
-    "selection_rule": "Retain every passing situation. A weaker sibling cannot veto a passing candidate."
+    "selection_rule": "Daily discovery selects the highest-scoring grounded novel situation. Repeated candidates are excluded individually before selecting the winner."
   },
   "thesis": {
     "axes": {
@@ -183,9 +185,9 @@
       5
     ],
     "current_live_rule": {
-      "minimum_total": 23,
-      "minimum_simplicity": 4,
-      "maximum_cycles": 3
+      "selection": "highest-ranked valid thesis",
+      "score_cutoff": null,
+      "maximum_cycles": 1
     },
     "role": "selector_not_publication_acceptance",
     "auto_selection": "When post generation is requested, choose the highest-ranked eligible thesis deterministically. Otherwise present the ranked eligible set.",
@@ -587,7 +589,7 @@
       "question": "What should qualify a thesis before drafting?",
       "resolution": "Use the five thesis axes to rank candidates, not as a second publication threshold. Require the selected thesis to pass audience relevance, claim support, simplicity, and non-duplication checks.",
       "decision_status": "RESOLVED",
-      "current_behavior": "23/25 plus simplicity at least 4, up to three cycles.",
+      "current_behavior": "Rank one valid thesis batch on the existing five axes and select the highest score. No 23/25 cutoff or score-driven retries. Discovery chooses the highest-scoring grounded novel situation from the seven-day ranked pool.",
       "why": "The thesis axes differ from the final Critic axes, so copying 18/25 automatically would be arbitrary."
     },
     {
