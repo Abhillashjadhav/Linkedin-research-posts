@@ -373,6 +373,7 @@ def _evaluate_topic_candidates(
     evidence: Sequence[Mapping[str, object]],
     *,
     decision_observer: Callable[[Sequence[Mapping[str, object]]], None] | None = None,
+    ranked_selection: bool = False,
 ) -> list[dict[str, object]]:
     evaluated: list[dict[str, object]] = []
     for raw in candidates:
@@ -386,6 +387,15 @@ def _evaluate_topic_candidates(
         }
         evaluated.append(candidate)
 
+    if ranked_selection:
+        novel = sorted(
+            [item for item in evaluated
+             if item["v1_evals"]["atomic_value_novelty"]["status"] == "PASS"],
+            key=lambda item: (-int(item["total"]), str(item["id"])),
+        )
+        for item in evaluated:
+            item["selected"] = bool(novel) and item["id"] == novel[0]["id"]
+
     if decision_observer is not None:
         try:
             decision_observer(copy.deepcopy(evaluated))
@@ -395,6 +405,13 @@ def _evaluate_topic_candidates(
                 f"recorded: {type(exc).__name__}: {exc}",
                 file=sys.stderr,
             )
+
+    if ranked_selection:
+        if not novel:
+            raise workflow.WorkflowError(
+                "No new topic remains after novelty checking; repeated or unverified ideas were excluded."
+            )
+        return novel[:1]
 
     for candidate in evaluated:
         evaluations = candidate["v1_evals"]
@@ -424,6 +441,7 @@ def _discovery_selector_v1(
     return _evaluate_topic_candidates(
         selected,
         signals,
+        ranked_selection=True,
         decision_observer=lambda candidates: topic_value._notify_observer(  # type: ignore[attr-defined]
             observer,
             "post-gate",
