@@ -9,7 +9,7 @@ import stat
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import ExitStack, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -529,7 +529,7 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in result], ["thesis-1"])
         self.assertEqual(result[0]["total"], 23)
 
-    def test_failed_thesis_search_persists_every_score_and_best_overall(self) -> None:
+    def test_below_target_thesis_continues_with_scores_and_warning(self) -> None:
         weak_scores = [
             {
                 "thesis_id": f"thesis-{index}",
@@ -560,21 +560,109 @@ class SpineCardTests(unittest.TestCase):
             "write_private_json",
             return_value=trace_path,
         ) as write:
-            with self.assertRaisesRegex(workflow.WorkflowError, "No thesis cleared"):
-                daily_spine_cli.search_theses(
-                    profile(),
-                    signals(),
-                    trace_path=trace_path,
-                )
+            retained = daily_spine_cli.search_theses(
+                profile(), signals(), trace_path=trace_path,
+            )
 
         payload = write.call_args.args[1]
-        self.assertEqual(payload["outcome"], "FAIL")
+        self.assertEqual(payload["outcome"], "COMPLETED_WITH_WARNINGS")
+        self.assertEqual(payload["qualifying_ids"], [])
+        self.assertEqual(payload["selected_id"], "thesis-1")
+        self.assertEqual(retained, [payload["best_overall"]])
+        self.assertFalse(retained[0]["qualifies"])
         self.assertEqual(len(payload["cycles"][0]["candidates"]), 3)
         self.assertEqual(payload["best_overall"]["id"], "thesis-1")
         self.assertEqual(
             payload["best_overall"]["rejection_reasons"],
             ["total 21/25 is below 23/25"],
         )
+
+    def test_repeated_weak_theses_remain_bounded_and_keep_earlier_best(self) -> None:
+        scores = [
+            {"thesis_id": f"thesis-{i}", **{axis: 4 for axis in daily_spine_cli.base.AXES}, "total": 20}
+            for i in range(1, 4)
+        ]
+        worse = [
+            {**score, **{axis: 3 for axis in daily_spine_cli.base.AXES}, "total": 15}
+            for score in scores
+        ]
+        with (
+            patch.object(daily_spine_cli, "generate_cards", return_value=cards()) as generate,
+            patch.object(daily_spine_cli.base, "score_cards", side_effect=[scores, worse]),
+            patch.object(daily_spine_cli.base, "MAX_CYCLES", 2),
+            redirect_stdout(io.StringIO()),
+        ):
+            retained = daily_spine_cli.search_theses(profile(), signals())
+        self.assertEqual(generate.call_count, 2)
+        self.assertEqual(retained[0]["total"], 20)
+        self.assertFalse(retained[0]["qualifies"])
+
+    def test_malformed_thesis_output_still_stops(self) -> None:
+        with patch.object(daily_spine_cli, "generate_cards", side_effect=workflow.WorkflowError("invalid schema")):
+            with self.assertRaisesRegex(workflow.WorkflowError, "invalid schema"):
+                daily_spine_cli.search_theses(profile(), signals())
+
+    def test_thesis_warning_survives_passing_draft_but_not_execution_error(self) -> None:
+        for code, expected in ((0, "COMPLETED_WITH_WARNINGS"), (2, "FAIL")):
+            dashboard = daily_spine_cli.new_run_dashboard()
+            daily_spine_cli.mark_run_stage(
+                dashboard, "thesis_search", "COMPLETED_WITH_WARNINGS", "total 21/25 below 23/25",
+            )
+            outcome = daily_spine_cli.finalize_draft_evaluation(
+                dashboard, {"checks": []}, return_code=code, failure_reason="provider unavailable",
+            )
+            self.assertEqual(outcome, expected)
+            self.assertEqual(dashboard["stopped_at"], "final_evals" if code else None)
+
+    def test_discovery_continues_into_drafting_after_thesis_budget(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary, ExitStack() as stack:
+            root = Path(temporary)
+            output = root / "run"
+            profile_path = root / "profile.json"
+            profile_path.write_text(json.dumps(profile()), encoding="utf-8")
+            topic = {"id": "topic-1", "topic": "Agent reliability", "total": 20,
+                     "observed_axes": 5, "authority_fit": {"total": 22},
+                     "representative_urls": ["https://example.com/1"]}
+            resume = daily_spine_cli.DiscoveryResume(
+                root / "previous", "2026-09-08T09:04:06Z", (topic,), (topic,), "momentum-qualified", (),
+            )
+            stack.enter_context(patch.object(daily_spine_cli, "load_discovery_resume", return_value=resume))
+            stack.enter_context(patch.object(daily_spine_cli, "resolve_signal_evidence", return_value=
+                daily_spine_cli.EvidenceResolution(tuple(signals()), "fixture", 0, "fixture")))
+            stack.enter_context(patch.object(daily_spine_cli.base, "project_signals", return_value=signals()))
+            stack.enter_context(patch.object(daily_spine_cli.base.legacy_cli, "initialise_paths"))
+            stack.enter_context(patch.object(daily_spine_cli.storage, "insert_research_items", return_value=(3, 0)))
+            stack.enter_context(patch.object(topic_value, "invoke_discovery_selector", return_value=value_candidates()))
+            stack.enter_context(patch.object(topic_value, "project_discovery_signals", return_value=signals()))
+            stack.enter_context(patch.object(daily_spine_cli, "generate_cards", return_value=cards()))
+            stack.enter_context(patch.object(daily_spine_cli.base, "score_cards", return_value=[
+                {"thesis_id": f"thesis-{i}", **{axis: 4 for axis in daily_spine_cli.base.AXES}, "total": 20}
+                for i in range(1, 4)
+            ]))
+            stack.enter_context(patch.object(daily_spine_cli.base, "MAX_CYCLES", 1))
+            stack.enter_context(patch.object(daily_spine_cli.v1_completion, "_read_jsonl", return_value=[]))
+            stack.enter_context(patch.object(workflow, "load_voice_guidance", return_value={}))
+            stack.enter_context(patch.object(daily_spine_cli.eval_dashboard_html, "open_dashboard", return_value=False))
+            child = stack.enter_context(patch.object(daily_spine_cli, "run_drafting_child", return_value=
+                daily_spine_cli.DraftingRun(0, "completed", "fixture.log", ())))
+            stack.enter_context(redirect_stdout(io.StringIO()))
+            code = daily_spine_cli.main([
+                "--profile", str(profile_path), "--resume-from", str(resume.source_folder),
+                "--output-dir", str(output), "--db", str(root / "db.sqlite"),
+                "--allow-web-research", "--allow-model-egress", "--generate-post",
+            ])
+            dashboard = json.loads((output / "run-dashboard.json").read_text())
+            trace = json.loads((output / "thesis-evaluations.json").read_text())
+            html = (output / "eval-dashboard.html").read_text()
+        self.assertEqual(code, 0)
+        child.assert_called_once()
+        self.assertEqual(dashboard["outcome"], "COMPLETED_WITH_WARNINGS")
+        self.assertIsNone(dashboard["stopped_at"])
+        self.assertEqual(trace["qualifying_ids"], [])
+        self.assertEqual(trace["best_overall"]["total"], 20)
+        self.assertIn("COMPLETED_WITH_WARNINGS", html)
+        self.assertIn("No blocker recorded", html)
 
     def test_topic_scope_prefers_momentum_then_authority_fallback(self) -> None:
         candidates = [
