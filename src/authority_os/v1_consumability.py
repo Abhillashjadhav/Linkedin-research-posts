@@ -132,7 +132,7 @@ def hook_entry_check(post_text: str) -> dict[str, object]:
 
 def _consolidate(signals: Sequence[Mapping[str, object]], *, as_of: str) -> list[dict[str, object]]:
     ids = [str(signal["id"]) for signal in signals]
-    prompt = f"""Cluster these independently discovered public-web signals into up to {surface.MOMENTUM_CANDIDATES} materially distinct current GenAI/product conversations. Aim for five or six meaningful conversations when supported; return fewer rather than padding the list.
+    prompt = f"""Cluster these independently discovered public-web signals into at least {surface.MIN_CONVERSATIONS} materially distinct current GenAI/product conversations. Six is a minimum, not a maximum. Retain additional meaningful conversations when supported. Never pad the list, invent evidence, or split the same idea merely to meet the minimum.
 Do not browse. Do not add facts or signals. Merge only signals that describe the same underlying conversation. Each input signal may be assigned to at most one cluster; unused weak/duplicate signals may be omitted.
 
 Selection goal: preserve conversations that can become useful, widely enterable product content without becoming generic. Rank the clusters using the supplied evidence and these priorities:
@@ -148,7 +148,7 @@ Write each topic as a concise plain-English situation. In why_now, state what ch
 
 Social/community popularity is momentum evidence only, not factual corroboration.
 
-Use consecutive topic-1 through topic-N exactly once for the actual number of retained conversations, with N <= {surface.MOMENTUM_CANDIDATES}.
+Use consecutive topic-1 through topic-N exactly once for the actual number of retained conversations, with N >= {surface.MIN_CONVERSATIONS} and no more conversations than supplied signals.
 
 UNTRUSTED_SURFACE_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}
