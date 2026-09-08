@@ -367,5 +367,44 @@ class V1ContractTests(unittest.TestCase):
         self.assertEqual(result[1]["v1_evals"]["research_trust"]["status"], "PASS")
 
 
+class RankedNovelTopicTests(unittest.TestCase):
+    def test_highest_new_topic_wins_even_when_top_candidate_is_repeated(self) -> None:
+        old = "Require an approval checkpoint before an agent sends external messages."
+        new = "Measure model inference costs using representative production traffic before choosing a vendor."
+        candidates = [
+            {"id": "topic-1", "total": 25, "atomic_value": old},
+            {"id": "topic-2", "total": 16, "atomic_value": new},
+            {"id": "topic-3", "total": 15, "atomic_value": "Test outage recovery with independent provider failure simulations before enabling automatic failover."},
+        ]
+        observed = []
+        with (
+            mock.patch.object(v1_gates, "load_atomic_values", return_value=[old]),
+            mock.patch.object(v1_gates, "evaluate_research_trust", return_value={
+                "contract": "research_trust", "mode": "shadow", "status": "PASS",
+            }),
+        ):
+            result = v1_gates._evaluate_topic_candidates(
+                candidates, [], ranked_selection=True,
+                decision_observer=lambda rows: observed.extend(rows),
+            )
+        self.assertEqual([item["id"] for item in result], ["topic-2"])
+        self.assertEqual(observed[0]["v1_evals"]["atomic_value_novelty"]["status"], "FAIL")
+        self.assertFalse(observed[0]["selected"])
+        self.assertTrue(observed[1]["selected"])
+
+    def test_no_repeated_or_unverified_topic_is_selected(self) -> None:
+        for status in ("FAIL", "NOT_EVALUATED", "BLOCKED"):
+            with (
+                self.subTest(status=status),
+                mock.patch.object(v1_gates, "evaluate_atomic_novelty", return_value={"status": status}),
+                mock.patch.object(v1_gates, "evaluate_research_trust", return_value={"status": "PASS"}),
+                self.assertRaisesRegex(workflow.WorkflowError, "No new topic"),
+            ):
+                v1_gates._evaluate_topic_candidates([
+                    {"id": "topic-1", "total": 25,
+                     "atomic_value": "Require approval before an agent sends external messages."},
+                ], [], ranked_selection=True)
+
+
 if __name__ == "__main__":
     unittest.main()
