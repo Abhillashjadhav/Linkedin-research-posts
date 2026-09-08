@@ -31,8 +31,6 @@ from .spine_feedback import CONTENT_SPINES
 
 CARD_KEYS = frozenset((*base.CARD_KEYS, "recommended_spine", "spine_fit_reason"))
 MAX_SPINE_FIT_REASON_CHARS = 320
-MIN_AUTHORITY_FIT_FALLBACK = 20
-MIN_COMBINED_INVENTORY_SCORE = 40
 CANDIDATE_INVENTORY = base.OUTPUT_ROOT / "candidate-inventory.json"
 EVIDENCE_TIMEOUT_SECONDS = 180
 EVIDENCE_CACHE_NAME = "evidence-research.json"
@@ -462,6 +460,7 @@ def load_discovery_resume(
     if route not in {
         "momentum-qualified",
         "rolling seven-day inventory",
+        "ranked seven-day pool",
         "authority-fit fallback",
     }:
         raise workflow.WorkflowError("Resume topic admission route is invalid.")
@@ -588,25 +587,20 @@ def record_momentum_decisions(
     for item in candidates:
         total = item.get("total")
         observed_axes = int(item.get("observed_axes", 0))
-        passes = (
-            type(total) is int
-            and int(total) >= momentum.MIN_AUTHORITY_MOMENTUM
-            and observed_axes >= momentum.MIN_OBSERVED_AXES
-        )
+        passes = type(total) is int and observed_axes >= momentum.MIN_OBSERVED_AXES
         record_run_decision(
             dashboard,
             stage="conversation_discovery",
-            decision="conversation-momentum qualification",
+            decision="conversation-momentum ranking evidence",
             status="PASS" if passes else "REJECTED",
             expected=(
-                f"total >= {momentum.MIN_AUTHORITY_MOMENTUM} and "
-                f"observed_axes >= {momentum.MIN_OBSERVED_AXES}"
+                f"observed_axes >= {momentum.MIN_OBSERVED_AXES}; score ranks candidates without a cutoff"
             ),
             observed=f"total={total}; observed_axes={observed_axes}",
             reason=(
-                "candidate cleared the conversation-momentum floor"
+                "candidate has a usable momentum score for relative ranking"
                 if passes
-                else "candidate missed the conversation-momentum floor"
+                else "candidate lacks enough observed axes for a momentum score"
             ),
             subject_id=str(item.get("id", item.get("topic", "unknown-topic"))),
             details={
@@ -634,9 +628,7 @@ def record_topic_admission_decisions(
             decision="topic admitted to evidence verification",
             status="PASS" if selected else "REJECTED",
             expected=(
-                "momentum-qualified, retained-inventory-qualified, or "
-                f"authority_fit >= {MIN_AUTHORITY_FIT_FALLBACK} with "
-                f"observed_axes >= {momentum.MIN_OBSERVED_AXES}"
+                "rank the combined fresh and retained pool on existing momentum and authority axes; no score cutoff"
             ),
             observed=(
                 f"selected={selected}; route={route}; momentum_total={item.get('total')}; "
@@ -689,7 +681,7 @@ def record_topic_value_decisions(
         {
             "schema_version": 2,
             "observation_stage": observation_stage,
-            "thresholds": {
+            "diagnostic_thresholds": {
                 "reader_relevance": 4,
                 "reader_value": 4,
                 "gravity": 2,
@@ -707,9 +699,8 @@ def record_topic_value_decisions(
     )
     relative = path.relative_to(workflow.REPO_ROOT).as_posix()
     expected = (
-        "reader_relevance>=4; reader_value>=4; gravity>=2; evidence_strength>=3; "
-        f"authority_fit>=3; total>={topic_value.TOPIC_VALUE_MIN_TOTAL}; "
-        "brand_strip/feed_value/authority_goal=true"
+        "highest total on existing Topic Value axes among grounded, new ideas; "
+        "brand_strip/feed_value/authority_goal=true; no score cutoff"
     )
     for item in candidates:
         scores = item.get("scores")
@@ -817,7 +808,8 @@ def record_thesis_decisions(
                 continue
             scores = item.get("scores")
             score_map = dict(scores) if isinstance(scores, Mapping) else {}
-            qualifies = item.get("qualifies") is True
+            ranked_selection = payload.get("selection_policy") == "highest-score-valid-thesis"
+            qualifies = item.get("selected") is True if ranked_selection else item.get("qualifies") is True
             reasons = item.get("rejection_reasons")
             reason_values = (
                 [str(value) for value in reasons]
@@ -827,9 +819,9 @@ def record_thesis_decisions(
             record_run_decision(
                 dashboard,
                 stage="thesis_search",
-                decision="thesis clears authority bar",
+                decision="thesis selected by relative rank" if ranked_selection else "thesis clears authority bar",
                 status="PASS" if qualifies else "REJECTED",
-                expected=(
+                expected="highest-scoring valid thesis; no score cutoff" if ranked_selection else (
                     f"total >= {base.MIN_TOTAL}/25 and "
                     f"simplicity >= {base.MIN_SIMPLICITY}/5"
                 ),
@@ -838,9 +830,9 @@ def record_thesis_decisions(
                     f"simplicity={score_map.get('simplicity')}/5; axes={score_map}"
                 ),
                 reason=(
-                    "cleared every thesis threshold"
+                    ("highest-ranked valid thesis" if ranked_selection else "cleared every thesis threshold")
                     if qualifies
-                    else "; ".join(reason_values) or "thesis did not qualify"
+                    else ("another valid thesis ranked higher" if ranked_selection else "; ".join(reason_values) or "thesis did not qualify")
                 ),
                 subject_id=str(item.get("id", "unknown-thesis")),
                 artifact=relative,
@@ -1159,7 +1151,7 @@ def update_candidate_inventory(
     days: int,
     path: Path = CANDIDATE_INVENTORY,
 ) -> tuple[Path, list[dict[str, object]]]:
-    """Retain qualified unused topic candidates in a rolling private inventory."""
+    """Retain scored topic candidates in the rolling window without a score floor."""
 
     target = base._under_private(path)
     now = _parse_timestamp(as_of)
@@ -1172,7 +1164,7 @@ def update_candidate_inventory(
         for item in raw["candidates"]:
             if not isinstance(item, Mapping) or not isinstance(item.get("last_seen_at"), str):
                 raise workflow.WorkflowError("Candidate inventory entry is malformed.")
-            if _parse_timestamp(str(item["last_seen_at"])) >= cutoff:
+            if cutoff <= _parse_timestamp(str(item["last_seen_at"])) <= now:
                 existing.append(dict(item))
 
     by_topic = {
@@ -1189,8 +1181,6 @@ def update_candidate_inventory(
         if type(momentum_total) is not int or type(authority_total) is not int:
             continue
         combined = int(momentum_total) + int(authority_total)
-        if combined < MIN_COMBINED_INVENTORY_SCORE:
-            continue
         topic = str(candidate["topic"]).strip()
         key = " ".join(topic.casefold().split())
         prior = by_topic.get(key)
@@ -1207,9 +1197,11 @@ def update_candidate_inventory(
             "expires_at": (now + timedelta(days=days)).isoformat().replace("+00:00", "Z"),
             "momentum_total": int(momentum_total),
             "authority_fit_total": int(authority_total),
+            "authority_fit": dict(authority),
+            "observed_axes": candidate.get("observed_axes"),
             "combined_total": combined,
             "representative_urls": list(candidate.get("representative_urls", [])),
-            "status": "AVAILABLE",
+            "status": prior.get("status", "AVAILABLE") if prior else "AVAILABLE",
         }
     retained = sorted(
         by_topic.values(),
@@ -1218,9 +1210,7 @@ def update_candidate_inventory(
     payload = {
         "schema_version": 1,
         "window_days": days,
-        "qualification": (
-            f"momentum_total + authority_fit_total >= {MIN_COMBINED_INVENTORY_SCORE}/50"
-        ),
+        "qualification": "rank by momentum_total + authority_fit_total; no score cutoff",
         "updated_at": as_of,
         "candidates": retained,
     }
@@ -1251,28 +1241,30 @@ def select_topic_scope(
     top_five: Sequence[Mapping[str, object]],
     inventory: Sequence[Mapping[str, object]] = (),
 ) -> tuple[list[dict[str, object]], str]:
-    momentum_eligible = [
-        dict(item) for item in top_five if item.get("momentum_eligible") is True
-    ]
-    if momentum_eligible:
-        return momentum_eligible, "momentum-qualified"
-    retained = [
-        dict(item)
+    pool = {
+        " ".join(str(item.get("topic", "")).casefold().split()): dict(item)
         for item in inventory
         if item.get("status") == "AVAILABLE"
         and type(item.get("combined_total")) is int
-        and int(item["combined_total"]) >= MIN_COMBINED_INVENTORY_SCORE
-    ]
-    if retained:
-        return retained, "rolling seven-day inventory"
-    authority_eligible = [
-        dict(item)
-        for item in top_five
-        if isinstance(item.get("authority_fit"), Mapping)
-        and int(item["authority_fit"].get("total", 0)) >= MIN_AUTHORITY_FIT_FALLBACK
-        and int(item.get("observed_axes", 0)) >= momentum.MIN_OBSERVED_AXES
-    ]
-    return authority_eligible, "authority-fit fallback"
+        and item.get("topic") and item.get("representative_urls")
+    }
+    unavailable = {
+        " ".join(str(item.get("topic", "")).casefold().split())
+        for item in inventory if item.get("status") != "AVAILABLE"
+    }
+    for item in top_five:
+        authority = item.get("authority_fit")
+        key = " ".join(str(item.get("topic", "")).casefold().split())
+        if (not key or key in unavailable or not item.get("representative_urls")
+                or type(item.get("total")) is not int
+                or not isinstance(authority, Mapping)
+                or type(authority.get("total")) is not int):
+            continue
+        pool[key] = {**item, "combined_total": item["total"] + authority["total"]}
+    ranked = sorted(pool.values(), key=lambda item: (
+        -int(item["combined_total"]), str(item["topic"]).casefold(),
+    ))
+    return ranked, "ranked seven-day pool"
 
 
 def _schema(kind: str) -> dict[str, object]:
@@ -1418,159 +1410,52 @@ def search_theses(
     *,
     trace_path: Path | None = None,
 ) -> list[dict[str, object]]:
-    feedback: Mapping[str, object] | None = None
-    rejected: set[str] = set()
-    cycle_traces: list[dict[str, object]] = []
-    best_so_far: dict[str, object] | None = None
-    for cycle in range(1, base.MAX_CYCLES + 1):
-        cards = generate_cards(profile, signals, feedback)
-        if any(base._normal(card["thesis"]) in rejected for card in cards):
-            print("Thesis advisory: a below-target thesis was repeated; attempt budget is unchanged.")
-        scores = {
-            str(score["thesis_id"]): score
-            for score in base.score_cards(cards, profile, signals)
+    """Rank one valid thesis batch; scores select a winner and never trigger retries."""
+
+    cards = generate_cards(profile, signals, None)
+    scores = {
+        str(score["thesis_id"]): score
+        for score in base.score_cards(cards, profile, signals)
+    }
+    evaluated = [
+        {
+            **card,
+            "scores": {axis: int(scores[str(card["id"])][axis]) for axis in base.AXES},
+            "total": int(scores[str(card["id"])]["total"]),
         }
-        combined = [
-            {
-                **card,
-                "scores": {
-                    axis: int(scores[str(card["id"])][axis])
-                    for axis in base.AXES
-                },
-                "total": int(scores[str(card["id"])]["total"]),
-            }
-            for card in cards
-        ]
-        combined.sort(
-            key=lambda card: (
-                -int(card["total"]),
-                -int(card["scores"]["distinctiveness"]),  # type: ignore[index]
-                str(card["id"]),
-            )
+        for card in cards
+    ]
+    if not evaluated:
+        raise workflow.WorkflowError("Thesis search produced no valid candidate.")
+    evaluated.sort(key=lambda card: (
+        -int(card["total"]),
+        -int(card["scores"]["distinctiveness"]),
+        -int(card["scores"]["simplicity"]),
+        str(card["id"]),
+    ))
+    selected_id = str(evaluated[0]["id"])
+    for card in evaluated:
+        card["selected"] = str(card["id"]) == selected_id
+        print(
+            f"  {card['id']}: {card['total']}/25; "
+            f"{'SELECTED' if card['selected'] else 'NOT_SELECTED'} by relative rank"
         )
-        qualifying = [
-            card
-            for card in combined
-            if int(card["total"]) >= base.MIN_TOTAL
-            and int(card["scores"]["simplicity"]) >= base.MIN_SIMPLICITY  # type: ignore[index]
-        ]
-        evaluated: list[dict[str, object]] = []
-        for card in combined:
-            reasons: list[str] = []
-            if int(card["total"]) < base.MIN_TOTAL:
-                reasons.append(
-                    f"total {card['total']}/25 is below {base.MIN_TOTAL}/25"
-                )
-            simplicity = int(card["scores"]["simplicity"])  # type: ignore[index]
-            if simplicity < base.MIN_SIMPLICITY:
-                reasons.append(
-                    f"simplicity {simplicity}/5 is below {base.MIN_SIMPLICITY}/5"
-                )
-            evaluated.append(
-                {
-                    **card,
-                    "qualifies": not reasons,
-                    "rejection_reasons": reasons,
-                }
-            )
-        cycle_traces.append({"cycle": cycle, "candidates": evaluated})
-        if best_so_far is None or (
-            int(evaluated[0]["total"]),
-            int(evaluated[0]["scores"]["distinctiveness"]),  # type: ignore[index]
-            int(evaluated[0]["scores"]["simplicity"]),  # type: ignore[index]
-        ) > (
-            int(best_so_far["total"]),
-            int(best_so_far["scores"]["distinctiveness"]),  # type: ignore[index]
-            int(best_so_far["scores"]["simplicity"]),  # type: ignore[index]
-        ):
-            best_so_far = dict(evaluated[0])
-        print(f"Thesis evaluation cycle {cycle}:")
-        for card in evaluated:
-            result = "PASS" if card["qualifies"] else "FAIL"
-            reason = (
-                "cleared every thesis threshold"
-                if card["qualifies"]
-                else "; ".join(card["rejection_reasons"])  # type: ignore[arg-type]
-            )
-            print(
-                f"  {card['id']}: {card['total']}/25; "
-                f"simplicity={card['scores']['simplicity']}/5; {result} ({reason})"  # type: ignore[index]
-            )
-            print(
-                "    axes="
-                + ", ".join(
-                    f"{axis}:{card['scores'][axis]}"  # type: ignore[index]
-                    for axis in base.AXES
-                )
-            )
-        if qualifying:
-            if trace_path is not None:
-                base.write_private_json(
-                    trace_path,
-                    {
-                        "schema_version": 1,
-                        "outcome": "PASS",
-                        "thresholds": {
-                            "minimum_total": base.MIN_TOTAL,
-                            "minimum_simplicity": base.MIN_SIMPLICITY,
-                        },
-                        "cycles": cycle_traces,
-                        "best_overall": best_so_far,
-                        "qualifying_ids": [str(card["id"]) for card in qualifying],
-                    },
-                )
-            print(
-                f"Thesis search: retained {len(qualifying)} qualifying candidate(s) "
-                f"from cycle {cycle}; weaker parallel candidates were not allowed "
-                "to discard the leader."
-            )
-            return qualifying
-        rejected.update(base._normal(card["thesis"]) for card in cards)
-        feedback = {
-            "cycle": cycle,
-            "required_total": base.MIN_TOTAL,
-            "required_simplicity": base.MIN_SIMPLICITY,
-            "rejected": [
-                {
-                    "id": card["id"],
-                    "thesis": card["thesis"],
-                    "conversation_surface": card["conversation_surface"],
-                    "scores": card["scores"],
-                    "total": card["total"],
-                }
-                for card in combined
-            ],
-        }
     if trace_path is not None:
         base.write_private_json(
             trace_path,
             {
-                "schema_version": 1,
-                "outcome": "COMPLETED_WITH_WARNINGS" if best_so_far else "FAIL",
-                "thresholds": {
-                    "minimum_total": base.MIN_TOTAL,
-                    "minimum_simplicity": base.MIN_SIMPLICITY,
-                },
-                "cycles": cycle_traces,
-                "best_overall": best_so_far,
-                "qualifying_ids": [],
-                "selected_id": str(best_so_far["id"]) if best_so_far else None,
+                "schema_version": 2,
+                "outcome": "PASS",
+                "selection_policy": "highest-score-valid-thesis",
+                "thresholds": {},
+                "cycles": [{"cycle": 1, "candidates": evaluated}],
+                "best_overall": evaluated[0],
+                "selected_id": selected_id,
             },
         )
-        print(
-            f"Thesis evaluation stored: "
-            f"{trace_path.relative_to(workflow.REPO_ROOT)}."
-        )
-    if best_so_far is not None:
-        print(
-            f"Best thesis across all cycles: {best_so_far['id']} at "
-            f"{best_so_far['total']}/25; "
-            f"simplicity={best_so_far['scores']['simplicity']}/5; "  # type: ignore[index]
-            f"reasons={'; '.join(best_so_far['rejection_reasons'])}."  # type: ignore[arg-type]
-        )
-        print("Thesis search: continuing with the best valid thesis; quality shortfalls remain warnings.")
-        return [best_so_far]
-    raise workflow.WorkflowError("Thesis search produced no valid candidate.")
+        print(f"Thesis evaluations stored: {trace_path.relative_to(workflow.REPO_ROOT)}.")
+    print("Thesis selection: highest-ranked valid candidate retained; no score cutoff or retry.")
+    return [evaluated[0]]
 
 
 def evidence_scope_fingerprint(
@@ -1700,7 +1585,7 @@ def _invoke_signal_scout(
     ranked_scope = "\n- ".join(scope_lines)
     prompt = f"""Find {target_count} defensible GenAI product signals published during the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, evaluations, reliability, enterprise AI and AI product management'}.
-Discovery is already complete. Start from the supplied topic-and-URL leads below; do not search for or rank new topics. Read the linked bodies. When a supplied social or aggregation URL cannot support the factual claim, find only the primary or reputable source needed to verify that same claim:
+Discovery is already complete. The topic-and-URL leads below are ordered by descending combined momentum and authority score across the requested window. Verify higher-ranked leads first, working down the list if a lead cannot be verified; do not search for or rank new topics. Read the linked bodies. When a supplied social or aggregation URL cannot support the factual claim, find only the primary or reputable source needed to verify that same claim:
 - {ranked_scope}
 For every returned item, copy the supplied lead_id and the exact supplied lead_url that nominated the claim. The item's url may be the stronger primary source used to verify it. Prefer official engineering/research blogs, documentation, papers, repositories, government and standards sources. Collect enough body evidence for a later selector to answer: what concretely changed, who in the target audience would care, what capability/decision/utility the reader receives, how consequential it is, and what inspectable evidence supports it. Return concise evidence summaries, not copied prose, topic rankings, theses, or post drafts. Public social pages may nominate a claim, but factual evidence must come from the normal primary/reputable source rules. Never access authenticated LinkedIn/X pages, email, private data, local files, credentials or authenticated services."""
     schema = json.loads(json.dumps(base._schema("research")))
@@ -2103,7 +1988,8 @@ def command(args: argparse.Namespace) -> int:
                 momentum_candidates,
                 minimum=momentum.MIN_AUTHORITY_MOMENTUM,
             )
-            top_five = ranked[: momentum.MOMENTUM_TOP_K]
+            # Score the whole returned pool before comparing it with retained topics.
+            top_five = ranked
             authority_scores = momentum.score_authority_fit(top_five, profile)
             top_five = momentum.attach_authority_fit(top_five, authority_scores)
     except STAGE_EXCEPTIONS as exc:
@@ -2175,7 +2061,7 @@ def command(args: argparse.Namespace) -> int:
             "label": momentum.MOMENTUM_LABEL,
             "topic": args.topic,
             "days": args.days,
-            "threshold": momentum.MIN_AUTHORITY_MOMENTUM,
+            "selection_policy": "ranked seven-day pool; no score cutoff",
             "ranking_claim_limit": (
                 "Public-web proxy only; not an exact X/Twitter popularity ranking."
             ),
@@ -2199,7 +2085,7 @@ def command(args: argparse.Namespace) -> int:
     )
     if resume is None:
         print(
-            f"Rolling candidate inventory: {len(inventory)} qualified unused topic(s) at "
+            f"Rolling candidate inventory: {len(inventory)} scored topic(s) at "
             f"{inventory_path.relative_to(workflow.REPO_ROOT)}."
         )
     else:
@@ -2220,8 +2106,7 @@ def command(args: argparse.Namespace) -> int:
             discovery_route,
         )
         reason = (
-            "No topic cleared either the authority conversation-momentum floor or the "
-            "evidence-bounded authority-fit fallback."
+            "No scored topic with source leads is available in the requested window."
         )
         mark_run_stage(run_dashboard, "topic_admission", "FAIL", reason)
         persist_run_dashboard(folder, run_dashboard)
@@ -2390,7 +2275,7 @@ def command(args: argparse.Namespace) -> int:
             "topic_value",
             "FAIL",
             failure_reason,
-            expected="at least one grounded candidate clears every locked Topic Value rule",
+            expected="highest-scoring grounded topic that passes novelty checking",
             observed=(
                 structured_gate
                 if structured_gate
@@ -2418,7 +2303,7 @@ def command(args: argparse.Namespace) -> int:
         run_dashboard,
         "topic_value",
         "PASS",
-        f"{len(topic_value_candidates)} situation(s) cleared Topic Value",
+        f"{len(topic_value_candidates)} new situation(s) selected by relative Topic Value rank",
         candidates=[
             {
                 "id": str(item["id"]),
@@ -2454,7 +2339,7 @@ def command(args: argparse.Namespace) -> int:
         f"{topic_value_package.relative_to(workflow.REPO_ROOT)}."
     )
     print(
-        f"{len(topic_value_candidates)} situation(s) cleared Topic Value before "
+        f"{len(topic_value_candidates)} situation(s) selected by Topic Value rank before "
         "thesis generation:"
     )
     for candidate in topic_value_candidates:
@@ -2485,10 +2370,7 @@ def command(args: argparse.Namespace) -> int:
             "thesis_search",
             "FAIL",
             str(exc),
-            expected=(
-                f"at least one thesis scores >= {base.MIN_TOTAL}/25 with "
-                f"simplicity >= {base.MIN_SIMPLICITY}/5"
-            ),
+            expected="a valid thesis batch can be scored and ranked",
             observed=f"{type(exc).__name__}: {exc}",
             exception_type=type(exc).__name__,
             **trace_details,
@@ -2501,19 +2383,12 @@ def command(args: argparse.Namespace) -> int:
         )
         raise
     record_thesis_decisions(run_dashboard, thesis_trace_path)
-    thesis_warning = any(item.get("qualifies") is False for item in theses)
-    thesis_status = "COMPLETED_WITH_WARNINGS" if thesis_warning else "PASS"
+    thesis_status = "PASS"
     mark_run_stage(
         run_dashboard,
         "thesis_search",
         thesis_status,
-        (
-            "Best valid thesis retained for drafting; "
-            + "; ".join(str(reason) for reason in theses[0].get("rejection_reasons", []))
-            if thesis_warning
-            else f"{len(theses)} thesis candidate(s) cleared the authority bar"
-        ),
-        qualifying_ids=[str(item["id"]) for item in theses if item.get("qualifies") is not False],
+        f"{len(theses)} highest-ranked valid thesis candidate(s) selected without a score cutoff",
         selected_id=str(theses[0]["id"]),
         evaluation_artifact=thesis_trace_path.relative_to(workflow.REPO_ROOT).as_posix(),
     )
@@ -2602,15 +2477,12 @@ def command(args: argparse.Namespace) -> int:
             stage="drafting",
             decision="thesis selected for drafting",
             status=thesis_status,
-            expected="highest qualifying thesis, or best valid thesis after bounded score search",
+            expected="highest-scoring valid thesis from one batch; no score cutoff or retry",
             observed=(
                 f"candidate={selected[0]['id']}; total={selected[0]['total']}/25; "
                 f"simplicity={selected[0]['scores']['simplicity']}/5"
             ),
-            reason=(
-                "best valid thesis selected with quality warnings"
-                if thesis_warning else "highest qualifying thesis selected deterministically"
-            ),
+            reason="highest-ranked valid thesis selected deterministically",
             subject_id=str(selected[0]["id"]),
         )
         guidance = workflow.load_voice_guidance()
@@ -2723,8 +2595,8 @@ def parser() -> argparse.ArgumentParser:
         "--generate-post",
         action="store_true",
         help=(
-            "Select the highest qualifying thesis, or the best valid thesis with "
-            "quality warnings after bounded search, and continue through drafting."
+            "Select the highest-scoring valid thesis from the best novel topic "
+            "and continue through drafting without a thesis score cutoff."
         ),
     )
     return result
