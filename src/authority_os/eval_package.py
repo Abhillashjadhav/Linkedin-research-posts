@@ -718,48 +718,7 @@ def _monotonic_edit_decision(
     proposed_score = proposed.get("scorecard")
     if not isinstance(previous_score, Mapping) or not isinstance(proposed_score, Mapping):
         raise workflow.WorkflowError("Progressive editor score comparison is malformed.")
-    progresses, reasons = acceptance_policy.repair_score_decision(previous_score, proposed_score)
-    if progresses or reasons != ["no-score-improvement"]:
-        return progresses, reasons
-    previous_total = int(previous_score["effective_total"])
-    proposed_total = int(proposed_score["effective_total"])
-    previous_gate_result = previous.get("gates")
-    proposed_gate_result = proposed.get("gates")
-    if not isinstance(previous_gate_result, Mapping) or not isinstance(
-        proposed_gate_result, Mapping
-    ):
-        raise workflow.WorkflowError("Progressive editor gate comparison is malformed.")
-    previous_gates = previous_gate_result.get("gates")
-    proposed_gates = proposed_gate_result.get("gates")
-    if not isinstance(previous_gates, Mapping) or not isinstance(proposed_gates, Mapping):
-        raise workflow.WorkflowError("Progressive editor gate comparison is incomplete.")
-    previous_slop = _finding_keys(previous.get("anti_slop_findings"))
-    proposed_slop = _finding_keys(proposed.get("anti_slop_findings"))
-
-    previous_failed = len(_failed_gate_details(previous))
-    proposed_failed = len(_failed_gate_details(proposed))
-    previous_factual = len(
-        _finding_keys(previous.get("factual_support_diagnostics"))
-    )
-    proposed_factual = len(
-        _finding_keys(proposed.get("factual_support_diagnostics"))
-    )
-    previous_shortfalls = acceptance_policy.axis_shortfalls(previous_score)
-    proposed_shortfalls = acceptance_policy.axis_shortfalls(proposed_score)
-    improved = (
-        (
-            previous.get("acceptance", {}).get("status") != "PASS"  # type: ignore[union-attr]
-            and proposed.get("acceptance", {}).get("status") == "PASS"  # type: ignore[union-attr]
-        )
-        or
-        proposed_total > previous_total
-        or sum(item["shortfall"] for item in proposed_shortfalls.values())
-        < sum(item["shortfall"] for item in previous_shortfalls.values())
-        or proposed_failed < previous_failed
-        or len(proposed_slop) < len(previous_slop)
-        or proposed_factual < previous_factual
-    )
-    return improved, [] if improved else ["no-measurable-improvement"]
+    return acceptance_policy.repair_score_decision(previous_score, proposed_score)
 
 
 def _replace_candidate(
@@ -875,13 +834,7 @@ def command(
             )
         edit = workflow.invoke_writer_revision if editor is None else editor
         for iteration in range(2, raw_limit + 1):
-            factual_findings = current_result.get("factual_support_diagnostics") or any(
-                "unsupported-factual-marker" in gate.get("reason_codes", [])
-                for gate in _failed_gate_details(current_result).values()
-            )
-            if current_result["acceptance"]["status"] == "PASS" and (  # type: ignore[index]
-                iteration > 2 or not factual_findings
-            ):
+            if current_result["acceptance"]["status"] == "PASS":  # type: ignore[index]
                 break
             feedback = _repair_feedback(iteration, current_result)
             revised = edit(
