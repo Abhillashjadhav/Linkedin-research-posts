@@ -60,18 +60,22 @@ The dry run is offline and uses visibly synthetic fixtures. It does not invoke a
   --generate-post
 ```
 
-V1 retries unavailable Scout surfaces once, preserves every topic with a
-combined momentum and authority-fit score of at least 40/50 in a rolling
-seven-day private inventory, and selects the highest qualifying thesis before
-continuing through the existing high-bar drafting workflow. A clearly labelled
-best-thesis fallback continues to drafting after the bounded thesis scoring
-budget is exhausted. Original scores and unmet targets remain visible as
-`COMPLETED_WITH_WARNINGS`; a below-target thesis is never labelled as qualifying.
-Repeated below-target wording consumes the same bounded attempt budget instead
-of stopping delivery. Invalid model output and missing evidence still stop the run.
-A clearly labelled authority-fit fallback may nominate a well-evidenced topic when current
-conversation momentum is insufficient; it never relabels that topic as
-trending. Research coverage is satisfied by one body-read primary source or three distinct
+V1 uses a seven-day lookback by default and retries unavailable Scout surfaces once.
+All scored topics with source leads compete with the unexpired private inventory,
+ranked by the existing combined momentum and authority-fit scores. The old 14/25
+momentum and 40/50 inventory cutoffs do not determine discovery admission.
+Evidence verification starts with the ranked leads. Grounded situations are ranked
+on the existing Topic Value axes, and the highest-scoring new idea is selected.
+Previously published atomic values are excluded before choosing the winner; one
+repeated candidate does not veto a new sibling. Novelty is checked against recorded
+publication history, not inferred from topic names or an empty history.
+Brand-independent reader value, usable evidence, and the author's goal remain required.
+The selected topic produces one thesis batch, scored on the existing five axes.
+The best valid thesis proceeds directly to drafting: no 23/25 cutoff or score retries.
+Final writing still requires total >=18, hook and voice >=4, and the other axes >=3;
+best-draft delivery keeps unmet writing targets visible as warnings.
+Invalid model output and missing evidence still stop the run.
+Research coverage is satisfied by one body-read primary source or three distinct
 body-read credible sources. Coverage shortfalls remain visible advisories and never
 stop Topic Value or the candidate batch. Publication remains disabled.
 
