@@ -17,13 +17,13 @@ MAX_WORKERS = 7
 SURFACE_TIMEOUT = 90
 CONSOLIDATION_TIMEOUT = 60
 MIN_SUCCESSFUL_SURFACES = 4
-MIN_SIGNALS_FOR_CONSOLIDATION = 10
+MIN_SIGNALS_FOR_CONSOLIDATION = 1
 SIGNALS_PER_SURFACE = 5
 MAX_SURFACE_ATTEMPTS = 2
 
 MOMENTUM_AXES = momentum.MOMENTUM_AXES
 MOMENTUM_LABEL = momentum.MOMENTUM_LABEL
-MOMENTUM_CANDIDATES = momentum.MOMENTUM_CANDIDATES
+MOMENTUM_CANDIDATES = 6
 MOMENTUM_TOP_K = momentum.MOMENTUM_TOP_K
 MIN_AUTHORITY_MOMENTUM = momentum.MIN_AUTHORITY_MOMENTUM
 MIN_REACH_MOMENTUM = momentum.MIN_REACH_MOMENTUM
@@ -183,8 +183,8 @@ def _cluster_schema(signal_ids: Sequence[str]) -> dict[str, object]:
         "properties": {
             "clusters": {
                 "type": "array",
-                "minItems": MOMENTUM_CANDIDATES,
-                "maxItems": MOMENTUM_CANDIDATES,
+                "minItems": 1,
+                "maxItems": min(MOMENTUM_CANDIDATES, len(signal_ids)),
                 "items": cluster,
             }
         },
@@ -384,10 +384,10 @@ Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings
 
 
 def _validate_clusters(raw: object, signals: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
-    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)) or len(raw) != MOMENTUM_CANDIDATES:
-        raise workflow.WorkflowError("Surface consolidation must return exactly ten clusters.")
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)) or not 1 <= len(raw) <= min(MOMENTUM_CANDIDATES, len(signals)):
+        raise workflow.WorkflowError("Surface consolidation must return one to six supported clusters.")
     available = {str(signal["id"]) for signal in signals}
-    expected = {f"topic-{index}" for index in range(1, MOMENTUM_CANDIDATES + 1)}
+    expected = {f"topic-{index}" for index in range(1, len(raw) + 1)}
     seen_ids: set[str] = set()
     seen_topics: set[str] = set()
     assigned: set[str] = set()
@@ -397,7 +397,7 @@ def _validate_clusters(raw: object, signals: Sequence[Mapping[str, object]]) -> 
             raise workflow.WorkflowError("Surface consolidation cluster has an invalid schema.")
         cluster_id = item["id"]
         if not isinstance(cluster_id, str) or cluster_id not in expected or cluster_id in seen_ids:
-            raise workflow.WorkflowError("Surface consolidation IDs must be topic-1 through topic-10 exactly once.")
+            raise workflow.WorkflowError("Surface consolidation IDs must be consecutive topic-1 through topic-N exactly once.")
         seen_ids.add(cluster_id)
         topic = item["topic"]
         why_now = item["why_now"]
@@ -424,8 +424,8 @@ def _validate_clusters(raw: object, signals: Sequence[Mapping[str, object]]) -> 
 
 def _consolidate(signals: Sequence[Mapping[str, object]], *, as_of: str) -> list[dict[str, object]]:
     ids = [str(signal["id"]) for signal in signals]
-    prompt = f"""Cluster these independently discovered public-web signals into exactly ten materially distinct current GenAI/product conversations.
-Do not browse. Do not add facts or signals. Merge only signals that describe the same underlying conversation. Preserve the strongest current conversations and use topic-1 through topic-10 exactly once. Each input signal may be assigned to at most one cluster; unused weak/duplicate signals may be omitted. Rank the ten clusters strongest-first using only the supplied evidence: cross-surface repetition, visible engagement, observable acceleration, and freshness as of {as_of}.
+    prompt = f"""Cluster these independently discovered public-web signals into up to {MOMENTUM_CANDIDATES} materially distinct current GenAI/product conversations. Return fewer when fewer meaningful conversations are supported; never split or invent a topic to fill the list.
+Do not browse. Do not add facts or signals. Merge only signals that describe the same underlying conversation. Preserve meaningful product consequences supported by visible engagement or independent discussion. Use consecutive topic-1 through topic-N exactly once. Each input signal may be assigned to at most one cluster; unused weak/duplicate signals may be omitted. Rank the retained clusters strongest-first using only the supplied evidence: cross-surface repetition, visible engagement, observable acceleration, and freshness as of {as_of}. Unknown engagement is not evidence of popularity.
 
 UNTRUSTED_SURFACE_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}
@@ -512,7 +512,7 @@ def _project_candidates(
                 ),
             }
         )
-    return momentum.validate_candidates(raw)
+    return momentum.validate_candidates(raw, count=len(raw))
 
 
 def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, object]]:
@@ -545,7 +545,7 @@ def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, obj
     )
     if len(signals) < MIN_SIGNALS_FOR_CONSOLIDATION:
         raise workflow.WorkflowError(
-            f"Only {len(signals)} surface signals were collected; at least {MIN_SIGNALS_FOR_CONSOLIDATION} are required for ten-topic consolidation."
+            "No usable public signals were collected; there is no evidence to consolidate."
         )
     if len(successful) < MIN_SUCCESSFUL_SURFACES:
         warning = (
@@ -564,9 +564,9 @@ def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, obj
             }
         )
 
-    print("Momentum: consolidating surface signals into 10 conversations...", flush=True)
+    print(f"Momentum: consolidating surface signals into up to {MOMENTUM_CANDIDATES} meaningful conversations...", flush=True)
     clusters = _consolidate(signals, as_of=as_of)
     candidates = _project_candidates(clusters, signals)
     _trace_event({"event": "surface_consolidation_finished", "candidate_count": len(candidates)})
-    print("Momentum: 10 conversations consolidated; ranking locally.", flush=True)
+    print(f"Momentum: {len(candidates)} conversations consolidated; ranking locally.", flush=True)
     return candidates
