@@ -97,6 +97,48 @@ class Observer:
 
 
 class InstalledObserverSmokeTests(unittest.TestCase):
+    def test_ranked_selection_skips_published_idea_and_dashboard_tracks_winner(self) -> None:
+        result = _run_installed_smoke(
+            """
+            import json
+            import tempfile
+            from pathlib import Path
+            from unittest.mock import patch
+            from authority_os import topic_value, v1_gates, workflow
+
+            workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+                v1_gates.STATE_ROOT = Path(temporary) / "v1-evals"
+                v1_gates.install()
+                from authority_os import daily_spine_cli, v1_completion
+                v1_completion.STATE_ROOT = v1_gates.STATE_ROOT
+                v1_completion.begin_run("ranked-novelty-smoke")
+                v1_completion.install()
+                supplied = candidates()
+                for item in supplied[1:]:
+                    item["scores"] = {axis: 3 for axis in topic_value.TOPIC_VALUE_AXES}
+                supplied[1]["scores"]["reader_value"] = 4
+                evidence = signals()
+                evidence[2]["source_quality"] = "secondary"
+                with patch.object(v1_gates, "load_atomic_values", return_value=[ATOMIC_VALUES[0]]):
+                    selected = topic_value.invoke_discovery_selector(
+                        {"target_audience": "AI PMs", "authority_goal": "Practical AI systems"},
+                        evidence, invoker=lambda *_a, **_k: {"candidates": supplied},
+                    )
+                projected = topic_value.project_discovery_signals(evidence, selected)
+                ledger = v1_completion._read_jsonl(v1_completion.STATE_ROOT / v1_completion.DECISION_LEDGER_NAME)
+                dashboard = daily_spine_cli.render_eval_dashboard(ledger)
+                checks = {item["contract"]: item for item in dashboard["checks"]}
+                assert any(row["subject_id"] == "topic-1" and row["status"] == "FAIL" for row in ledger)
+                assert any(row["subject_id"] == "topic-3" and row["status"] == "FAIL" for row in ledger)
+                assert checks["atomic_value_novelty"]["status"] == "PASS"
+                assert checks["research_trust"]["status"] == "PASS"
+                print(json.dumps({"winner": selected[0]["id"], "total": selected[0]["total"],
+                                  "signals": [item["id"] for item in projected]}))
+            """
+        )
+        self.assertEqual(result, {"winner": "topic-2", "total": 16, "signals": ["signal-2"]})
+
     def test_installed_public_resume_skips_discovery_and_reaches_evidence(self) -> None:
         result = _run_installed_smoke(
             """
@@ -551,7 +593,7 @@ class InstalledObserverSmokeTests(unittest.TestCase):
                     invoker=lambda *_args, **_kwargs: {"candidates": candidates()},
                     observer=observer,
                 )
-                assert len(selected) == 3
+                assert len(selected) == 1
                 assert [stage for stage, _rows in observer.records] == [
                     "pre-gate",
                     "post-gate",
@@ -660,7 +702,7 @@ class InstalledObserverSmokeTests(unittest.TestCase):
         self.assertEqual(
             result,
             {
-                "candidates": 3,
+                "candidates": 1,
                 "stages": ["pre-gate", "post-gate"],
                 "decision_rows": 6,
                 "drafting_returncode": 0,
@@ -705,7 +747,7 @@ class InstalledObserverSmokeTests(unittest.TestCase):
                     invoker=lambda *_args, **_kwargs: {"candidates": candidates()},
                     observer=observer,
                 )
-                assert len(selected) == 3
+                assert len(selected) == 1
 
                 assert [stage for stage, _rows in observer.records] == [
                     "pre-gate",
@@ -737,7 +779,7 @@ class InstalledObserverSmokeTests(unittest.TestCase):
         self.assertEqual(result["decision_rows"], 6)
         self.assertEqual(result["advisory_contract"], "research_trust")
         self.assertEqual(result["advisory_reason"], "source-coverage-shortfall-need-one-primary-or-three-sources")
-        self.assertEqual(result["continued_candidates"], 3)
+        self.assertEqual(result["continued_candidates"], 1)
 
 
 if __name__ == "__main__":
