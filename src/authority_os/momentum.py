@@ -195,7 +195,7 @@ def _confidence(candidate: Mapping[str, object]) -> str:
 
 
 def validate_candidates(raw: object, *, count: int = MOMENTUM_CANDIDATES) -> list[dict[str, object]]:
-    if not 1 <= count <= MOMENTUM_CANDIDATES or not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)) or len(raw) != count:
+    if type(count) is not int or count < 1 or not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)) or len(raw) != count:
         raise workflow.WorkflowError(f"Momentum Scout must return exactly {count} candidate topics.")
     expected = {f"topic-{index}" for index in range(1, count + 1)}
     required = {"id", "topic", "why_now", "platforms", "representative_urls", "caveats", *MOMENTUM_AXES}
@@ -208,7 +208,7 @@ def validate_candidates(raw: object, *, count: int = MOMENTUM_CANDIDATES) -> lis
         candidate = dict(raw_candidate)
         candidate_id = candidate["id"]
         if not isinstance(candidate_id, str) or candidate_id not in expected or candidate_id in seen_ids:
-            raise workflow.WorkflowError("Momentum topic IDs must be topic-1 through topic-10 exactly once.")
+            raise workflow.WorkflowError(f"Momentum topic IDs must be topic-1 through topic-{count} exactly once.")
         seen_ids.add(candidate_id)
         for key in ("topic", "why_now", "caveats"):
             if not isinstance(candidate[key], str) or not str(candidate[key]).strip():
