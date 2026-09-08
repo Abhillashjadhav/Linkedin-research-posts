@@ -111,8 +111,8 @@ class ActionableDiagnosticsTests(unittest.TestCase):
         repaired = replace(stalled, text="A materially different opening.\nIts supported reader consequence.",
                            axes={**stalled.axes, "hook_strength": 4, "middle_escalation": 4,
                                  "earned_closer": 4}, raw_total=21, effective_total=21)
-        improving = replace(repaired, axes={**repaired.axes, "earned_closer": 5},
-                            raw_total=22, effective_total=22)
+        improving = replace(repaired, axes={**stalled.axes, "hook_strength": 4},
+                            raw_total=23, effective_total=23)
         for succeeds in (True, False):
             rows = [stalled, stalled, repaired, improving] if succeeds else [stalled] * 4
             attempts = [replace(attempt(), candidates=(item,)) for item in rows]
@@ -132,7 +132,7 @@ class ActionableDiagnosticsTests(unittest.TestCase):
             self.assertNotIn("stopped early", output.getvalue())
             if succeeds:
                 self.assertIn("Quality search passed on cycle 4/4", output.getvalue())
-                self.assertIn("score=22/25", output.getvalue())
+                self.assertIn("score=23/25", output.getvalue())
                 write.assert_not_called()
             else:
                 write.assert_called_once()
