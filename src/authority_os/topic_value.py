@@ -374,20 +374,28 @@ def invoke_discovery_selector(
         count=3,
         invoker=invoker,
     )
+    for candidate in candidates:
+        # Discovery ranks evidence-valid ideas; the old rubric verdict is diagnostic.
+        candidate["score_status"] = candidate["status"]
+        candidate["selection_policy"] = "highest-score-novel-topic"
+        candidate["status"] = "PASS" if all(candidate[field] for field in (
+            "brand_strip_pass", "feed_value_possible", "supports_authority_goal",
+        )) else "BLOCKED"
+        candidate["priority"] = priority_for(candidate)
     _notify_observer(observer, "pre-gate", candidates)
     blocked = [candidate for candidate in candidates if candidate["status"] != "PASS"]
     passing = [candidate for candidate in candidates if candidate["status"] == "PASS"]
     if not passing:
         diagnoses = "; ".join(str(candidate["diagnosis"]) for candidate in blocked)
         raise workflow.WorkflowError(
-            "Topic Value Selector could not find one authority-worthy situation. "
+            "Topic Value Selector could not find one eligible grounded situation. "
             f"Improve the source pool instead of drafting around weak material: {diagnoses}"
         )
     passing.sort(key=lambda item: (-int(item["total"]), str(item["id"])))
     if blocked:
         print(
-            f"Topic Value: retained {len(passing)} qualifying situation(s); "
-            f"{len(blocked)} weaker candidate(s) did not veto them."
+            f"Topic Value: ranked {len(passing)} eligible situation(s); "
+            f"{len(blocked)} ineligible candidate(s) excluded."
         )
     return passing
 
