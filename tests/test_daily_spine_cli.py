@@ -13,7 +13,7 @@ from contextlib import ExitStack, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from authority_os import daily_spine_cli, topic_value, workflow
+from authority_os import daily_cli, daily_spine_cli, topic_value, workflow
 
 
 def profile() -> dict[str, object]:
@@ -134,8 +134,8 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual(
             versions["acceptance"],
             {
-                "contract_version": "five-axis-v7",
-                "floor": 18,
+                "contract_version": "five-axis-v8",
+                "floor": 17,
                 "axis_floors": {
                     "hook_strength": 4,
                     "middle_escalation": 3,
@@ -751,6 +751,28 @@ class SpineCardTests(unittest.TestCase):
         self.assertEqual([item["topic"] for item in selected], [
             "Earlier strong idea", "Quiet strong idea", "Fresh popular",
         ])
+
+    def test_small_pool_with_unknown_engagement_uses_common_authority_basis(self) -> None:
+        topics = [{"topic": "Primary finding", "total": None,
+                   "authority_fit": {"total": 22}, "representative_urls": ["https://example.com/primary"]},
+                  {"topic": "Popular weaker finding", "total": 25,
+                   "authority_fit": {"total": 18}, "representative_urls": ["https://example.com/other"]}]
+        selected, route = daily_spine_cli.select_topic_scope(topics)
+        self.assertEqual([item["topic"] for item in selected], ["Primary finding", "Popular weaker finding"])
+        self.assertIn("authority only", route)
+        self.assertIsNone(selected[0]["momentum_total"])
+        self.assertIsNone(selected[0]["combined_total"])
+
+    def test_live_theses_do_not_require_an_author_proof_inventory(self) -> None:
+        raw_profile = profile()
+        del raw_profile["proof_inventory"]
+        validated = daily_cli.validate_profile(raw_profile)
+        grounded = [{**card, "proof_id": "NOT_REQUIRED"} for card in cards()]
+        with patch.object(daily_cli, "invoke_structured", return_value={"cards": grounded}) as invoke:
+            selected = daily_spine_cli.generate_cards(validated, signals(), None)
+        self.assertEqual(len(selected), 3)
+        self.assertNotIn("proof_inventory", invoke.call_args.kwargs["task_prompt"])
+        self.assertEqual(invoke.call_args.kwargs["schema"]["properties"]["cards"]["items"]["properties"]["proof_id"]["enum"], ["NOT_REQUIRED"])
 
     def test_inventory_retains_six_day_candidate_and_excludes_eight_day_candidate(self) -> None:
         workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
