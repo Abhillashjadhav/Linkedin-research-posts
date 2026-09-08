@@ -110,7 +110,14 @@ without repeating conversation discovery or topic admission:
 
 The resume keeps the original `as-of` timestamp, admitted topics, and
 representative URLs. It reuses exact body-verified private evidence first and
-performs one targeted verification call only when evidence is still missing.
+starts up to three targeted verification workers only when evidence is still missing.
+Workers verify disjoint batches of the admitted ranked leads under one shared
+180-second deadline, with no serial retry. Verified results are deduplicated and
+kept in ranked-batch order within the seven-source budget. A timed-out worker is
+reported as a warning when another worker supplies valid evidence; if none do,
+the run remains resumable at evidence verification. Malformed evidence and invalid
+lead bindings remain errors. Parallelism increases concurrent model usage, not the
+wall-clock allowance; it cannot guarantee that providers finish within it.
 Runs created before `admitted-topics.json` was introduced can resume from the
 rolling inventory only while that inventory still carries the failed run's
 exact timestamp; otherwise the command fails closed rather than guessing.
