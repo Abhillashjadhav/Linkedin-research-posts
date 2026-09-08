@@ -28,6 +28,7 @@ def scorecard(
 class AcceptancePolicyTests(unittest.TestCase):
     def test_named_owner_boundaries(self) -> None:
         cases = (
+            ((4, 3, 3, 3, 4), True),
             ((5, 4, 4, 4, 4), True),
             ((5, 3, 3, 3, 4), True),
             ((4, 1, 4, 5, 4), False),
@@ -107,7 +108,7 @@ class AcceptancePolicyTests(unittest.TestCase):
             scorecard(3, 2, 2, 3, 3), hard_gates_pass=True
         )
         self.assertEqual(decision["status"], "FAIL")
-        self.assertEqual(decision["total_shortfall"], 5)
+        self.assertEqual(decision["total_shortfall"], 4)
         self.assertEqual(
             set(decision["axis_shortfalls"]),
             {"hook_strength", "middle_escalation", "earned_closer", "voice_fidelity"},
@@ -116,13 +117,26 @@ class AcceptancePolicyTests(unittest.TestCase):
             decision["axis_shortfalls"]["voice_fidelity"]["shortfall"], 1
         )
 
-    def test_eighteen_is_the_only_total_boundary(self) -> None:
+    def test_seventeen_with_all_axis_minima_is_complete(self) -> None:
         self.assertFalse(hasattr(acceptance_policy, "QUALITY_TARGET"))
         decision = acceptance_policy.acceptance_decision(
-            scorecard(5, 3, 3, 3, 4), hard_gates_pass=True
+            scorecard(4, 3, 3, 3, 4), hard_gates_pass=True
         )
-        self.assertEqual(decision["effective_total"], 18)
+        self.assertEqual(decision["effective_total"], 17)
         self.assertEqual(decision["status"], "PASS")
+
+    def test_repairs_require_strict_increase_without_any_axis_decrease(self) -> None:
+        seed = scorecard(3, 4, 3, 3, 3)
+        for proposed, expected in (
+            (scorecard(4, 3, 3, 3, 3), False),  # Equal total, hook/body trade.
+            (scorecard(5, 3, 3, 3, 3), False),  # Higher total, body decreased.
+            (scorecard(4, 4, 3, 3, 3), True),
+            (scorecard(3, 5, 3, 3, 3), False),  # Passing-axis polish only.
+        ):
+            with self.subTest(proposed=proposed):
+                self.assertEqual(acceptance_policy.repair_score_decision(seed, proposed)[0], expected)
+        self.assertFalse(acceptance_policy.repair_score_decision(
+            scorecard(4, 3, 3, 3, 4), scorecard(5, 5, 5, 5, 5))[0])
 
     def test_downstream_consumers_do_not_restore_legacy_band_eligibility(self) -> None:
         root = Path(__file__).resolve().parents[1] / "src" / "authority_os"
