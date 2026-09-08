@@ -5,11 +5,12 @@ from unittest.mock import patch
 
 from authority_os import momentum_surface_parallel as surface
 from authority_os import v1_consumability as tuning
+from authority_os import workflow
 
 
 class V1ConsumabilityTests(unittest.TestCase):
-    def test_one_three_or_six_conversations_survive_the_live_mapper(self) -> None:
-        for count in (1, 3, 6):
+    def test_at_least_six_conversations_survive_the_live_mapper(self) -> None:
+        for count in (6, 7, 11):
             with self.subTest(count=count):
                 signals = [{
                     "id": f"s-{i}", "topic": f"Useful product decision {i}",
@@ -27,8 +28,18 @@ class V1ConsumabilityTests(unittest.TestCase):
                 self.assertEqual(len(projected), count)
                 self.assertTrue(all(item["total"] is None for item in projected))
                 schema = invoke.call_args.kwargs["schema"]["properties"]["clusters"]
-                self.assertEqual(schema["minItems"], 1)
+                self.assertEqual(schema["minItems"], 6)
                 self.assertEqual(schema["maxItems"], count)
+
+    def test_fewer_than_six_conversations_is_an_explicit_shortfall(self) -> None:
+        signals = [{"id": f"s-{i}"} for i in range(1, 8)]
+        for count in (0, 1, 5):
+            clusters = [{"id": f"topic-{i}", "topic": f"Idea {i}",
+                         "why_now": "Public discussion", "signal_ids": [f"s-{i}"]}
+                        for i in range(1, count + 1)]
+            with self.subTest(count=count), patch.object(surface, "invoke_structured", return_value={"clusters": clusters}):
+                with self.assertRaisesRegex(workflow.WorkflowError, "at least six"):
+                    tuning._consolidate(signals, as_of="2026-09-08T01:00:00Z")
 
     def test_plain_consequence_hook_passes(self) -> None:
         result = tuning.hook_entry_check(
@@ -57,7 +68,7 @@ class V1ConsumabilityTests(unittest.TestCase):
                     "why_now": "A product decision changed for a broad reader.",
                     "signal_ids": [f"s-{index}"],
                 }
-                for index in range(1, surface.MOMENTUM_CANDIDATES + 1)
+                for index in range(1, surface.MIN_CONVERSATIONS + 1)
             ]
             return {"clusters": clusters}
 
@@ -74,12 +85,12 @@ class V1ConsumabilityTests(unittest.TestCase):
                 "engagement_units": None,
                 "acceleration_percent": None,
             }
-            for index in range(1, surface.MOMENTUM_CANDIDATES + 1)
+            for index in range(1, surface.MIN_CONVERSATIONS + 1)
         ]
         with patch.object(surface, "invoke_structured", side_effect=invoke_structured):
             result = tuning._consolidate(signals, as_of="2026-08-30T00:00:00Z")
 
-        self.assertEqual(len(result), surface.MOMENTUM_CANDIDATES)
+        self.assertEqual(len(result), surface.MIN_CONVERSATIONS)
         task = str(captured["task_prompt"])
         self.assertIn("concrete consequence", task)
         self.assertIn("one central argument", task)
