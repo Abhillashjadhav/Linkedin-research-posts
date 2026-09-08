@@ -68,4 +68,4 @@ When the supplied evidence supports it, prefer a thesis built around this sequen
 
 An incident-led thesis is preferred only when all three are present: a defensible event, a defensible consequence, and a natural solution bridge. Otherwise use another evidence-grounded authority thesis. Do not manufacture fear, inflate reputational damage, or imply counterfactual certainty.
 
-Use `thesis-1`, `thesis-2`, and `thesis-3` exactly once. Use one or two supplied signal IDs per thesis. A famous company name is not a thesis. News without a decision is not authority. Proof without a reader problem is promotion. An incident without verified consequence is not a damage hook.
+Use `thesis-1`, `thesis-2`, and `thesis-3` exactly once. Use one to seven supplied signal IDs per thesis. Preserve the relevant corroborating sources for the selected situation, including all three when three credible sources establish its coverage; never add unrelated sources to meet a count. A famous company name is not a thesis. News without a decision is not authority. Proof without a reader problem is promotion. An incident without verified consequence is not a damage hook.
