@@ -9,7 +9,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from . import workflow
+from . import acceptance_policy, workflow
 
 
 def _safe(value: object, fallback: str = "Not recorded") -> str:
@@ -136,7 +136,7 @@ def render_dashboard(
             for axis in axis_order
             if isinstance(item.get("axes"), Mapping)
         )
-        + f'<td><strong>{int(item.get("total", 0))}/25</strong><small> bar {int(item.get("threshold", 18))}</small></td>'
+        + f'<td><strong>{int(item.get("total", 0))}/25</strong><small> bar {int(item.get("threshold", acceptance_policy.ACCEPTABLE_QUALITY_FLOOR))}</small></td>'
         + f'<td><span class="status {_status(item.get("status")).casefold()}">{_safe(item.get("status"))}</span></td>'
         + f'<td>{_safe(" | ".join(str(value) for value in item.get("failure_codes", [])), "No score shortfall")}<small>Advisories: {_safe(" | ".join(str(value) for value in item.get("advisory_codes", [])), "none")}</small></td>'
         + "</tr>"
