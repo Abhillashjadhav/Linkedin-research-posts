@@ -23,7 +23,7 @@ not establish whether the provider stalled because of this schema mismatch.
 | Concept | Question | Inputs |
 |---|---|---|
 | Conversation coverage | Where was a topic discussed? | Public scout signals and observed momentum |
-| Author authority fit | Can this author contribute something useful? | Audience, public-safe proof inventory, five ranking axes |
+| Authority fit | Can this topic support useful product judgment? | Audience, supplied public signals, five ranking axes; no author proof prerequisite |
 | Source credibility/coverage | What supports this particular situation? | Read source bodies and their provenance |
 
 Four successful scout lanes do not mean four corroborating sources for one claim.
@@ -55,7 +55,7 @@ coordinator is `quality_optimizer` over the integrated draft command.
 |---|---|---|
 | Discovery window | `daily_cli.parser`, `daily_spine_cli.command` | Seven days by default; source dates are checked against the requested window. |
 | Scout availability | `surface_scout_runtime_tuning._run_surface` | 180 seconds per lane, at most two attempts for timeout/unavailability. Missing lanes are reported. |
-| Consolidation | `momentum_surface_parallel.invoke_scout`, `v1_consumability._consolidate` | Still requires at least ten signals and exactly ten clusters; fewer than four lanes is only a warning when sufficient signals exist. This count constraint is separate from source credibility. |
+| Consolidation | `momentum_surface_parallel.invoke_scout`, `v1_consumability._consolidate` | Return one to six meaningful conversations. Aim for five or six when supported; never pad the list. Fewer than four lanes is a visible warning. Missing engagement stays unknown. |
 | Momentum scoring | `momentum.validate_candidates`, `momentum.rank_candidates` | Deterministic observed-axis scores; fewer than four observed axes yields an unknown total. Unknown evidence is not a zero score. |
 | Authority-fit scoring | `momentum.score_authority_fit` | Full pool in batches of at most five; schema cardinality matches each batch; 120-second deadline per call. IDs and scores remain strictly validated. |
 | Authority timeout recovery | `daily_spine_cli.command`, `model_runtime.ModelTimeoutError` | Save `discovery-ranked.json` before scoring. On a deadline only, preserve topics, mark authority unavailable, continue with a visible warning. Other provider/schema errors still stop. |
@@ -64,8 +64,8 @@ coordinator is `quality_optimizer` over the integrated draft command.
 | Source coverage | `v1_gates.evaluate_research_trust` | One relevant body-read primary source OR three distinct body-read credible URLs; advisory when short. Topic/thesis schemas now allow up to seven references, so the three-source route is representable. |
 | Topic selection | `topic_value.invoke_discovery_selector`, `v1_gates._evaluate_topic_candidates` | Rank existing axes; keep reader-value/goal eligibility. Exclude repeated/unverified atomic ideas individually, then choose the highest-scoring remaining candidate. |
 | Novelty history | `v1_completion.load_published_atomic_values` | Compare with recorded confirmed publication history. An empty history cannot establish that an idea has never been published. |
-| Thesis selection | `daily_spine_cli.search_theses`, `daily_cli.validate_cards` | One valid three-card batch, same five ranking axes, no 23-point threshold or score retries. Valid evidence IDs, proof IDs, distinct thesis text and short summaries are still required. |
-| Writing acceptance | `acceptance_policy`, `quality_optimizer` | Total >=18; hook and voice >=4; middle, closer and specificity >=3. Best-draft delivery preserves unmet-score warnings. Real execution/private-data errors can still stop delivery. |
+| Thesis selection | `daily_spine_cli.search_theses`, `daily_cli.validate_cards` | One valid three-card batch, same five ranking axes, no 23-point threshold or score retries. Valid public evidence IDs, distinct thesis text and short summaries are required. New cards use the compatibility field proof_id=NOT_REQUIRED; no proof inventory is required. |
+| Writing acceptance | `acceptance_policy`, `quality_optimizer`, `eval_package` | Hook and voice >=4; middle, closer and specificity >=3 (minimum total 17). Stop immediately. Before then, accept only a higher total with reduced deficits and no individual axis decrease; otherwise keep the prior draft. Exhaustion delivers it with warnings. |
 | Candidate findings in UI | `v1_completion._record_topic_decisions`, `daily_spine_cli.render_eval_dashboard` | Preserve all candidate findings; selected-topic decisions determine its current verdict. `eval_dashboard_html` renders shadow findings as advisory. |
 | Human publication | `bin/linkedin-os`, approval/package boundaries | Generating a draft does not publish it to LinkedIn. |
 
@@ -76,21 +76,21 @@ timeout recovery path, checkpoints retrieved topics, and removes the two-referen
 cap that contradicted the three-source coverage rule. It does not mark a timeout
 as a successful authority evaluation, and it does not manufacture source evidence.
 
-Three additional constraints remain visible in the map rather than being silently
-treated as evidence failures:
+The owner's subsequent simplification is now implemented:
 
-- The discovery consolidation model still expects ten conversations. A day with
-  fewer signals can stop even if one topic has excellent primary evidence.
-- `acceptance_policy.repair_score_decision` still refuses any decrease in total,
-  including an edit that improves hook or voice. This can conflict with an intended
-  trade between already-strong non-priority axes and weak priority axes. It was not
-  exercised in the supplied timeout run, and this timeout/source-contract patch
-  does not change writing-repair policy.
-- `daily_cli.validate_profile` requires a nonempty author proof inventory, and
-  every thesis must cite a valid proof ID. The product contract describes author
-  proof as conditional for evidence-led posts. That conditional behavior is not
-  implemented by these validators; primary-source credibility alone does not
-  satisfy the separate author-profile requirement.
+- Consolidation accepts up to six conversations, including smaller genuine pools.
+  When momentum is incomplete but all authority scores are available, rank on that
+  common authority basis and label it; never invent engagement or mix 25- and
+  50-point scales. A pool with neither usable score basis still cannot be ranked.
+- The owner confirmed 17 as the sum of the five required axis minima and strict
+  score increases before acceptance. Equal-total trades and any axis decrease
+  cannot replace the retained draft, even if other scores improve. Both writing
+  paths stop immediately at the minima; no optional polish is run afterward.
+- Author proof is no longer a discovery input requirement. Old inventories and
+  valid proof references remain readable for compatibility, but new thesis
+  generation requests NOT_REQUIRED and does not send the inventory to the judge.
+  The legacy proof_fit axis now means public-evidence grounding. This does not
+  authorize fabricated personal achievements or replace factual source checks.
 
 The private checkpoint records work; it is not a claim that the existing
 `--resume-from` command can resume an arbitrary stage. That command still supports
