@@ -19,6 +19,8 @@ EXPECTED_EVIDENCE_FIELDS = {
     "source",
     "source_quality",
     "body_read",
+    "published_at",
+    "publication_date_precision",
 }
 
 
@@ -312,7 +314,6 @@ class DraftingEvidenceTests(unittest.TestCase):
             "private-note-sentinel",
             "fetched_at",
             "canonical_url",
-            "published_at",
             "db_id",
         ):
             with self.subTest(sentinel=sentinel):
@@ -897,6 +898,39 @@ class WriterPromptAndInvocationTests(unittest.TestCase):
                 evidence=unsafe_evidence,
                 voice_guidance=self.voice,
             )
+
+    def test_old_source_dates_reach_writer_without_private_metadata(self) -> None:
+        for published_at, precision in (
+            ("2026-05-04T00:00:00Z", "exact"),
+            ("2026-05", "month"),
+        ):
+            with self.subTest(published_at=published_at):
+                row = research_item(
+                    "Agent reliability background",
+                    url="https://standards.example/background?token=private-query-sentinel",
+                    quality="primary",
+                    published_at=published_at,
+                    body="The source explains workflow recovery.",
+                )
+                row["freshness_status"] = "older_context"
+                row["evidence_warnings"] = ["private-warning-sentinel"]
+                evidence = workflow.build_drafting_evidence(
+                    [row], topic_slug="agent-reliability"
+                )
+                prompt = workflow.build_writer_prompt(
+                    brief=self.brief,
+                    evidence=evidence,
+                    voice_guidance=self.voice,
+                )
+                self.assertIn(f'"published_at": "{published_at}"', prompt)
+                self.assertIn(f'"publication_date_precision": "{precision}"', prompt)
+                self.assertIn('"freshness_status": "older_context"', prompt)
+                for sentinel in (
+                    "private-author-sentinel", "private-note-sentinel",
+                    "private-content-hash-sentinel", "private-query-sentinel",
+                    "private-warning-sentinel",
+                ):
+                    self.assertNotIn(sentinel, prompt)
 
     def test_prompt_projects_only_writer_brief_fields(self) -> None:
         prompt = workflow.build_writer_prompt(
