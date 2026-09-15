@@ -179,6 +179,10 @@ def project_signals(items: Sequence[Mapping[str, object]]) -> list[dict[str, obj
             "id": f"signal-{index}", "title": item["title"], "body": item["body"],
             "source": item["source"], "published_at": item["published_at"],
             "source_quality": item["source_quality"], "canonical_url": item["canonical_url"],
+            **{key: item[key] for key in (
+                "publication_date_precision", "publication_date_uncertain",
+                "freshness_status", "evidence_warnings",
+            ) if key in item},
         }
         for index, item in enumerate(items, 1)
     ]

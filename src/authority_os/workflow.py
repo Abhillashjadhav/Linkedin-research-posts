@@ -2086,6 +2086,8 @@ supplied voice guidance contains the canonical v2 voice contract plus non-citabl
 aggregate numbers, examples, and descriptions are not evidence and must never become factual claims.
 Never invent personal experience, ownership, a quotation, statistic, customer, result, credential,
 or source. Do not score, rank, revise, select a winner, apply approval gates, create files, or publish.
+Respect the supplied source dates. Older sources may support background and practical advice;
+do not turn them into a claim that something launched, changed, or happened this week.
 
 UNTRUSTED_STRATEGIC_BRIEF_DATA
 {json.dumps(safe_brief, indent=2, sort_keys=True)}

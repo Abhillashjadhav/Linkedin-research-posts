@@ -4,6 +4,15 @@ Audit: 2026-09-08. Scope: the public `bin/linkedin-os discover --generate-post`
 entry point, its installed runtime overrides, ranking/evidence contracts, and the
 child drafting command. This is a code-path audit, not a live provider trial.
 
+Update, 2026-09-15: source freshness is advisory during evidence verification.
+An older body-read source keeps its actual publication date and is labelled as
+background context. Warnings reach topic selection and the browser dashboard.
+Parallel evidence errors exclude the failed worker's batch, preserve verified
+sibling evidence, and continue when at least one usable source remains. All-worker
+failures remain resumable and retain their actual failure reasons. Future-dated,
+missing-body, invalid-URL, and mismatched-cache records are not admitted as verified
+evidence; a rejected worker no longer vetoes its valid siblings.
+
 ## What stopped the 12:29 run
 
 The supplied dashboard reports `Authority topic critic timed out.` Four surface

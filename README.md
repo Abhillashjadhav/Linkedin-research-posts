@@ -368,6 +368,9 @@ make check
 
 ## Current limitations
 
+- Discovery's time window ranks recent conversations; it is not a veto on useful older reference material. Body-read older sources retain their real dates, are labelled as background context, and carry warnings through topic selection and the dashboard. They must not be described as new events.
+- An evidence worker's timeout or invalid response does not discard valid sources from other workers. Discovery continues with `COMPLETED_WITH_WARNINGS` when usable evidence remains. If every worker fails, the saved discovery can be resumed; missing evidence is not fabricated.
+
 - macOS and Linux are supported; Windows is not currently supported for private-data operation.
 - Legacy single-post live drafting depends on the locally configured Claude service and explicit consent; trace-first campaign mode uses the authenticated Codex CLI with explicit per-stage model settings.
 - The bounded search stops after four live cycles rather than spending indefinitely.
