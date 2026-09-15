@@ -928,8 +928,15 @@ class MinimalCliTests(unittest.TestCase):
             self.assertEqual(len(evidence), 2)
             self.assertEqual(
                 set(evidence[0]),
-                {"id", "title", "claim", "source", "source_quality", "body_read"},
+                {
+                    "id", "title", "claim", "source", "source_quality", "body_read",
+                    "published_at", "publication_date_precision",
+                },
             )
+            dates_by_source = {item["canonical_url"]: item["published_at"] for item in items}
+            for source in evidence:
+                self.assertEqual(source["published_at"], dates_by_source[source["source"]])
+                self.assertEqual(source["publication_date_precision"], "exact")
             rendered = json.dumps(evidence)
             for private_field in ("content_hash", "author", "fetched_at", '"id": 1'):
                 self.assertNotIn(private_field, rendered)

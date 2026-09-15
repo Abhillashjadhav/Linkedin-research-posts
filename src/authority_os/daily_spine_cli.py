@@ -655,11 +655,12 @@ def record_evidence_decisions(
     signals: Sequence[Mapping[str, object]],
 ) -> None:
     for item in signals:
+        warnings = item.get("evidence_warnings", [])
         record_run_decision(
             dashboard,
             stage="evidence_verification",
             decision="signal admitted as body-verified evidence",
-            status="PASS",
+            status="COMPLETED_WITH_WARNINGS" if warnings else "PASS",
             expected="valid timestamp, inspectable source body, canonical URL, and allowed source quality",
             observed=(
                 f"source_quality={item.get('source_quality')}; "
@@ -667,7 +668,7 @@ def record_evidence_decisions(
                 f"date_precision={item.get('publication_date_precision', 'exact')}; "
                 f"url={item.get('canonical_url')}"
             ),
-            reason="signal passed research-item validation and projection",
+            reason="; ".join(warnings) if warnings else "signal passed research-item validation and projection",
             subject_id=str(item.get("id", "unknown-signal")),
         )
 
@@ -1555,10 +1556,16 @@ def _validate_body_verified_evidence(
         earliest, latest, precision = workflow.source_publication_bounds(
             str(item["published_at"])
         )
-        if latest < window_start or earliest > window_end:
+        if earliest > window_end:
             raise workflow.WorkflowError(
-                "Evidence verification found a source outside the requested time window."
+                "Evidence verification found a source dated after the run's as-of time."
             )
+        item["freshness_status"] = "older_context" if latest < window_start else "within_window"
+        item["evidence_warnings"] = (
+            [f"Source {item['canonical_url']} ({item['published_at']}) is older than the "
+             f"{days}-day discovery window; retained as background context, not a new event."]
+            if latest < window_start else []
+        )
         item["publication_date_precision"] = precision
         item["publication_date_uncertain"] = precision == "month"
         canonical_url = str(item["canonical_url"])
@@ -1577,6 +1584,12 @@ def _validate_body_verified_evidence(
             "body-verified signals."
         )
     return prepared
+
+
+def _evidence_warnings(items: Sequence[Mapping[str, object]]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(
+        str(warning) for item in items for warning in item.get("evidence_warnings", [])
+    ))
 
 
 def _invoke_signal_scout(
@@ -1613,7 +1626,7 @@ def _invoke_signal_scout(
 Scope: {topic or 'agentic AI, evaluations, reliability, enterprise AI and AI product management'}.
 Discovery is already complete. The topic-and-URL leads below are ordered by descending combined momentum and authority score across the requested window. Verify higher-ranked leads first, working down the list if a lead cannot be verified; do not search for or rank new topics. Read the linked bodies. When a supplied social or aggregation URL cannot support the factual claim, find only the primary or reputable source needed to verify that same claim:
 - {ranked_scope}
-For every returned item, copy the supplied lead_id and the exact supplied lead_url that nominated the claim. The item's url may be the stronger primary source used to verify it. Prefer official engineering/research blogs, documentation, papers, repositories, government and standards sources. Collect enough body evidence for a later selector to answer: what concretely changed, who in the target audience would care, what capability/decision/utility the reader receives, how consequential it is, and what inspectable evidence supports it. Return concise evidence summaries, not copied prose, topic rankings, theses, or post drafts. Public social pages may nominate a claim, but factual evidence must come from the normal primary/reputable source rules. Never access authenticated LinkedIn/X pages, email, private data, local files, credentials or authenticated services."""
+For every returned item, copy the supplied lead_id and the exact supplied lead_url that nominated the claim. The item's url may be the stronger primary source used to verify it. Prefer sources in the requested window, but retain a relevant older source as background context with its real publication date; never change its date or describe it as a new event. Prefer official engineering/research blogs, documentation, papers, repositories, government and standards sources. Collect enough body evidence for a later selector to answer: what concretely changed, who in the target audience would care, what capability/decision/utility the reader receives, how consequential it is, and what inspectable evidence supports it. Return concise evidence summaries, not copied prose, topic rankings, theses, or post drafts. Public social pages may nominate a claim, but factual evidence must come from the normal primary/reputable source rules. Never access authenticated LinkedIn/X pages, email, private data, local files, credentials or authenticated services."""
     schema = json.loads(json.dumps(base._schema("research")))
     item_schema = schema["properties"]["items"]["items"]
     item_schema["properties"]["lead_id"] = {
@@ -1906,16 +1919,22 @@ def _resolve_parallel_evidence(
                 warnings.append(f"Evidence worker {number} timed out; its lead batch remains unverified.")
             else:
                 errors.append(exc)
+                warnings.append(f"Evidence worker {number} failed: {exc} Its lead batch was excluded; verified sibling evidence was retained.")
         trace.append(row)
-    if errors:
-        raise errors[0]
     if not retained:
+        if errors:
+            raise workflow.WorkflowError(
+                "No usable source evidence remained after evidence-worker failures: "
+                + str(errors[0])
+                + " Discovery artifacts were preserved; resume without repeating discovery."
+            ) from errors[0]
         raise workflow.WorkflowError("Targeted Evidence Scout timed out without verified evidence. Discovery artifacts were preserved; resume this run without repeating discovery.")
     # Reconcile in ranked batch order, not completion order. Each worker already
     # validated source bodies, dates and exact lead binding. Deduplicate before
     # preserving the existing downstream evidence budget.
     retained = retained[:MAX_VERIFIED_EVIDENCE]
-    return EvidenceResolution(tuple(retained), "live-targeted-parallel", len(batches), fingerprint, tuple(warnings))
+    return EvidenceResolution(tuple(retained), "live-targeted-parallel", len(batches), fingerprint,
+                              tuple(warnings) + _evidence_warnings(retained))
 
 
 def resolve_signal_evidence(
@@ -1954,7 +1973,7 @@ def resolve_signal_evidence(
             "signal(s); no live evidence search was started.",
             flush=True,
         )
-        return EvidenceResolution(tuple(cached), "verified-cache", 0, fingerprint)
+        return EvidenceResolution(tuple(cached), "verified-cache", 0, fingerprint, _evidence_warnings(cached))
     trace.append(
         {
             "route": "verified-cache",
@@ -1983,7 +2002,7 @@ def resolve_signal_evidence(
             "exact admitted URL; no live evidence search was started.",
             flush=True,
         )
-        return EvidenceResolution(tuple(stored), "verified-database", 0, fingerprint)
+        return EvidenceResolution(tuple(stored), "verified-database", 0, fingerprint, _evidence_warnings(stored))
     trace.append(
         {
             "route": "verified-database",
@@ -2017,7 +2036,7 @@ def resolve_signal_evidence(
                 "live_call_started": True,
             }
         )
-        return EvidenceResolution(tuple(items), "live-targeted", 1, fingerprint)
+        return EvidenceResolution(tuple(items), "live-targeted", 1, fingerprint, _evidence_warnings(items))
     except workflow.WorkflowError as exc:
         trace.append(
             {

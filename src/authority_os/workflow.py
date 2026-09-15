@@ -1478,7 +1478,7 @@ def build_drafting_evidence(
         raise WorkflowError("Drafting evidence limit must be a positive integer.")
     if type(include_all) is not bool:
         raise WorkflowError("Drafting evidence include_all must be boolean.")
-    ranked: list[tuple[int, float, str, str, str, str, str, bool]] = []
+    ranked: list[tuple[int, float, str, str, str, str, str, bool, str, str, str]] = []
     quality_rank = {"primary": 2, "mixed": 1, "secondary": 0}
     for index, item in enumerate(items, start=1):
         if not isinstance(item, Mapping):
@@ -1501,11 +1501,15 @@ def build_drafting_evidence(
             raise WorkflowError(f"Drafting evidence item {index} needs a source URL.")
         try:
             canonical_url = canonicalise_url(raw_url)
-            published = parse_published_at(str(item.get("published_at", "")))
+            published_at = str(item.get("published_at", "")).strip()
+            published, _latest, precision = source_publication_bounds(published_at)
         except ValueError as exc:
             raise WorkflowError(f"Drafting evidence item {index} is invalid: {exc}") from exc
         cleaned_body = body.strip()
         claim = cleaned_body[:500] if cleaned_body else title.strip()[:300]
+        freshness = item.get("freshness_status", "")
+        if freshness not in ("", "older_context", "within_window"):
+            raise WorkflowError(f"Drafting evidence item {index} has invalid freshness status.")
         ranked.append(
             (
                 -quality_rank[str(quality)],
@@ -1516,6 +1520,9 @@ def build_drafting_evidence(
                 claim,
                 str(quality),
                 bool(cleaned_body),
+                published_at,
+                precision,
+                str(freshness),
             )
         )
     if not ranked:
@@ -1533,6 +1540,9 @@ def build_drafting_evidence(
             claim,
             quality,
             body_read,
+            published_at,
+            precision,
+            freshness,
         ) = row
         projected.append(
             {
@@ -1542,6 +1552,9 @@ def build_drafting_evidence(
                 "source": source,
                 "source_quality": quality,
                 "body_read": body_read,
+                "published_at": published_at,
+                "publication_date_precision": precision,
+                **({"freshness_status": freshness} if freshness else {}),
             }
         )
     return projected
@@ -1724,7 +1737,7 @@ def _writer_evidence_projection(
     """Validate the exact minimal envelope allowed to cross the model boundary."""
 
     _candidate_evidence_ids(evidence)
-    allowed_fields = {
+    required_fields = {
         "id",
         "title",
         "claim",
@@ -1732,10 +1745,13 @@ def _writer_evidence_projection(
         "source_quality",
         "body_read",
     }
+    allowed_fields = required_fields | {
+        "published_at", "publication_date_precision", "freshness_status",
+    }
     projected: list[dict[str, object]] = []
     for index, item in enumerate(evidence, start=1):
         fields = set(item)
-        if fields != allowed_fields:
+        if not required_fields <= fields or not fields <= allowed_fields:
             raise WorkflowError(
                 f"Writer evidence item {index} must use only the minimal evidence schema."
             )
@@ -1770,6 +1786,25 @@ def _writer_evidence_projection(
             raise WorkflowError(
                 f"Writer evidence item {index} body_read must be boolean."
             )
+        date_metadata: dict[str, object] = {}
+        if fields & (allowed_fields - required_fields):
+            published_at = item.get("published_at")
+            if not isinstance(published_at, str) or not published_at.strip():
+                raise WorkflowError(f"Writer evidence item {index} needs a publication date.")
+            try:
+                _start, _end, precision = source_publication_bounds(published_at)
+            except ValueError as exc:
+                raise WorkflowError(f"Writer evidence item {index} has an invalid publication date.") from exc
+            if item.get("publication_date_precision", precision) != precision:
+                raise WorkflowError(f"Writer evidence item {index} has inconsistent date precision.")
+            date_metadata = {
+                "published_at": published_at.strip(),
+                "publication_date_precision": precision,
+            }
+            if "freshness_status" in item:
+                if item["freshness_status"] not in ("older_context", "within_window"):
+                    raise WorkflowError(f"Writer evidence item {index} has invalid freshness status.")
+                date_metadata["freshness_status"] = item["freshness_status"]
         projected.append(
             {
                 "id": text_values["id"],
@@ -1778,6 +1813,7 @@ def _writer_evidence_projection(
                 "source": query_free_source,
                 "source_quality": text_values["source_quality"],
                 "body_read": body_read,
+                **date_metadata,
             }
         )
     return projected
@@ -2086,6 +2122,8 @@ supplied voice guidance contains the canonical v2 voice contract plus non-citabl
 aggregate numbers, examples, and descriptions are not evidence and must never become factual claims.
 Never invent personal experience, ownership, a quotation, statistic, customer, result, credential,
 or source. Do not score, rank, revise, select a winner, apply approval gates, create files, or publish.
+Respect the supplied source dates. Older sources may support background and practical advice;
+do not turn them into a claim that something launched, changed, or happened this week.
 
 UNTRUSTED_STRATEGIC_BRIEF_DATA
 {json.dumps(safe_brief, indent=2, sort_keys=True)}

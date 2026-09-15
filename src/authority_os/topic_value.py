@@ -336,6 +336,8 @@ def invoke_selector(
         f"Extract exactly {count} grounded candidate situation(s) worth considering before any thesis or post is written. "
         "Use one to seven supplied source IDs per situation. Where available, cite one body-read primary source "
         "or three distinct body-read credible sources supporting that same situation. Never pad coverage with unrelated sources. "
+        "Respect publication dates and evidence_warnings: an older source can support useful background or a practical "
+        "decision, but it is not evidence of a new event this week. Never invent recency to fill what_changed. "
         "Do not draft a hook, thesis, post, CTA, or personal story. "
         "A topic name is not a situation. State what changed, who cares, and what the reader gets. Accepted reader-value "
         "routes are capability discovery, decision change, and immediate utility. Gravity is important but not a hard requirement: "

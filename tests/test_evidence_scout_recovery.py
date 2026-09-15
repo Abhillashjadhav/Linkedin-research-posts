@@ -106,14 +106,27 @@ class EvidenceScoutRecoveryTests(unittest.TestCase):
         finally:
             release.set()
 
-    def test_parallel_malformed_evidence_is_not_softened_as_a_timeout(self) -> None:
+    def test_parallel_malformed_worker_does_not_discard_verified_siblings(self) -> None:
         def scout(*args, **kwargs):
             if kwargs["lead_offset"] == 0:
                 raise workflow.WorkflowError("Evidence Scout item does not match its admitted topic-and-URL lead.")
             return workflow.prepare_research_items(research_items(1))
+        trace = []
         with patch.object(daily_spine_cli, "_invoke_signal_scout", side_effect=scout):
-            with self.assertRaisesRegex(workflow.WorkflowError, "does not match"):
-                daily_spine_cli._resolve_parallel_evidence(None, 7, AS_OF, admitted() * 3, [], "scope")
+            result = daily_spine_cli._resolve_parallel_evidence(None, 7, AS_OF, admitted() * 3, trace, "scope")
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual([row["status"] for row in trace], ["FAIL", "PASS", "PASS"])
+        self.assertIn("does not match", result.warnings[0])
+        self.assertIn("excluded", result.warnings[0])
+
+    def test_parallel_all_invalid_workers_preserve_the_actual_failure_reason(self) -> None:
+        trace = []
+        with patch.object(daily_spine_cli, "_invoke_signal_scout",
+                          side_effect=workflow.WorkflowError("invalid lead binding")):
+            with self.assertRaisesRegex(workflow.WorkflowError, "No usable source evidence.*invalid lead binding"):
+                daily_spine_cli._resolve_parallel_evidence(None, 7, AS_OF, admitted() * 3, trace, "scope")
+        self.assertEqual(len(trace), 3)
+        self.assertTrue(all(row["status"] == "FAIL" for row in trace))
 
     def test_parallel_all_timeouts_cannot_claim_verified_evidence(self) -> None:
         trace = []
@@ -356,7 +369,7 @@ class EvidenceScoutRecoveryTests(unittest.TestCase):
                         db_path=root / "unused.sqlite",
                     )
 
-    def test_body_and_requested_window_are_deterministic_requirements(self) -> None:
+    def test_old_source_is_background_context_while_blank_body_stays_invalid(self) -> None:
         blank = research_items()
         blank[0]["body"] = ""
         with self.assertRaisesRegex(workflow.WorkflowError, "non-blank source body"):
@@ -364,8 +377,22 @@ class EvidenceScoutRecoveryTests(unittest.TestCase):
 
         expired = research_items()
         expired[0]["published_at"] = "2026-08-01T00:00:00Z"
-        with self.assertRaisesRegex(workflow.WorkflowError, "outside the requested time window"):
-            daily_spine_cli._validate_body_verified_evidence(expired, days=7, as_of=AS_OF)
+        prepared = daily_spine_cli._validate_body_verified_evidence(expired, days=7, as_of=AS_OF)
+        self.assertEqual(len(prepared), 3)
+        self.assertEqual(prepared[0]["published_at"], "2026-08-01T00:00:00Z")
+        self.assertEqual(prepared[0]["freshness_status"], "older_context")
+        self.assertEqual(prepared[1]["freshness_status"], "within_window")
+        warnings = daily_spine_cli._evidence_warnings(prepared)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("not a new event", warnings[0])
+        projected = daily_spine_cli.base.project_signals(prepared)
+        self.assertEqual(projected[0]["evidence_warnings"], prepared[0]["evidence_warnings"])
+
+    def test_future_source_is_not_misrepresented_as_existing_evidence(self) -> None:
+        future = research_items(1)
+        future[0]["published_at"] = "2027-01-01T00:00:00Z"
+        with self.assertRaisesRegex(workflow.WorkflowError, "dated after"):
+            daily_spine_cli._validate_body_verified_evidence(future, days=7, as_of=AS_OF)
 
     def test_month_only_publication_is_accepted_when_month_overlaps_window(self) -> None:
         items = research_items()
@@ -381,15 +408,36 @@ class EvidenceScoutRecoveryTests(unittest.TestCase):
             {item["publication_date_precision"] for item in prepared}, {"month"}
         )
 
-    def test_month_only_publication_is_rejected_when_month_misses_window(self) -> None:
+    def test_month_only_old_publication_retains_date_precision_and_warns(self) -> None:
         items = research_items()
         items[0]["published_at"] = "2026-07"
-        with self.assertRaisesRegex(
-            workflow.WorkflowError, "outside the requested time window"
-        ):
-            daily_spine_cli._validate_body_verified_evidence(
-                items, days=7, as_of=AS_OF
-            )
+        prepared = daily_spine_cli._validate_body_verified_evidence(items, days=7, as_of=AS_OF)
+        self.assertEqual(prepared[0]["published_at"], "2026-07")
+        self.assertTrue(prepared[0]["publication_date_uncertain"])
+        self.assertEqual(prepared[0]["freshness_status"], "older_context")
+        self.assertEqual(len(daily_spine_cli._evidence_warnings(prepared)), 1)
+
+    def test_older_database_evidence_continues_with_warning_and_original_provenance(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            root = Path(temporary)
+            db = root / "authority.sqlite"
+            storage.initialise(db)
+            raw = research_items(1)
+            raw[0]["published_at"] = "2026-07-01T00:00:00Z"
+            fetched_at = "2026-08-20T08:00:00Z"
+            stored = workflow.prepare_research_items(raw, fetched_at=fetched_at)
+            storage.insert_research_items(db, stored, evidence_origin="private-import")
+            candidates = [{"topic": "Agent reliability", "representative_urls": [stored[0]["canonical_url"]]}]
+            with patch.object(daily_spine_cli, "_invoke_signal_scout") as scout:
+                result = daily_spine_cli.resolve_signal_evidence(
+                    None, 7, AS_OF, candidates, folder=root / "current", db_path=db,
+                )
+        scout.assert_not_called()
+        self.assertEqual(result.route, "verified-database")
+        self.assertEqual(len(result.warnings), 1)
+        self.assertEqual(result.items[0]["fetched_at"], fetched_at)
+        self.assertEqual(result.items[0]["published_at"], raw[0]["published_at"])
 
 
 if __name__ == "__main__":

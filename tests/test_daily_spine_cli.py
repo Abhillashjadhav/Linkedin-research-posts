@@ -665,6 +665,66 @@ class SpineCardTests(unittest.TestCase):
         thesis_stage = next(item for item in dashboard["checks"] if item["stage"] == "thesis_search")
         self.assertEqual(thesis_stage["status"], "PASS")
 
+    def test_old_sources_and_failed_workers_still_reach_drafting_with_warnings(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary, ExitStack() as stack:
+            root = Path(temporary)
+            output = root / "run"
+            profile_path = root / "profile.json"
+            profile_path.write_text(json.dumps(profile()), encoding="utf-8")
+            topics = tuple({
+                "id": f"topic-{i}", "topic": f"Agent reliability {i}", "total": 20,
+                "observed_axes": 5, "authority_fit": {"total": 22},
+                "representative_urls": [f"https://example.com/lead-{i}"],
+            } for i in range(1, 4))
+            resume = daily_spine_cli.DiscoveryResume(
+                root / "previous", "2026-09-08T09:04:06Z", topics, topics, "momentum-qualified", (),
+            )
+            def scout(**kwargs):
+                stage = kwargs["stage_label"]
+                if stage.endswith("1"):
+                    raise workflow.WorkflowError("invalid evidence worker output")
+                if stage.endswith("3"):
+                    raise daily_spine_cli.ModelTimeoutError("worker timed out")
+                return {"items": [{
+                    **item, "body": f"Distinct documented reliability finding {i}.",
+                    "lead_id": "lead-2", "lead_url": "https://example.com/lead-2",
+                } for i, item in enumerate(signals())]}
+            stack.enter_context(patch.object(daily_spine_cli, "load_discovery_resume", return_value=resume))
+            stack.enter_context(patch.object(daily_spine_cli.base, "invoke_structured", side_effect=scout))
+            selector = stack.enter_context(patch.object(topic_value, "invoke_discovery_selector", return_value=value_candidates()))
+            stack.enter_context(patch.object(daily_spine_cli, "generate_cards", return_value=cards()))
+            stack.enter_context(patch.object(daily_spine_cli.base, "score_cards", return_value=[
+                {"thesis_id": f"thesis-{i}", **{axis: 4 for axis in daily_spine_cli.base.AXES}, "total": 20}
+                for i in range(1, 4)
+            ]))
+            stack.enter_context(patch.object(daily_spine_cli.v1_completion, "_read_jsonl", return_value=[]))
+            stack.enter_context(patch.object(workflow, "load_voice_guidance", return_value={}))
+            stack.enter_context(patch.object(daily_spine_cli.eval_dashboard_html, "open_dashboard", return_value=False))
+            child = stack.enter_context(patch.object(daily_spine_cli, "run_drafting_child", return_value=
+                daily_spine_cli.DraftingRun(0, "fixture drafting completed", "fixture.log", ())))
+            stack.enter_context(redirect_stdout(io.StringIO()))
+            code = daily_spine_cli.main([
+                "--profile", str(profile_path), "--resume-from", str(resume.source_folder),
+                "--output-dir", str(output), "--db", str(root / "db.sqlite"),
+                "--allow-web-research", "--allow-model-egress", "--generate-post",
+            ])
+            dashboard = json.loads((output / "run-dashboard.json").read_text())
+            snapshot = json.loads((output / daily_spine_cli.EVIDENCE_CACHE_NAME).read_text())
+            attempts = json.loads((output / "evidence-attempts.json").read_text())["attempts"]
+            html = (output / "eval-dashboard.html").read_text()
+        self.assertEqual(code, 0)
+        child.assert_called_once()
+        self.assertEqual(dashboard["outcome"], "COMPLETED_WITH_WARNINGS")
+        self.assertIsNone(dashboard["stopped_at"])
+        self.assertEqual([row["status"] for row in attempts[-3:]], ["FAIL", "PASS", "TIMEOUT"])
+        self.assertEqual(len(snapshot["items"]), 3)
+        self.assertEqual(snapshot["items"][0]["published_at"], "2026-08-17T00:00:00Z")
+        self.assertEqual(selector.call_args.args[1][0]["freshness_status"], "older_context")
+        self.assertIn("background context", html)
+        self.assertIn("invalid evidence worker output", html)
+        self.assertEqual(snapshot["publishing_status"], "DISABLED")
+
     def test_authority_timeout_preserves_topics_and_reaches_drafting(self) -> None:
         workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary, ExitStack() as stack:
