@@ -666,6 +666,7 @@ def _command_short_form(args: object) -> int:
         print(f"Saved candidate: {candidate.candidate_id}; score={candidate.effective_total}/25; "
               f"hook={candidate.axes.get('hook_strength', 0)}/5; "
               f"hook_verdict={post_styles.hook_verdict(candidate.axes.get('hook_strength'))}.")
+        print(post_styles.reading_ease.label(post_styles.reading_ease.measure(candidate.text, getattr(args, "post_style", "standard"))))
         print(candidate.text)
     print(f"{'Shortlisted' if eligible else 'Best available, below shortlist bar'}: {best.candidate_id}.")
     print(f"Post artifact: {path.relative_to(workflow.REPO_ROOT)}")

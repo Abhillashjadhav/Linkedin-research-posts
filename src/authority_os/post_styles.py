@@ -6,6 +6,8 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from . import reading_ease
+
 STYLE_NAMES = ("standard", "short-humorous", "educational-resources", "build-video", "incident-mitigation")
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "post-styles.json"
 
@@ -35,10 +37,11 @@ def instructions(brief: Mapping[str, object]) -> str:
     style = str(brief.get("post_style", "standard"))
     spec = contract(style)
     if not spec:
-        return ""
+        return reading_ease.instructions(style)
     lower, upper = spec["target_words"]
     return (
-        f"\nPOST_STYLE: {style}\n"
+        reading_ease.instructions(style)
+        + f"\nPOST_STYLE: {style}\n"
         f"Aim for {lower}–{upper} words, with a target ceiling of "
         f"{spec['maximum_target_words']} words. Do not pad this into a long authority post.\n"
         f"{spec['voice']}\n{spec['opening']}\n"

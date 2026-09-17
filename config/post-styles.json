@@ -6,8 +6,8 @@
     ],
     "maximum_target_words": 100,
     "voice": "Very funny, conversational and slightly sarcastic about AI hype, promises or everyday AI absurdities. One sharp grounded joke and one useful takeaway. Avoid forced punchlines, invented quotations, claimed financial outcomes and jokes at victims' expense.",
-    "opening": "Line 1 may use a sharp comic or sarcastic setup about AI. Line 2 immediately connects the joke to its concrete, supported example and reader consequence. Treat the two lines as one hook; preserve the distinction between a joke and a reported fact.",
-    "content": "Keep one meaningful implication. A concise joke can carry the middle and closer; do not demand a long explanation or a checklist. Sarcasm alone does not earn a high score."
+    "opening": "Line 1 opens with an immediately understandable sarcastic observation about AI, using a familiar everyday situation. Line 2 immediately connects it to the concrete supported example and makes the problem explicit. No research-summary opening, obscure metaphor or invented incident. Preserve the distinction between a joke and a reported fact.",
+    "content": "Make the joke understandable on the first read without AI evaluation knowledge. State in everyday words who made the mistake and what went wrong. The reader must recognise the mismatch between the promise and the result without decoding a metaphor. Avoid phrases such as committee eyesight, proxy rewards and AI-judged evaluation gate; translate the underlying meaning faithfully. If the joke needs a separate explanation, simplify or replace it during the existing edit. One clear joke, one useful implication. Judge hook and voice against this brief: technically correct but opaque prose must not earn full marks. Do not claim humour or distribution is proven by the five-axis total."
   },
   "educational-resources": {
     "target_words": [

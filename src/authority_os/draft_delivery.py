@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
-from . import best_effort, daily_cli, post_styles, v1_completion, workflow
+from . import best_effort, daily_cli, post_styles, reading_ease, v1_completion, workflow
 
 
 def _folder(folder: Path | None = None) -> Path:
@@ -46,7 +46,7 @@ def _markdown(payload: dict[str, object]) -> str:
             f"## Cycle {row['cycle']} · {row['candidate_id']}{selected}\n\n"
             f"Total: {row['effective_total']}/25 · Hook: "
             f"{row['axes'].get('hook_strength', 'not evaluated')}/5 "
-            f"({row['hook_verdict']})\n\n{row['candidate']['text']}"
+            f"({row['hook_verdict']})\n\n{reading_ease.label(row.get('readability'))}\n\n{row['candidate']['text']}"
         )
     return "\n\n".join(sections) + "\n"
 
@@ -64,6 +64,7 @@ def retain(attempt: object, *, cycle: int, post_style: str = "standard") -> None
                           "text": candidate.text},
             "text_sha256": hashlib.sha256(candidate.text.encode("utf-8")).hexdigest(),
             "axes": axes,
+            "readability": reading_ease.measure(candidate.text, post_style),
             "effective_total": candidate.effective_total,
             "hook_verdict": post_styles.hook_verdict(axes.get("hook_strength")),
             "gates": dict(candidate.gates),

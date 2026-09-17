@@ -87,6 +87,16 @@ inherit incident-only openings. Friday humour is slightly sarcastic about AI,
 with a 40–80-word target. It is generated anew rather than copied from a template.
 A below-bar run returns the best available text without claiming a shortlist.
 
+Every saved candidate also carries an **estimated Flesch Reading Ease** score in
+the terminal, candidate Markdown and dashboard. The editorial target is >=80 for
+Friday humour and >=70 for other styles. This uses local English syllable
+heuristics, so names, acronyms, numbers and short samples make it approximate.
+It is advisory, separate from the 25-point Critic score, and never adds retries
+or changes selection. The existing Narrative Editor receives the pre-edit
+reading score; the retained score is recomputed from the exact final text.
+Friday jokes must make sense on first reading without specialist knowledge.
+A readability score cannot certify humour, factual accuracy or distribution.
+
 All three exact scored drafts are embedded in the private HTML dashboard and
 saved as immutable candidate snapshots, `all-candidates.md`, and
 `shortlisted-post.md` (or `best-available-post.md`). `weekly-plan.json` records the

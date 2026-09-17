@@ -9,7 +9,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from . import acceptance_policy, workflow
+from . import acceptance_policy, reading_ease, workflow
 
 
 def _safe(value: object, fallback: str = "Not recorded") -> str:
@@ -131,6 +131,7 @@ def render_dashboard(
         + ' · Total ' + _safe(item.get("effective_total"), "not recorded")
         + '/25 · Hook ' + _safe(item.get("axes", {}).get("hook_strength"), "not recorded")
         + '/5 · ' + _safe(item.get("hook_verdict"), "UNCERTAIN")
+        + '</p><p>' + html.escape(reading_ease.label(item.get('readability')))
         + '</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
         + html.escape(str(item["candidate"].get("text", ""))) + '</pre></article>'
         for item in eval_dashboard.get("results", [])

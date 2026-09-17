@@ -110,6 +110,8 @@ def _task(
         f"{json.dumps(workflow._writer_evidence_projection(evidence), indent=2, sort_keys=True)}\n"
         "PUBLIC_PROOF\n"
         f"{json.dumps(workflow._public_proof_projection(proof), indent=2, sort_keys=True)}\n"
+        "READABILITY_DIAGNOSTICS (estimated; simplify within this existing edit, no extra loop)\n"
+        f"{json.dumps([{'id': c.get('id'), 'readability': post_styles.reading_ease.measure(str(c.get('text', '')), str(brief.get('post_style', 'standard')))} for c in candidates], sort_keys=True)}\n"
         "WRITER_CANDIDATES\n"
         f"{json.dumps(list(candidates), indent=2, sort_keys=True)}"
     )
