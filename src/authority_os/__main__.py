@@ -91,6 +91,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional output format; never inferred from the strategic goal.",
     )
     draft.add_argument(
+        "--post-style",
+        choices=workflow.post_styles.STYLE_NAMES,
+        default="standard",
+        help="Reusable writing brief; short-humorous delivers one scored batch of three short posts.",
+    )
+    draft.add_argument(
         "--week-slot",
         type=int,
         help="Use the default four-post weekly mix, or guarded optional slot 5.",
@@ -581,6 +587,8 @@ def command_draft(args: argparse.Namespace) -> int:
     proof_manifest = getattr(args, "proof_manifest", None)
     fixture: dict[str, object] | None = None
     if args.dry_run:
+        if getattr(args, "post_style", "standard") != "standard":
+            raise workflow.WorkflowError("A writing style requires live drafting; the offline fixture contains fixed synthetic posts.")
         if strategy_input or evidence_manifest_path or allow_model_egress or proof_manifest:
             raise workflow.WorkflowError(
                 "Fixture drafting does not accept strategy files, proof files, "
@@ -673,6 +681,8 @@ def command_draft(args: argparse.Namespace) -> int:
         output_format=args.output_format,
         week_slot=args.week_slot,
         strong_current_signal=args.strong_current_signal,
+        post_style=getattr(args, "post_style", "standard"),
+        selection_policy="one-batch-hook-first-v1" if not args.dry_run else None,
     )
     evidence = workflow.build_drafting_evidence(
         items,

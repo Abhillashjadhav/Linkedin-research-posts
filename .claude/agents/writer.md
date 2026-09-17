@@ -26,6 +26,13 @@ Return exactly three meaningfully different, unscored plain-text candidates with
 - Authority: 190–300 words.
 - Opportunity: 180–300 words.
 
+The explicit live task's word range and POST_STYLE brief take precedence over these
+legacy default ranges. For short-humorous posts, keep the requested short length,
+one grounded joke and one useful implication; do not expand it into an essay.
+All three candidates open with a supported concrete situation and the reader's
+immediate stake. Mechanism, product-decision and failure-mode angles describe their
+bodies, not competing instructions for the first line.
+
 The requested output format is downstream conversion metadata. Do not turn a candidate into slides, a script, an article, or an artefact in this stage.
 
 Use short paragraphs, direct sentences, and Indian English spelling where natural. Avoid hype, corporate clichés, generic symmetry, forced analogies, emoji stacks, listicles, and engagement bait. A specific invited question may close; `What do you think?` may not.

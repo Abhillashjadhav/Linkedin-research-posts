@@ -742,7 +742,7 @@ class SpineCardTests(unittest.TestCase):
                 side_effect=daily_spine_cli.ModelTimeoutError("Authority topic critic timed out.")))
             update_inventory = daily_spine_cli.update_candidate_inventory
             stack.enter_context(patch.object(daily_spine_cli, "update_candidate_inventory",
-                side_effect=lambda rows, **kw: update_inventory(rows, **kw, path=root / "inventory.json")))
+                side_effect=lambda rows, **kw: update_inventory(rows, **{**kw, "path": root / "inventory.json"})))
             stack.enter_context(patch.object(daily_spine_cli, "resolve_signal_evidence", return_value=
                 daily_spine_cli.EvidenceResolution(tuple(signals()), "fixture", 0, "fixture")))
             stack.enter_context(patch.object(daily_spine_cli.base, "project_signals", return_value=signals()))
@@ -953,7 +953,7 @@ class SpineCardTests(unittest.TestCase):
         ]["enum"]
         self.assertEqual(tuple(enum), daily_spine_cli.CONTENT_SPINES)
 
-    def test_generation_marks_spine_as_advisory_not_weekday_routing(self) -> None:
+    def test_generation_keeps_narrative_devices_within_frozen_weekday_purpose(self) -> None:
         with patch.object(
             daily_spine_cli.base,
             "invoke_structured",
@@ -962,8 +962,8 @@ class SpineCardTests(unittest.TestCase):
             result = daily_spine_cli.generate_cards(profile(), signals(), None)
         self.assertEqual(len(result), 3)
         prompt = str(invoke.call_args.kwargs["task_prompt"]).casefold()
-        self.assertIn("spine is advisory only", prompt)
-        self.assertIn("do not force a template", prompt)
+        self.assertIn("frozen weekday purpose", prompt)
+        self.assertIn("never substitute another content type", prompt)
         self.assertIn("do not draft a post", prompt)
         self.assertIn("weekday", prompt)
 

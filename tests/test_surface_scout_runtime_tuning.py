@@ -9,6 +9,15 @@ from authority_os import workflow
 
 
 class SurfaceScoutRuntimeTuningTests(unittest.TestCase):
+    def test_active_scout_receives_weekday_purpose_separate_from_topic(self) -> None:
+        with patch.object(surface, "_WEEKLY_FOCUS", "Share educational resources."), patch.object(
+            surface, "invoke_structured", return_value={"status": "NO_SIGNAL", "signals": [], "caveat": "None"}
+        ) as invoke, patch.object(surface, "_write_surface_file"), patch.object(surface, "_trace_event"):
+            tuning._run_surface(surface.SURFACES[0], topic="AI evals", days=7, as_of="2026-09-21T00:00:00Z")
+        prompt = invoke.call_args.kwargs["task_prompt"]
+        self.assertIn("Scope: AI evals.", prompt)
+        self.assertIn("Frozen publication purpose: Share educational resources.", prompt)
+
     def test_timeout_is_increased_and_model_reasoning_is_lowered_for_retrieval(self) -> None:
         tuning.install()
         self.assertEqual(surface.SURFACE_TIMEOUT, 180)

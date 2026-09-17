@@ -35,6 +35,14 @@ MOMENTUM_MODEL = ModelConfig("codex", DISCOVERY_MODEL, "high")
 AUTHORITY_TOPIC_MODEL = ModelConfig("codex", DISCOVERY_MODEL, "high")
 
 
+_WEEKLY_FOCUS = ""
+
+
+def configure_weekly_focus(focus: str) -> None:
+    global _WEEKLY_FOCUS
+    _WEEKLY_FOCUS = focus
+
+
 def _role(name: str) -> str:
     path = workflow.REPO_ROOT / ".claude" / "agents" / f"{name}.md"
     try:
@@ -314,6 +322,8 @@ def rank_candidates(
 def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, object]]:
     prompt = f"""Find exactly ten materially distinct GenAI/product conversation topics with observable public momentum during the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, agents, evaluations, reliability, context engineering, enterprise AI, developer tooling, model economics and AI product management'}.
+Frozen publication purpose: {_WEEKLY_FOCUS or "Use the supplied topic scope."}
+Choose evidence that serves this purpose; do not substitute another content type.
 Use only free public-web evidence available through search/fetch. Inspect multiple independent surfaces where observable: Google Trends public pages, Hacker News, Reddit, YouTube, publicly indexed X/Twitter or LinkedIn pages/search snippets, primary-source launches/research, and reputable reporting. Do not use authenticated sessions, paid APIs, private data, engagement APIs, credentials, or local files.
 
 For every topic report observed evidence for five axes. DO NOT assign 0-5 scores; Python applies the fixed rubric locally. Return basis_value only when the underlying number is actually observable:

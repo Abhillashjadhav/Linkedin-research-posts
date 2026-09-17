@@ -94,6 +94,8 @@ Surface lane: {label}
 Lane rule: {surface['instruction']}
 Research window: the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, agents, evaluations, reliability, context engineering, enterprise AI, developer tooling, model economics and AI product management'}.
+Frozen publication purpose: {surface_runtime._WEEKLY_FOCUS or "Use the supplied topic scope."}
+Choose evidence that serves this purpose; do not substitute another content type.
 
 Return up to {surface_runtime.SIGNALS_PER_SURFACE} materially distinct current GenAI/product conversations visible on THIS SURFACE ONLY, ordered strongest first. This is a retrieval pass, not a thesis or deep momentum-analysis pass. Do not browse another source family to compensate for missing evidence.
 

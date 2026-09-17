@@ -18,7 +18,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-from . import acceptance_policy
+from . import acceptance_policy, post_styles
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1229,6 +1229,8 @@ def build_strategy_brief(
     output_format: str | None = None,
     week_slot: int | None = None,
     strong_current_signal: bool = False,
+    post_style: str = "standard",
+    selection_policy: str | None = None,
 ) -> dict[str, object]:
     """Route analysed evidence into a small, non-drafting strategy brief."""
 
@@ -1319,6 +1321,7 @@ def build_strategy_brief(
     if stale is None:
         limitations.append("recent-post-similarity-not-evaluated")
 
+    post_styles.contract(post_style)
     route = GOAL_ROUTES[chosen_goal]
     return {
         "topic_slug": analysis_text["slug"],
@@ -1328,6 +1331,8 @@ def build_strategy_brief(
         "output_format": chosen_format,
         "proof_required": route["proof_required"],
         "weekly_slot": week_slot,
+        **({"post_style": post_style} if post_style != "standard" else {}),
+        **({"selection_policy": selection_policy} if selection_policy else {}),
         **strategic_fields,
         "strategy_input_origin": strategy_input_origin,
         "primary_sources": primary_sources,
@@ -1847,6 +1852,12 @@ def _writer_brief_projection(brief: Mapping[str, object]) -> dict[str, object]:
         "strategy_input_origin",
     )
     projected: dict[str, object] = {"goal": brief.get("goal")}
+    if brief.get("selection_policy") == "one-batch-hook-first-v1":
+        projected["selection_policy"] = "one-batch-hook-first-v1"
+    style = str(brief.get("post_style", "standard"))
+    post_styles.contract(style)
+    if style != "standard":
+        projected["post_style"] = style
     for name in text_fields:
         value = brief.get(name)
         if not isinstance(value, str) or not value.strip():
@@ -1899,6 +1910,8 @@ def validate_draft_candidates(
     evidence_ids, proof_ids = _candidate_claim_id_sets(evidence, proof)
     known_claim_ids = evidence_ids | proof_ids
     minimum, maximum = TEXT_WORD_LIMITS[str(goal)]
+    if brief.get("post_style", "standard") != "standard":
+        minimum = 1  # Calendar styles must not inherit a long-form minimum.
     allowed_fields = {"id", "angle", "text", "claim_ids"}
     validated: list[dict[str, object]] = []
     normalized_ids: set[str] = set()
@@ -2104,10 +2117,14 @@ def build_writer_prompt(
     safe_brief = _writer_brief_projection(brief)
     goal = str(safe_brief["goal"])
     minimum, maximum = TEXT_WORD_LIMITS[goal]
+    if safe_brief.get("post_style", "standard") != "standard":
+        minimum = 1
     return f"""
 Create exactly three materially different plain-text candidates for this strategic brief.
-Candidate 1 should lead with the mechanism, candidate 2 with the product decision, and
-candidate 3 with an artefact or failure-mode perspective. Do not invent an incident merely to
+{post_styles.opening(safe_brief)} The body of candidate 1
+develops the mechanism, candidate 2 the product decision, and candidate 3 an artefact or
+failure-mode perspective. These are body angles, never instructions to replace
+the requested opening with generic advice. Do not invent an incident merely to
 fit a route. Each candidate must be {minimum}–{maximum} words for the {goal} goal and return
 only id, angle, text, and claim_ids. Use the neutral IDs candidate-1, candidate-2, and
 candidate-3 exactly once each. claim_ids must name supplied research evidence IDs and may also
@@ -2124,6 +2141,7 @@ Never invent personal experience, ownership, a quotation, statistic, customer, r
 or source. Do not score, rank, revise, select a winner, apply approval gates, create files, or publish.
 Respect the supplied source dates. Older sources may support background and practical advice;
 do not turn them into a claim that something launched, changed, or happened this week.
+{post_styles.instructions(safe_brief)}
 
 UNTRUSTED_STRATEGIC_BRIEF_DATA
 {json.dumps(safe_brief, indent=2, sort_keys=True)}
@@ -2408,6 +2426,7 @@ its true parent category. It must not add severity, prevalence, causality, scope
 certainty; major, production, or customer-impacting failures require evidence for those meanings.
 The supplied voice guidance contains the canonical v2 voice contract plus non-citable style
 context. It calibrates voice fidelity and is never evidence.
+{post_styles.instructions(safe_brief)}
 
 UNTRUSTED_STRATEGIC_BRIEF_DATA
 {json.dumps(safe_brief, indent=2, sort_keys=True)}

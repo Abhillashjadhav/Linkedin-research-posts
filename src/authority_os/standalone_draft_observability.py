@@ -6,7 +6,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from . import daily_cli, daily_spine_cli, eval_dashboard_html, quality_cli, v1_completion, workflow
+from . import daily_cli, daily_spine_cli, draft_delivery, eval_dashboard_html, quality_cli, v1_completion, workflow
 
 
 def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
@@ -27,6 +27,7 @@ def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
     daily_cli.legacy_cli._ensure_owner_only_directory(folder)  # type: ignore[attr-defined]
     eval_dashboard = daily_spine_cli.render_eval_dashboard(rows)
     eval_dashboard["run_id"] = run_id
+    draft_delivery.attach(folder, eval_dashboard)
     eval_path = daily_cli.write_private_json(folder / "eval-dashboard.json", eval_dashboard)
 
     run_dashboard = daily_spine_cli.new_run_dashboard(run_id)

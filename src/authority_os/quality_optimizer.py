@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Iterator, Mapping, Sequence
 
-from . import acceptance_policy, anti_slop, best_effort
+from . import acceptance_policy, anti_slop, best_effort, draft_delivery, post_styles
 from . import package as approval_package
 from . import quality_cli, v1_completion, workflow
 from .model_runtime import ModelTimeoutError
@@ -145,6 +145,14 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
         attempt = _ORIGINAL_RUN_ATTEMPT(args, feedback)
     finally:
         _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY = previous_advisory
+    style = getattr(args, "post_style", "standard")
+    short_form = style == "short-humorous" or (
+        getattr(args, "command", None) == "draft" and not getattr(args, "dry_run", False)
+        and getattr(args, "run_spec", None) is None
+    )
+    total_floor = post_styles.shortlist_floor(style) if short_form else ACCEPTABLE_QUALITY_FLOOR
+    if getattr(args, "command", None) == "draft" and not getattr(args, "dry_run", False):
+        draft_delivery.retain(attempt, cycle=cycle, post_style=style)
     for candidate in attempt.candidates:
         failed_gates = {
             name: status
@@ -155,18 +163,18 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
             {
                 "contract": "critic_total",
                 "mode": "enforce",
-                "status": "PASS" if candidate.effective_total >= ACCEPTABLE_QUALITY_FLOOR else "FAIL",
+                "status": "PASS" if candidate.effective_total >= total_floor else "FAIL",
                 "reason": f"critic-score-{candidate.effective_total}-of-25",
                 "score": candidate.effective_total,
                 "effective_total": candidate.effective_total,
-                "threshold": ACCEPTABLE_QUALITY_FLOOR,
+                "threshold": total_floor,
                 "acceptance_contract_version": (
-                    acceptance_policy.ACCEPTANCE_CONTRACT_VERSION
+                    "shortlist-above-18-v1" if short_form else acceptance_policy.ACCEPTANCE_CONTRACT_VERSION
                 ),
                 "axes": dict(candidate.axes),
                 "axis_shortfalls": acceptance_policy.axis_shortfalls(candidate.axes),
                 "cycle": cycle,
-                "failure_codes": list(acceptance_policy.axis_shortfalls(candidate.axes)),
+                "failure_codes": [] if short_form else list(acceptance_policy.axis_shortfalls(candidate.axes)),
                 "advisory_codes": list(candidate.gate_reasons),
                 "gates": failed_gates,
             },
@@ -186,7 +194,7 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
             score = int(candidate.axes.get(axis, 0))
             threshold = AXIS_FLOORS.get(axis)
             shortfall = max(0, threshold - score) if threshold is not None else 0
-            enforced = threshold is not None
+            enforced = threshold is not None and not short_form
             v1_completion.record_decision(
                 {
                     "contract": axis,
@@ -390,8 +398,9 @@ def _quality_feedback(
             "are advisory. Follow axis_repair_plan: fix the below-target axes before optimizing total. "
             "Never repeat a rejected opening when hook is still below 4; change its framing, not just its words. "
             "Return three materially different repairs in the Writer's required angle slots: "
-            "candidate-1 remains mechanism-led, candidate-2 remains product-decision-led, and "
-            "candidate-3 remains artefact/failure-mode-led. All three must inherit the repair seed's "
+            "candidate-1's body explains the mechanism, candidate-2's body develops the product decision, and "
+            "candidate-3's body examines the artefact/failure mode. All openings still lead with a "
+            "supported concrete incident and immediate reader stake. All three must inherit the repair seed's "
             "supportable atomic value and strongest grounded material. Never invent a fact, statistic, "
             "personal experience, ownership claim, source, result, or proof to gain score."
         ),
@@ -525,7 +534,8 @@ def _package_data(
         review=review,
         proof=proof,
     )
-    if mode != "live" or manifest.get("review_status") != "BLOCKED":
+    short_form = brief.get("post_style") == "short-humorous" or brief.get("selection_policy") == "one-batch-hook-first-v1"
+    if mode != "live" or (manifest.get("review_status") != "BLOCKED" and not short_form):
         return manifest, evaluation, rendered
 
     ranking = evaluation.get("ranking")
@@ -551,33 +561,38 @@ def _package_data(
         str(row.get("candidate_id")): row
         for row in normalized_gate_results
     }
+    if short_form:
+        ranking = [str(row["candidate_id"]) for row in post_styles.rank_scorecards(scorecards)]
     eligible = [
         str(candidate_id)
         for candidate_id in ranking
         if str(candidate_id) in score_by_id
         and str(candidate_id) in gates_by_id
-        and _scorecard_is_acceptable(
-            score_by_id[str(candidate_id)], gates_by_id[str(candidate_id)]
+        and (
+            int(score_by_id[str(candidate_id)]["effective_total"]) >= post_styles.shortlist_floor()
+            if short_form else _scorecard_is_acceptable(
+                score_by_id[str(candidate_id)], gates_by_id[str(candidate_id)]
+            )
         )
     ]
-    if not eligible:
+    if not eligible and not short_form:
         return manifest, evaluation, rendered
 
-    recommended = eligible[0]
+    recommended = eligible[0] if eligible else None
     manifest = dict(manifest)
     evaluation = dict(evaluation)
     manifest.update(
         {
             "eligible_candidate_ids": eligible,
             "recommended_candidate_id": recommended,
-            "review_status": "READY_FOR_HUMAN_REVIEW",
+            "review_status": "READY_FOR_HUMAN_REVIEW" if eligible else "BLOCKED",
         }
     )
     evaluation.update(
         {
             "eligible_candidate_ids": eligible,
             "recommended_candidate_id": recommended,
-            "review_status": "READY_FOR_HUMAN_REVIEW",
+            "review_status": "READY_FOR_HUMAN_REVIEW" if eligible else "BLOCKED",
             "gate_results": normalized_gate_results,
         }
     )
@@ -625,11 +640,61 @@ def _package_data(
     return manifest, evaluation, rendered
 
 
+def _command_short_form(args: object) -> int:
+    """Use the normal Writer/editor/Critic once; rank, persist and return all prose."""
+    attempt = _run_attempt(args, None)
+    eligible = [candidate for candidate in attempt.candidates
+                if candidate.effective_total >= post_styles.shortlist_floor()]
+    best = max(
+        eligible or list(attempt.candidates),
+        key=lambda candidate: (
+            int(candidate.axes.get("hook_strength", 0)),
+            candidate.effective_total,
+            candidate.candidate_id,
+        ),
+    )
+    path = draft_delivery.select(best, cycle=1, shortlisted=bool(eligible))
+    artifact = v1_completion._sha256_text(best.text)
+    v1_completion.record_decision(
+        {"contract": "candidate_acceptance", "mode": "diagnostic",
+         "status": "PASS" if eligible else "FAIL",
+         "reason": "shortlisted-above-18-hook-first" if eligible else "no-total-above-18-best-available-delivered",
+         "failure_codes": [] if eligible else ["total-must-exceed-18"]},
+        stage="candidate-acceptance", subject_id=best.candidate_id, artifact_sha256=artifact,
+    )
+    for candidate in attempt.candidates:
+        print(f"Saved candidate: {candidate.candidate_id}; score={candidate.effective_total}/25; "
+              f"hook={candidate.axes.get('hook_strength', 0)}/5; "
+              f"hook_verdict={post_styles.hook_verdict(candidate.axes.get('hook_strength'))}.")
+        print(post_styles.reading_ease.label(post_styles.reading_ease.measure(candidate.text, getattr(args, "post_style", "standard"))))
+        print(candidate.text)
+    print(f"{'Shortlisted' if eligible else 'Best available, below shortlist bar'}: {best.candidate_id}.")
+    print(f"Post artifact: {path.relative_to(workflow.REPO_ROOT)}")
+    for line in attempt.package_lines:
+        print(line)
+    warnings = not eligible or best.axes.get("hook_strength", 0) < 4 or bool(best.gate_reasons)
+    v1_completion.record_decision(
+        {"contract": "draft_delivery", "mode": "diagnostic", "status": "PASS",
+         "observed_status": "COMPLETED_WITH_WARNINGS" if warnings else "PASS",
+         "reason": "three scored drafts delivered from one batch; no regeneration required"},
+        stage="draft-delivery", subject_id=best.candidate_id, artifact_sha256=artifact,
+    )
+    print("Publishing status: DISABLED. No LinkedIn action was taken.")
+    return 0
+
+
 def _command_draft(args: object) -> int:
     global _ACTIVE_STATE
     previous = _ACTIVE_STATE
     _ACTIVE_STATE = RepairState()
     try:
+        if (getattr(args, "command", None) == "draft" and not getattr(args, "dry_run", False)
+                and getattr(args, "run_spec", None) is None):
+            return _command_short_form(args)
+        if getattr(args, "post_style", "standard") == "short-humorous":
+            if getattr(args, "run_spec", None) is not None or getattr(args, "dry_run", False):
+                raise workflow.WorkflowError("short-humorous uses the live single-post workflow; campaign and synthetic fixtures keep their existing styles.")
+            return _command_short_form(args)
         try:
             return _ORIGINAL_COMMAND_DRAFT(args)
         except workflow.WorkflowError as exc:
