@@ -1,0 +1,11 @@
+{
+  "short-humorous": {
+    "target_words": [40, 80],
+    "maximum_target_words": 100,
+    "voice": "Dry, conversational workplace humour. One sharp joke about a recognisable product or organisational absurdity; one useful takeaway. Avoid forced punchlines, slogans, invented quotations and jokes at victims' expense.",
+    "opening": "Line 1 leads with the strongest supported recognisable name, incident or material scale. Line 2 immediately connects it to the reader's consequence. Humour must preserve the factual meaning.",
+    "selection": "One batch of three candidates. Shortlist only totals strictly above 18/25. Among those, rank hook first, then total. Other editorial findings are visible advisories. Always deliver all three texts with their exact scores.",
+    "generation_batches": 1,
+    "shortlist_total_exclusive": 18
+  }
+}

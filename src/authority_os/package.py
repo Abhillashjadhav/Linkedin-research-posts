@@ -605,6 +605,12 @@ Candidate: `{recommended_id}`
 No actionable recommendation is made from synthetic fixture data. Eligible IDs in the
 evaluation exist only to exercise the deterministic package contract.
 """
+    elif brief.get("post_style") == "short-humorous":
+        recommendation = """## Recommendation
+
+No candidate scored strictly above 18/25, so there is no shortlist. All three scored
+drafts are retained; the best available text is delivered with that shortfall.
+"""
     else:
         recommendation = """## Recommendation
 

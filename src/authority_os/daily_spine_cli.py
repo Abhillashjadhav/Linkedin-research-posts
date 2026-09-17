@@ -21,6 +21,7 @@ from . import (
     __version__,
     acceptance_policy,
     campaign,
+    draft_delivery,
     eval_dashboard_html,
     momentum,
     storage,
@@ -1088,6 +1089,12 @@ def render_eval_dashboard(
             {**axes, "effective_total": evidence.get("score", 0)},
             hard_gates_pass=True,
         )
+        if evidence.get("acceptance_contract_version") == "shortlist-above-18-v1":
+            qualifies = int(evidence.get("score", 0)) > 18
+            quality_acceptance = {
+                "status": "PASS" if qualifies else "FAIL",
+                "reasons": [] if qualifies else ["total-must-exceed-18"],
+            }
         for reason in quality_acceptance["reasons"]:
             if reason not in failure_codes:
                 failure_codes.append(reason)
@@ -1337,6 +1344,7 @@ def persist_browser_dashboard(
 
     dashboard = render_eval_dashboard(decision_rows)
     dashboard["run_id"] = run_dashboard.get("run_id", "")
+    draft_delivery.attach(folder, dashboard)
     dashboard_path = base.write_private_json(
         folder / "eval-dashboard.json",
         dashboard,
@@ -2579,10 +2587,12 @@ def command(args: argparse.Namespace) -> int:
         strategy_rel = strategy.relative_to(workflow.REPO_ROOT).as_posix()
         evidence_rel = evidence_manifest.relative_to(workflow.REPO_ROOT).as_posix()
         week_slot = getattr(args, "week_slot", None)
+        post_style = getattr(args, "post_style", "standard")
+        style_arg = f" --post-style {post_style}" if post_style != "standard" else ""
         slot_arg = f" --week-slot {week_slot}" if week_slot is not None else ""
         draft = (
             f"./bin/linkedin-os draft --topic {json.dumps(str(card['topic']))} "
-            f"--goal authority --format text{slot_arg} "
+            f"--goal authority --format text{slot_arg}{style_arg} "
             f"--strategy-input {json.dumps(strategy_rel)} "
             f"--evidence-manifest {json.dumps(evidence_rel)} "
             f"--db {json.dumps(db_rel)} --allow-model-egress --package"
@@ -2599,6 +2609,8 @@ def command(args: argparse.Namespace) -> int:
         ]
         if week_slot is not None:
             draft_argv.extend(["--week-slot", str(week_slot)])
+        if post_style != "standard":
+            draft_argv.extend(["--post-style", post_style])
         draft_argv.extend([
             "--strategy-input",
             strategy_rel,
@@ -2667,6 +2679,7 @@ def command(args: argparse.Namespace) -> int:
         current_rows = v1_completion._read_jsonl(ledger_path)[ledger_start:]
         dashboard = render_eval_dashboard(current_rows)
         dashboard["run_id"] = run_id
+        draft_delivery.attach(folder, dashboard)
         dashboard_path = base.write_private_json(
             folder / "eval-dashboard.json",
             dashboard,
@@ -2727,6 +2740,10 @@ def command(args: argparse.Namespace) -> int:
 
 def parser() -> argparse.ArgumentParser:
     result = base.parser()
+    result.add_argument(
+        "--post-style", choices=("standard", "short-humorous"), default="standard",
+        help="Carry a reusable writing brief into the generated post and its evaluations.",
+    )
     result.add_argument(
         "--resume-from",
         type=Path,

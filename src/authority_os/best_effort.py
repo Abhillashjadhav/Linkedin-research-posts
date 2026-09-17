@@ -229,4 +229,7 @@ def write(
         record_privacy("FAIL", "private-path-or-owner-only-write-failed")
         raise
     record_privacy("PASS", "private-path-and-mode-0o600-enforced")
+    from . import draft_delivery
+    if draft_delivery.load()["results"]:
+        draft_delivery.select(candidate, cycle=cycle, shortlisted=False)
     return written

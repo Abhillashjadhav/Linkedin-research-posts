@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Mapping, Sequence
 
-from . import campaign, model_runtime, workflow
+from . import campaign, model_runtime, post_styles, workflow
 
 _INSTALLED = False
 _ORIGINAL_RUN_CRITIC_REVIEW = workflow.run_critic_review
@@ -70,17 +70,18 @@ def _task(
         "claim_ids, factual meaning, and evidence boundary. Return EDITED or UNCHANGED for every "
         "candidate; the downstream Critic and deterministic gates own rejection.\n\n"
         "HUMAN_READABILITY_CONTRACT\n"
-        "The blind human-review target combines the best parts of two observed drafts: preserve "
-        "the stronger problem-first hook structure, but use the simpler, more human language of "
-        "the preferred draft. LINE 1 MUST pair the concrete reader problem with the immediate "
-        "benefit, useful artifact, or decision payoff. Do not make the reader wait through setup "
+        "Preserve an incident-first opening with simple, human language. LINE 1 MUST lead with "
+        "the strongest supported recognisable name, incident, number or scale. LINE 2 MUST "
+        "state the immediate reader consequence, useful artifact, or decision payoff. Never "
+        "replace a concrete incident with a generic product recommendation. Do not make the reader wait through setup "
         "to learn what they get. When the supplied evidence contains a public repository, demo, "
         "tool, checklist, or other directly usable artifact and that artifact is the post's real "
-        "benefit, surface that artifact in line 1 and you may include its already-supplied public "
+        "benefit, that concrete artifact can itself be the opening situation; you may include its already-supplied public "
         "URL there. Never invent a URL, source, availability claim, ownership claim, or benefit. "
         "The link is optional navigation; the same line must state in plain language what the "
         "reader gets, and the body must explain the value without requiring a click.\n\n"
-        "After line 1, explain why the problem matters to the target reader, then use only the "
+        + post_styles.instructions(brief)
+        + "After line 1, explain why the problem matters to the target reader, then use only the "
         "minimum technical mechanism required to make the consequence believable, then deepen "
         "into the implication or product decision. Keep one primary human problem or decision. "
         "The first two lines must be understandable to a smart product reader without decoding "

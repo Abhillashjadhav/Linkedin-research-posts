@@ -342,6 +342,10 @@ def _render_success(
     cycle: int,
     limit: int,
 ) -> None:
+    from . import draft_delivery
+    if draft_delivery.load()["results"]:
+        selected = max(accepted, key=lambda item: (item.effective_total, item.axes.get("hook_strength", 0)))
+        draft_delivery.select(selected, cycle=cycle)
     for line in attempt.context_lines:
         print(line)
     print(

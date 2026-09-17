@@ -51,6 +51,45 @@ The dry run is offline and uses visibly synthetic fixtures. It does not invoke a
 
 ## Run V1 discovery through a review-ready post
 
+For a short, humorous post, use the same workflow with a saved writing style:
+
+```bash
+./bin/linkedin-os discover \
+  --profile data/private/authority-profile.json \
+  --days 7 \
+  --post-style short-humorous \
+  --allow-web-research \
+  --allow-model-egress \
+  --generate-post
+```
+
+The reusable contract lives in `config/post-styles.json`. It asks for 40–80 words,
+one grounded joke and one useful product implication. Writer, Narrative Editor
+and Critic receive the same style. Every opening starts with a supported incident
+or concrete fact, followed immediately by the reader's stake; narrative angles
+belong in the body.
+
+This style generates and scores **one batch of three**. Only totals **strictly
+above 18/25** can be shortlisted; the strongest hook wins among those, then total
+breaks ties. Other editorial findings remain visible without regeneration.
+Hook PASS/FAIL/UNCERTAIN is a readable label for the existing anchored score
+(4–5 / 1–3 / not evaluated), not an extra evaluation call or veto. It is not a
+prediction of actual engagement. A below-bar run still delivers the best available
+text, explicitly without a shortlist.
+
+All three posts and their scores are embedded in the private HTML dashboard.
+The same folder contains immutable `draft-candidates-cycle-*.json` and
+`candidates-cycle-*.md` snapshots, `all-candidates.md`, and `shortlisted-post.md`
+(or `best-available-post.md` when no candidate exceeds 18). Standard V1 runs also
+retain evaluated drafts across cycles. Publication remains manual.
+
+When research is already saved, add `--post-style short-humorous` to its existing
+`draft --strategy-input ... --evidence-manifest ... --allow-model-egress --package`
+command. This reuses the research and performs the normal writing and evaluation
+stages. It does not require manually writing a post into the prompt.
+
+The standard style keeps its existing acceptance policy and cycle budget:
+
 ```bash
 ./bin/linkedin-os discover \
   --profile data/private/authority-profile.json \
@@ -230,9 +269,11 @@ Generate exactly three plain-text candidates per cycle from a bounded evidence b
 
 Score five dimensions from 1–5 with at most one revision per cycle. The critic can rank; it cannot approve.
 
-### 6. Gate and regenerate
+### 6. Select
 
-Run deterministic authority, proof, honesty, citation, relevance, and safety checks. If no candidate clears the locked bar, hide the rejected prose and start a new candidate cycle with bounded diagnostics.
+Run the deterministic diagnostics and retain the scored prose. Standard mode may
+use bounded repair cycles. Short-humorous mode uses one batch, selects the strongest
+hook among totals above 18, and returns all three drafts with visible advisories.
 
 ### 7. Package
 
@@ -313,7 +354,7 @@ Discovery, research, thesis selection, and the original Writer are not rerun.
 - Synthetic research cannot become live evidence.
 - Factual claims retain claim IDs and source traceability.
 - Critic scores cannot approve content.
-- Rejected candidate prose is not exposed by the high-bar coordinator.
+- Evaluated candidate prose remains private and is retained beside its exact scores.
 - Deterministic gates fail closed on unsupported or malformed claims.
 - Public-safe proof is required before opportunity-oriented artifact claims.
 - Human approval and manual factual verification remain mandatory.

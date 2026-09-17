@@ -261,6 +261,7 @@ def _decision_row(
         "effective_total",
         "finding_count",
         "observed_status",
+        "acceptance_contract_version",
     ):
         value = decision.get(key)
         if isinstance(value, (str, int, float, bool)) or value is None:

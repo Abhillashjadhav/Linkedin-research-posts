@@ -48,6 +48,8 @@ def _build_writer_prompt_social(
         voice_guidance=voice_guidance,
         proof=proof,
     )
+    if brief.get("post_style") == "short-humorous":
+        return base
     return f"{base}\n\n{_PLACEHOLDER_GUIDANCE}"
 
 

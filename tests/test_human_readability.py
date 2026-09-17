@@ -39,16 +39,16 @@ class HumanReadabilityContractTests(unittest.TestCase):
             evidence=cls.evidence,
         )
 
-    def test_task_freezes_problem_benefit_hook_and_simple_human_body_target(self) -> None:
+    def test_task_preserves_incident_first_hook_and_simple_human_body_target(self) -> None:
         task = human_readability._task(  # type: ignore[attr-defined]
             self.candidates,
             self.brief,
             self.evidence,
             None,
         )
-        self.assertIn("LINE 1 MUST pair", task)
-        self.assertIn("concrete reader problem", task)
-        self.assertIn("immediate benefit", task)
+        self.assertIn("LINE 1 MUST lead with", task)
+        self.assertIn("strongest supported recognisable name, incident", task)
+        self.assertIn("LINE 2 MUST", task)
         self.assertIn("already-supplied public", task)
         self.assertIn("one primary human problem or decision", task)
         self.assertIn("Emotion must come from truthful consequence", task)

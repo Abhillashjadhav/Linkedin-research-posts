@@ -375,27 +375,17 @@ class HumanApprovalPackageTests(unittest.TestCase):
             self.assertFalse(root.exists())
 
     def test_package_module_import_survives_missing_fcntl(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            blocker = Path(temporary) / "fcntl.py"
-            blocker.write_text("raise ImportError('simulated missing fcntl')\n")
-            environment = dict(os.environ)
-            environment["PYTHONPATH"] = os.pathsep.join(
-                (str(blocker.parent), str(Path(__file__).resolve().parents[1] / "src"))
-            )
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    "-c",
-                    (
-                        "from authority_os import package; "
-                        "assert package.fcntl is None"
-                    ),
-                ],
-                env=environment,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+        # Some Python distributions build fcntl in, so a shadow file cannot
+        # simulate its absence. Block this import in the isolated process.
+        completed = subprocess.run(
+            [sys.executable, "-c", (
+                "import sys; sys.modules['fcntl'] = None; "
+                "from authority_os import package; assert package.fcntl is None"
+            )],
+            env=environment, text=True, capture_output=True, check=False,
+        )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_mode_must_match_strategy_and_proof_provenance(self) -> None:
