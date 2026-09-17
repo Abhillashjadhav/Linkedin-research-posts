@@ -86,6 +86,14 @@ _TRACE_DIR: Path | None = None
 _TRACE_LOCK = threading.Lock()
 
 
+_WEEKLY_FOCUS = ""
+
+
+def configure_weekly_focus(focus: str) -> None:
+    global _WEEKLY_FOCUS
+    _WEEKLY_FOCUS = focus
+
+
 def configure_trace_dir(folder: Path) -> None:
     global _TRACE_DIR
     target = daily_cli._under_private(folder)
@@ -306,6 +314,8 @@ Surface lane: {label}
 Lane rule: {surface['instruction']}
 Research window: the {days} days ending {as_of}.
 Scope: {topic or 'agentic AI, agents, evaluations, reliability, context engineering, enterprise AI, developer tooling, model economics and AI product management'}.
+Frozen publication purpose: {_WEEKLY_FOCUS or "Use the supplied topic scope."}
+Choose evidence that serves this purpose; do not substitute another content type.
 
 Return up to {SIGNALS_PER_SURFACE} of the hottest materially distinct current GenAI/product conversations published inside this window on THIS SURFACE ONLY. Order them by directly visible engagement first, then observable acceleration, repeated discussion, and freshness. Do not browse any other source family to compensate for missing evidence. If engagement is unavailable, say so rather than inventing it. If this lane is unavailable or has no defensible current signal, return that honestly.
 

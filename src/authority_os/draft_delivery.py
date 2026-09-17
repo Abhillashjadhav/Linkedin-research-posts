@@ -97,6 +97,9 @@ def select(candidate: object, *, cycle: int, shortlisted: bool = True) -> Path:
 def attach(folder: Path, dashboard: dict[str, object]) -> None:
     """Embed the retained exact versions; hashes in the decision ledger aren't prose."""
     payload = load(folder)
+    weekly_path = _folder(folder) / "weekly-plan.json"
+    if weekly_path.is_file() and not weekly_path.is_symlink():
+        dashboard["weekly_plan"] = json.loads(weekly_path.read_text(encoding="utf-8"))
     if payload["results"]:
         dashboard["results"] = payload["results"]
         dashboard["post_style"] = payload.get("post_style", "standard")

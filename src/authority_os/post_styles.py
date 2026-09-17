@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-STYLE_NAMES = ("standard", "short-humorous")
+STYLE_NAMES = ("standard", "short-humorous", "educational-resources", "build-video", "incident-mitigation")
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "post-styles.json"
 
 
@@ -19,7 +19,16 @@ def contract(style: str = "standard") -> dict[str, object]:
 
 
 def shortlist_floor(style: str = "short-humorous") -> int:
-    return int(contract(style)["shortlist_total_exclusive"]) + 1
+    policy = json.loads((CONFIG_PATH.parent / "weekly-spine.json").read_text())["selection"]
+    return int(policy["shortlist_total_exclusive"]) + 1
+
+
+def opening(brief: Mapping[str, object]) -> str:
+    spec = contract(str(brief.get("post_style", "standard")))
+    return str(spec["opening"]) if spec else (
+        "LINE 1 MUST lead with the strongest supported recognisable name, incident, number or scale. "
+        "LINE 2 MUST state the immediate reader consequence, useful artifact, or decision payoff."
+    )
 
 
 def instructions(brief: Mapping[str, object]) -> str:
@@ -33,10 +42,7 @@ def instructions(brief: Mapping[str, object]) -> str:
         f"Aim for {lower}–{upper} words, with a target ceiling of "
         f"{spec['maximum_target_words']} words. Do not pad this into a long authority post.\n"
         f"{spec['voice']}\n{spec['opening']}\n"
-        "Keep one concrete product implication in the post. A concise joke can carry the "
-        "middle and closer; do not require a long explanation or a checklist. Judge the "
-        "existing five axes against this requested format. Do not award humour points "
-        "merely for fragments, sarcasm, or a tidy contrast.\n"
+        f"{spec['content']} Judge the existing five axes against this requested format.\n"
         "Use only verified facts supplied in the evidence. Do not insert XX placeholders "
         "or send a fact-filling task back to the reader. Distinguish a joke or conditional "
         "recommendation from a reported event.\nEND_POST_STYLE\n"

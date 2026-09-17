@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "timezone": "Asia/Kolkata",
+  "runtime_target_minutes": [
+    7,
+    8
+  ],
+  "runtime_target_verified": false,
+  "selection": {
+    "contract": "one-batch-hook-first-v1",
+    "candidate_batches": 1,
+    "candidates_per_batch": 3,
+    "shortlist_total_exclusive": 18,
+    "ranking": [
+      "hook_strength",
+      "effective_total"
+    ],
+    "other_editorial_findings": "advisory",
+    "retain_all_scored_drafts": true
+  },
+  "days": {
+    "Monday": {
+      "style": "educational-resources",
+      "optional": false,
+      "focus": "Share useful educational resources for AI product builders. Explain what each resource teaches and how to apply it; include the verified resource links."
+    },
+    "Tuesday": {
+      "style": "incident-mitigation",
+      "optional": true,
+      "focus": "Explain a verified industry incident, its concrete impact, and a practical mitigation. Separate reported causes from proposed mitigations."
+    },
+    "Wednesday": {
+      "style": "build-video",
+      "optional": false,
+      "focus": "Demonstrate something we actually built, with its public repository and an actual video recording. Explain the problem, show the observed result, and provide the build link. Do not substitute industry news or a storyboard for our build and recording."
+    },
+    "Thursday": {
+      "style": "incident-mitigation",
+      "optional": false,
+      "focus": "Explain a verified industry incident, its concrete impact, and a practical mitigation. Separate reported causes from proposed mitigations."
+    },
+    "Friday": {
+      "style": "short-humorous",
+      "optional": false,
+      "focus": "A very short, funny, slightly sarcastic observation about AI. Ground the joke in a concrete example and finish with one meaningful implication; avoid forced jokes or invented factual claims."
+    }
+  },
+  "unscheduled_days": [
+    "Saturday",
+    "Sunday"
+  ],
+  "deliverable": "One shortlisted copy-ready post, sources, all three exact scored drafts, and a real video attachment for Wednesday. A missing source or video is an explicit missing-input outcome, never a fabricated completed package.",
+  "publication": "manual; this contract does not create a posting schedule"
+}

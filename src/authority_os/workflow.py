@@ -1230,6 +1230,7 @@ def build_strategy_brief(
     week_slot: int | None = None,
     strong_current_signal: bool = False,
     post_style: str = "standard",
+    selection_policy: str | None = None,
 ) -> dict[str, object]:
     """Route analysed evidence into a small, non-drafting strategy brief."""
 
@@ -1331,6 +1332,7 @@ def build_strategy_brief(
         "proof_required": route["proof_required"],
         "weekly_slot": week_slot,
         **({"post_style": post_style} if post_style != "standard" else {}),
+        **({"selection_policy": selection_policy} if selection_policy else {}),
         **strategic_fields,
         "strategy_input_origin": strategy_input_origin,
         "primary_sources": primary_sources,
@@ -1850,6 +1852,8 @@ def _writer_brief_projection(brief: Mapping[str, object]) -> dict[str, object]:
         "strategy_input_origin",
     )
     projected: dict[str, object] = {"goal": brief.get("goal")}
+    if brief.get("selection_policy") == "one-batch-hook-first-v1":
+        projected["selection_policy"] = "one-batch-hook-first-v1"
     style = str(brief.get("post_style", "standard"))
     post_styles.contract(style)
     if style != "standard":
@@ -1906,8 +1910,8 @@ def validate_draft_candidates(
     evidence_ids, proof_ids = _candidate_claim_id_sets(evidence, proof)
     known_claim_ids = evidence_ids | proof_ids
     minimum, maximum = TEXT_WORD_LIMITS[str(goal)]
-    if brief.get("post_style") == "short-humorous":
-        minimum = 1  # The short style must not inherit a long-form minimum.
+    if brief.get("post_style", "standard") != "standard":
+        minimum = 1  # Calendar styles must not inherit a long-form minimum.
     allowed_fields = {"id", "angle", "text", "claim_ids"}
     validated: list[dict[str, object]] = []
     normalized_ids: set[str] = set()
@@ -2113,15 +2117,14 @@ def build_writer_prompt(
     safe_brief = _writer_brief_projection(brief)
     goal = str(safe_brief["goal"])
     minimum, maximum = TEXT_WORD_LIMITS[goal]
-    if safe_brief.get("post_style") == "short-humorous":
+    if safe_brief.get("post_style", "standard") != "standard":
         minimum = 1
     return f"""
 Create exactly three materially different plain-text candidates for this strategic brief.
-All three openings must lead with the strongest supported recognisable name, incident,
-number or scale, then the immediate reader consequence in line 2. The body of candidate 1
+{post_styles.opening(safe_brief)} The body of candidate 1
 develops the mechanism, candidate 2 the product decision, and candidate 3 an artefact or
-failure-mode perspective. These are body angles, never instructions to replace an
-incident-first hook with generic advice. Do not invent an incident merely to
+failure-mode perspective. These are body angles, never instructions to replace
+the requested opening with generic advice. Do not invent an incident merely to
 fit a route. Each candidate must be {minimum}–{maximum} words for the {goal} goal and return
 only id, angle, text, and claim_ids. Use the neutral IDs candidate-1, candidate-2, and
 candidate-3 exactly once each. claim_ids must name supplied research evidence IDs and may also

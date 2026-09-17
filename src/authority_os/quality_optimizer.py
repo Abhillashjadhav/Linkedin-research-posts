@@ -146,7 +146,10 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
     finally:
         _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY = previous_advisory
     style = getattr(args, "post_style", "standard")
-    short_form = style == "short-humorous"
+    short_form = style == "short-humorous" or (
+        getattr(args, "command", None) == "draft" and not getattr(args, "dry_run", False)
+        and getattr(args, "run_spec", None) is None
+    )
     total_floor = post_styles.shortlist_floor(style) if short_form else ACCEPTABLE_QUALITY_FLOOR
     if getattr(args, "command", None) == "draft" and not getattr(args, "dry_run", False):
         draft_delivery.retain(attempt, cycle=cycle, post_style=style)
@@ -531,7 +534,7 @@ def _package_data(
         review=review,
         proof=proof,
     )
-    short_form = brief.get("post_style") == "short-humorous"
+    short_form = brief.get("post_style") == "short-humorous" or brief.get("selection_policy") == "one-batch-hook-first-v1"
     if mode != "live" or (manifest.get("review_status") != "BLOCKED" and not short_form):
         return manifest, evaluation, rendered
 
@@ -684,6 +687,9 @@ def _command_draft(args: object) -> int:
     previous = _ACTIVE_STATE
     _ACTIVE_STATE = RepairState()
     try:
+        if (getattr(args, "command", None) == "draft" and not getattr(args, "dry_run", False)
+                and getattr(args, "run_spec", None) is None):
+            return _command_short_form(args)
         if getattr(args, "post_style", "standard") == "short-humorous":
             if getattr(args, "run_spec", None) is not None or getattr(args, "dry_run", False):
                 raise workflow.WorkflowError("short-humorous uses the live single-post workflow; campaign and synthetic fixtures keep their existing styles.")

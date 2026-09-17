@@ -605,7 +605,7 @@ Candidate: `{recommended_id}`
 No actionable recommendation is made from synthetic fixture data. Eligible IDs in the
 evaluation exist only to exercise the deterministic package contract.
 """
-    elif brief.get("post_style") == "short-humorous":
+    elif brief.get("post_style") == "short-humorous" or brief.get("selection_policy") == "one-batch-hook-first-v1":
         recommendation = """## Recommendation
 
 No candidate scored strictly above 18/25, so there is no shortlist. All three scored

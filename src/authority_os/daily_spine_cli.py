@@ -22,6 +22,7 @@ from . import (
     acceptance_policy,
     campaign,
     draft_delivery,
+    weekly_spine,
     eval_dashboard_html,
     momentum,
     storage,
@@ -1419,7 +1420,7 @@ def generate_cards(
         if feedback
         else ""
     )
-    prompt = f"""Create exactly three one-idea authority thesis cards from the Topic-Value-selected signals. Each supplied signal may contain topic_value annotations naming the selected situation, reader-value route, gravity, reader payoff, and the authority contribution available to this author. Preserve that selected reader value; do not replace it with a generic AI-news thesis. Turn the situation into original product judgment, name a concrete reader problem, state what a team should do differently, set proof_id to NOT_REQUIRED; author proof is not a prerequisite. Ground judgments in public signals and never invent personal experience, and include a non-technical summary of no more than 25 words. Prefer the broadest audience-relevant formulation that preserves the evidence: omit incidental precision or map an instance to its true parent category, but never add severity, prevalence, causality, scope, materiality, or certainty. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. The spine is advisory only; do not force a template or choose by weekday. The topic field must express the underlying evidence-supported atomic idea in a concise audience-relevant phrase. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
+    prompt = f"""Create exactly three one-idea authority thesis cards from the Topic-Value-selected signals. Each supplied signal may contain topic_value annotations naming the selected situation, reader-value route, gravity, reader payoff, and the authority contribution available to this author. Preserve that selected reader value; do not replace it with a generic AI-news thesis. Turn the situation into original product judgment, name a concrete reader problem, state what a team should do differently, set proof_id to NOT_REQUIRED; author proof is not a prerequisite. Ground judgments in public signals and never invent personal experience, and include a non-technical summary of no more than 25 words. Prefer the broadest audience-relevant formulation that preserves the evidence: omit incidental precision or map an instance to its true parent category, but never add severity, prevalence, causality, scope, materiality, or certainty. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. These narrative devices must serve the frozen weekday purpose in authority_goal. Never substitute another content type for that purpose. The topic field must express the underlying evidence-supported atomic idea in a concise audience-relevant phrase. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
 UNTRUSTED_PROFILE
 {json.dumps({key: value for key, value in profile.items() if key != 'proof_inventory'}, indent=2, sort_keys=True)}
 END_UNTRUSTED_PROFILE
@@ -2068,6 +2069,10 @@ def resolve_signal_evidence(
 
 
 def command(args: argparse.Namespace) -> int:
+    weekly_plan = weekly_spine.prepare(args)
+    momentum.configure_weekly_focus(weekly_plan["focus"] if weekly_plan else "")
+    if weekly_plan is not None and not weekly_plan["active"]:
+        return 0
     if not args.allow_web_research:
         raise workflow.WorkflowError("Discovery requires --allow-web-research.")
     if not args.allow_model_egress:
@@ -2081,6 +2086,8 @@ def command(args: argparse.Namespace) -> int:
     )
     ledger_start = len(v1_completion._read_jsonl(ledger_path))
     profile = base.validate_profile(base._private_json(args.profile, "Authority profile"))
+    if weekly_plan:
+        profile["authority_goal"] += " Frozen weekday purpose: " + weekly_plan["focus"]
     resume = (
         load_discovery_resume(
             args.resume_from,
@@ -2107,6 +2114,10 @@ def command(args: argparse.Namespace) -> int:
         or base.OUTPUT_ROOT / as_of[:10] / as_of[11:19].replace(":", "")
     )
     base.legacy_cli._ensure_owner_only_directory(folder)
+    if weekly_plan:
+        base.write_private_json(folder / "weekly-plan.json", weekly_plan)
+        if weekly_plan.get("build"):
+            print(f"Wednesday video attachment: {weekly_plan['build']['video_path']}")
     if resume is not None and folder.resolve() == resume.source_folder.resolve():
         raise workflow.WorkflowError(
             "Resume output must be different from the preserved source run."
@@ -2206,6 +2217,7 @@ def command(args: argparse.Namespace) -> int:
             top_five,
             as_of=as_of,
             days=args.days,
+            **({"path": weekly_spine.inventory_path(weekly_plan)} if weekly_plan else {}),
         )
     else:
         inventory_path, inventory = CANDIDATE_INVENTORY, []
@@ -2576,9 +2588,14 @@ def command(args: argparse.Namespace) -> int:
     print(f"{len(theses)} thesis candidate(s) retained; thesis outcome: {thesis_status}:")
     draft_commands: list[tuple[dict[str, object], list[str], str]] = []
     for card in theses:
+        strategy_input = base.strategy_for(card, profile)
+        if weekly_plan:
+            strategy_input["authority_statement"] += " Frozen weekday purpose: " + weekly_plan["focus"]
+            if weekly_plan.get("build"):
+                strategy_input["authority_statement"] += " Our demonstrated build: " + json.dumps({key: weekly_plan["build"][key] for key in ("repo_url", "summary", "ownership")})
         strategy = base.write_private_json(
             folder / f"strategy-{card['id']}.json",
-            base.strategy_for(card, profile),
+            strategy_input,
         )
         evidence_manifest = base.write_private_json(
             folder / f"evidence-{card['id']}.json",
@@ -2629,7 +2646,7 @@ def command(args: argparse.Namespace) -> int:
         print(f"Decision: {card['product_decision']}")
         print(f"Conversation: {card['conversation_surface']}")
         print(
-            f"Spine: {card['recommended_spine']} — {card['spine_fit_reason']}"
+            f"Narrative angle: {card['recommended_spine']} — {card['spine_fit_reason']}"
         )
         print(f"Draft command: {draft}")
     if getattr(args, "generate_post", False):
@@ -2741,9 +2758,12 @@ def command(args: argparse.Namespace) -> int:
 def parser() -> argparse.ArgumentParser:
     result = base.parser()
     result.add_argument(
-        "--post-style", choices=("standard", "short-humorous"), default="standard",
-        help="Carry a reusable writing brief into the generated post and its evaluations.",
+        "--post-style", choices=workflow.post_styles.STYLE_NAMES, default=None,
+        help="Legacy style hint; the frozen posting-date calendar takes precedence.",
     )
+    result.add_argument("--post-date", help="Posting date YYYY-MM-DD; defaults to today in Asia/Kolkata, independently of the research timestamp.")
+    result.add_argument("--include-tuesday", action="store_true", help="Opt into the optional Tuesday incident-and-mitigation post.")
+    result.add_argument("--build-manifest", type=Path, help="Wednesday's completed build and recording; defaults to data/private/latest-build.json.")
     result.add_argument(
         "--resume-from",
         type=Path,

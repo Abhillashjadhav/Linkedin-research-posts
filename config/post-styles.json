@@ -1,11 +1,42 @@
 {
   "short-humorous": {
-    "target_words": [40, 80],
+    "target_words": [
+      40,
+      80
+    ],
     "maximum_target_words": 100,
-    "voice": "Dry, conversational workplace humour. One sharp joke about a recognisable product or organisational absurdity; one useful takeaway. Avoid forced punchlines, slogans, invented quotations and jokes at victims' expense.",
-    "opening": "Line 1 leads with the strongest supported recognisable name, incident or material scale. Line 2 immediately connects it to the reader's consequence. Humour must preserve the factual meaning.",
-    "selection": "One batch of three candidates. Shortlist only totals strictly above 18/25. Among those, rank hook first, then total. Other editorial findings are visible advisories. Always deliver all three texts with their exact scores.",
-    "generation_batches": 1,
-    "shortlist_total_exclusive": 18
+    "voice": "Very funny, conversational and slightly sarcastic about AI hype, promises or everyday AI absurdities. One sharp grounded joke and one useful takeaway. Avoid forced punchlines, invented quotations, claimed financial outcomes and jokes at victims' expense.",
+    "opening": "Line 1 may use a sharp comic or sarcastic setup about AI. Line 2 immediately connects the joke to its concrete, supported example and reader consequence. Treat the two lines as one hook; preserve the distinction between a joke and a reported fact.",
+    "content": "Keep one meaningful implication. A concise joke can carry the middle and closer; do not demand a long explanation or a checklist. Sarcasm alone does not earn a high score."
+  },
+  "educational-resources": {
+    "target_words": [
+      100,
+      190
+    ],
+    "maximum_target_words": 250,
+    "voice": "Helpful, concise and conversational; educational utility leads.",
+    "opening": "Lead with what the reader will learn or be able to do. Name the actual resources and give verified links, with a specific reason to use each.",
+    "content": "Curate a small useful set of resources. Explain when and how to use them. Do not force an incident narrative, a joke or an invented lesson from personal experience."
+  },
+  "build-video": {
+    "target_words": [
+      80,
+      160
+    ],
+    "maximum_target_words": 250,
+    "voice": "Concrete, confident and plain-spoken; demonstrate the author's actual work.",
+    "opening": "Lead with the problem the build solves and the demonstrated result. Surface the supplied repository link early. Claim ownership, availability or results only when supported.",
+    "content": "Accompany the actual build video. Explain what the recording shows, what worked, and how to try the build. A storyboard or a promised future video is not a completed demonstration."
+  },
+  "incident-mitigation": {
+    "target_words": [
+      100,
+      190
+    ],
+    "maximum_target_words": 250,
+    "voice": "Clear, practical and specific; incident impact followed by mitigation.",
+    "opening": "Line 1 leads with the verified industry incident and its material impact. Line 2 immediately connects it to the reader's exposure or decision.",
+    "content": "Explain what happened, why it matters, and a concrete mitigation. Distinguish verified causes from hypotheses and recommendations; do not invent losses or claim a mitigation was tested."
   }
 }

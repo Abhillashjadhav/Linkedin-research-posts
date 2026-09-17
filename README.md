@@ -51,44 +51,18 @@ The dry run is offline and uses visibly synthetic fixtures. It does not invoke a
 
 ## Run V1 discovery through a review-ready post
 
-For a short, humorous post, use the same workflow with a saved writing style:
+The content spine is frozen in `config/weekly-spine.json`:
 
-```bash
-./bin/linkedin-os discover \
-  --profile data/private/authority-profile.json \
-  --days 7 \
-  --post-style short-humorous \
-  --allow-web-research \
-  --allow-model-egress \
-  --generate-post
-```
+| Posting day | Required content |
+| --- | --- |
+| Monday | Educational resources with useful explanations and verified links |
+| Tuesday, optional | Industry incident, impact and mitigation; opt in with `--include-tuesday` |
+| Wednesday | Our actual build, demonstrated in a real video, with its repository link |
+| Thursday | Industry incident, impact and mitigation |
+| Friday | A very short, funny and slightly sarcastic observation about AI |
+| Saturday and Sunday | No post planned |
 
-The reusable contract lives in `config/post-styles.json`. It asks for 40–80 words,
-one grounded joke and one useful product implication. Writer, Narrative Editor
-and Critic receive the same style. Every opening starts with a supported incident
-or concrete fact, followed immediately by the reader's stake; narrative angles
-belong in the body.
-
-This style generates and scores **one batch of three**. Only totals **strictly
-above 18/25** can be shortlisted; the strongest hook wins among those, then total
-breaks ties. Other editorial findings remain visible without regeneration.
-Hook PASS/FAIL/UNCERTAIN is a readable label for the existing anchored score
-(4–5 / 1–3 / not evaluated), not an extra evaluation call or veto. It is not a
-prediction of actual engagement. A below-bar run still delivers the best available
-text, explicitly without a shortlist.
-
-All three posts and their scores are embedded in the private HTML dashboard.
-The same folder contains immutable `draft-candidates-cycle-*.json` and
-`candidates-cycle-*.md` snapshots, `all-candidates.md`, and `shortlisted-post.md`
-(or `best-available-post.md` when no candidate exceeds 18). Standard V1 runs also
-retain evaluated drafts across cycles. Publication remains manual.
-
-When research is already saved, add `--post-style short-humorous` to its existing
-`draft --strategy-input ... --evidence-manifest ... --allow-model-egress --package`
-command. This reuses the research and performs the normal writing and evaluation
-stages. It does not require manually writing a post into the prompt.
-
-The standard style keeps its existing acceptance policy and cycle budget:
+Run the same command each posting day:
 
 ```bash
 ./bin/linkedin-os discover \
@@ -98,6 +72,47 @@ The standard style keeps its existing acceptance policy and cycle budget:
   --allow-model-egress \
   --generate-post
 ```
+
+The posting date defaults to today in Asia/Kolkata. To prepare Friday's post on
+Thursday, add `--post-date 2026-09-18`. This date chooses the content spine; it
+does not pretend the research was collected in the future. The frozen calendar
+takes precedence over a conflicting legacy `--post-style` hint. It does not
+create a scheduler or publish anything automatically.
+
+Every live single-post style uses **one batch of three**, shortlists totals
+**strictly above 18/25**, and ranks qualified candidates by hook, then total.
+Other editorial findings are advisory. The same Writer, Narrative Editor and
+Critic receive the day's style; resources and build demonstrations no longer
+inherit incident-only openings. Friday humour is slightly sarcastic about AI,
+with a 40–80-word target. It is generated anew rather than copied from a template.
+A below-bar run returns the best available text without claiming a shortlist.
+
+All three exact scored drafts are embedded in the private HTML dashboard and
+saved as immutable candidate snapshots, `all-candidates.md`, and
+`shortlisted-post.md` (or `best-available-post.md`). `weekly-plan.json` records the
+posting date, frozen purpose and attachment. Wednesday's video is linked in the
+dashboard. Publication remains manual.
+
+Wednesday uses `data/private/latest-build.json`, or `--build-manifest PATH`:
+
+```json
+{
+  "repo_url": "https://github.com/OWNER/REPO",
+  "summary": "What our build actually demonstrates and the observed result.",
+  "video_path": "data/private/builds/latest/recording.mp4",
+  "built_by_author": true
+}
+```
+
+These are completed build inputs. The existing media stage only creates plans
+and storyboards; it cannot manufacture an execution recording. A missing build
+or recording is reported before model calls, not replaced with industry news or
+a claimed finished video. The daily **7–8-minute target is unverified** and assumes
+source/build inputs are ready; it excludes building a new product or recording a
+new demonstration. No live runtime result is claimed from offline tests.
+
+Direct `draft` calls can still name a style to reuse saved research. Campaigns
+and synthetic fixtures retain their separate legacy policies.
 
 V1 uses a seven-day lookback by default and retries unavailable Scout surfaces once.
 Discovery requires at least six meaningful conversations, with more allowed when
@@ -117,8 +132,9 @@ publication history, not inferred from topic names or an empty history.
 Brand-independent reader value, usable evidence, and the author's goal remain required.
 The selected topic produces one thesis batch, scored on the existing five axes.
 The best valid thesis proceeds directly to drafting: no 23/25 cutoff or score retries.
-Final writing still requires total >=17, hook and voice >=4, and the other axes >=3;
-best-draft delivery keeps unmet writing targets visible as warnings.
+Live single-post writing uses one batch of three: totals must exceed 18 to shortlist,
+then hook strength ranks first and total breaks ties. Other editorial findings are warnings.
+Below-bar drafts remain available without being labelled publishable.
 Invalid model output and missing evidence still stop the run.
 Research coverage is satisfied by one body-read primary source or three distinct
 body-read credible sources. Coverage shortfalls remain visible advisories and never
@@ -161,9 +177,11 @@ Runs created before `admitted-topics.json` was introduced can resume from the
 rolling inventory only while that inventory still carries the failed run's
 exact timestamp; otherwise the command fails closed rather than guessing.
 
-## Locked high-bar search
+## Legacy campaign and explicit repair policy
 
-A live invocation runs at most four scored iterations. Writing acceptance has one rule:
+This policy applies to campaign drafting and explicit `eval-package --repair`, not
+the frozen daily single-post workflow above. These paths run at most four scored
+iterations with the following acceptance targets:
 
 - effective Critic score of at least **17/25**;
 - hook and voice scores of at least **4/5**;
@@ -206,7 +224,7 @@ git clone --depth 1 https://github.com/Abhillashjadhav/no-ai-slop.git /tmp/no-ai
 The coordinator runs each in-scope day independently. Every executed day ends
 in either `READY_FOR_HUMAN_REVIEW` or an explicit `BLOCKED` trace; a preserved
 published day may instead carry an aggregate-only out-of-scope status. The
-coordinator uses the same 17/25 total and named per-axis floors as standalone drafting. The separate first-comment rubric uses an 18/25 total floor while retaining its evidence, anti-slop, and artisanal checks. Rejected prose is omitted from the persisted public trace.
+coordinator retains the legacy 17/25 total and named per-axis floors; daily single-post selection uses the frozen above-18 rule. The separate first-comment rubric uses an 18/25 total floor while retaining its evidence, anti-slop, and artisanal checks. Rejected prose is omitted from the persisted public trace.
 Visual plans are rendered as repository-native SVG files and must pass both
 layout checks and the separate Visual QA stage.
 
@@ -233,21 +251,20 @@ A recommendation means **ready for human review**. It never means approved, sche
 ## The product flow
 
 ```mermaid
-flowchart LR
-    A[Research with provenance] --> B[Topic analysis]
-    B --> C[Strategy brief]
-    C --> D[Three candidates]
-    D --> E[Narrative Editor]
-    E --> F[Critic and deterministic gates]
-    F --> G[Integrated and artisanal anti-slop]
-    G -->|Below locked bar| D
-    G -->|17+ and all axis floors pass| H[First comment and artifact]
-    H --> I[Visual QA]
-    I --> J[Human review package]
-    J --> K[Manual fact verification]
-    K --> L[Manual publication outside system]
-    L --> M[Performance learning]
+flowchart TD
+    A[Posting date selects purpose] --> B[Find or reuse verified evidence]
+    B --> C[One batch of three posts]
+    C --> D[Editor and Critic]
+    D --> E{Any total above 18?}
+    E -->|Yes| F[Select strongest hook]
+    E -->|No| G[Save drafts with below-bar label]
+    F --> H[Post, sources and scores]
+    G --> H
+    H --> I[Manual publication]
 ```
+
+Wednesday also requires the supplied recording. Saved below-bar drafts are not
+labelled ready to publish. This flow never loops solely to improve editorial scores.
 
 ### 1. Research
 
@@ -271,9 +288,9 @@ Score five dimensions from 1–5 with at most one revision per cycle. The critic
 
 ### 6. Select
 
-Run the deterministic diagnostics and retain the scored prose. Standard mode may
-use bounded repair cycles. Short-humorous mode uses one batch, selects the strongest
-hook among totals above 18, and returns all three drafts with visible advisories.
+Run the deterministic diagnostics and retain the scored prose. Every live single-post
+style uses one batch, selects the strongest hook among totals above 18, and returns
+all three drafts with visible advisories.
 
 ### 7. Package
 
@@ -415,7 +432,7 @@ make check
 - macOS and Linux are supported; Windows is not currently supported for private-data operation.
 - Legacy single-post live drafting depends on the locally configured Claude service and explicit consent; trace-first campaign mode uses the authenticated Codex CLI with explicit per-stage model settings.
 - The bounded search stops after four live cycles rather than spending indefinitely.
-- Passing the 17/25 total, the hook and voice floors, and every hard gate creates review eligibility; it is not proof that a human will find the post compelling.
+- A shortlist score is an editorial estimate, not proof that a human will find the post compelling. The daily rule is total above 18, ranked by hook strength.
 - Research ingestion, analytics collection, and publication are not automated.
 - Structural citation checks reduce unsupported claims but cannot prove factual truth.
 - Performance learning depends on manually recorded observations.

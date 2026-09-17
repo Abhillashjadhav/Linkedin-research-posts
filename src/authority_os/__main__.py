@@ -92,7 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     draft.add_argument(
         "--post-style",
-        choices=("standard", "short-humorous"),
+        choices=workflow.post_styles.STYLE_NAMES,
         default="standard",
         help="Reusable writing brief; short-humorous delivers one scored batch of three short posts.",
     )
@@ -682,6 +682,7 @@ def command_draft(args: argparse.Namespace) -> int:
         week_slot=args.week_slot,
         strong_current_signal=args.strong_current_signal,
         post_style=getattr(args, "post_style", "standard"),
+        selection_policy="one-batch-hook-first-v1" if not args.dry_run else None,
     )
     evidence = workflow.build_drafting_evidence(
         items,
