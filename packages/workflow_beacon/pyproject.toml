@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "workflow-beacon"
+version = "0.1.0"
+description = "Nonblocking local Beacon telemetry for existing workflows"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+workflow-beacon = "workflow_beacon.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

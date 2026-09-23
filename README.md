@@ -49,6 +49,8 @@ make check
 
 The dry run is offline and uses visibly synthetic fixtures. It does not invoke a Writer or Critic model, recommend a candidate for publication, or publish anything.
 
+The launcher also supports automatic local Beacon recording and reviewed corrections across runs. See [Beacon integration](docs/BEACON_INTEGRATION.md) for Mac setup, correction review and optional reports. Recording failures never change workflow acceptance or enable publication.
+
 ## Run V1 discovery through a review-ready post
 
 ```bash

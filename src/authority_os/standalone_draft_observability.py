@@ -12,7 +12,9 @@ from . import daily_cli, daily_spine_cli, eval_dashboard_html, quality_cli, v1_c
 def run(command: Callable[[list[str]], int], argv: list[str]) -> int:
     """Wrap only a top-level draft; discovery-owned child drafts inherit its run."""
 
-    if not argv or argv[0] != "draft" or os.environ.get(v1_completion.RUN_ID_ENV):
+    beacon_root = os.environ.get("LINKEDIN_OS_BEACON_ROOT_PID") == str(os.getpid())
+    if (not argv or argv[0] != "draft"
+            or (os.environ.get(v1_completion.RUN_ID_ENV) and not beacon_root)):
         return command(argv)
 
     run_id = v1_completion.begin_run()

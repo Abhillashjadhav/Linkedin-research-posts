@@ -65,7 +65,11 @@ def begin_run(run_id: str | None = None) -> str:
     """Create and expose one opaque identity for an end-to-end V1 run."""
 
     global _PROCESS_RUN_ID
-    value = run_id or (
+    inherited = (
+        os.environ.get(RUN_ID_ENV, "")
+        if os.environ.get("LINKEDIN_OS_BEACON_ACTIVE") == "1" else ""
+    )
+    value = run_id or inherited or (
         "linkedin-"
         + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         + "-"

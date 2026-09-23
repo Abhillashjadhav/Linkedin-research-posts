@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Iterator, Mapping, Sequence
 
 from . import __main__ as legacy_cli
-from . import acceptance_policy, workflow
+from . import acceptance_policy, correction_context, workflow
 
 MAX_QUALITY_CYCLES = 4
 MIN_QUALITY_SCORE = acceptance_policy.ACCEPTABLE_QUALITY_FLOOR
@@ -459,6 +459,7 @@ def command_draft(args: object) -> int:
     feedback: Mapping[str, object] | None = None
     rejected_openings: set[str] = set()
     final_attempt: AttemptResult | None = None
+    correction_fallback: tuple[AttemptResult, Sequence[CandidateResult], int] | None = None
 
     for cycle in range(1, cycle_limit + 1):
         attempt = _run_attempt(args, feedback)
@@ -471,17 +472,45 @@ def command_draft(args: object) -> int:
             # Compatibility flag; editorial checks never veto acceptance.
             allow_factual_wording_advisory=cycle > 1,
         )
+        correction_repair = None
         if accepted:
-            _render_success(attempt, accepted, cycle, cycle_limit)
-            return 0
+            selected = next((item for item in accepted if item.candidate_id == attempt.recommendation), None)
+            if selected is None:
+                selected = max(accepted, key=lambda item: item.effective_total)
+            correction_repair = correction_context.repair_decision(
+                {"id": selected.candidate_id, "text": selected.text}, cycle=cycle,
+                cycle_limit=cycle_limit, project_root=workflow.REPO_ROOT,
+            )
+            if not correction_repair["requested"]:
+                _render_success(attempt, accepted, cycle, cycle_limit)
+                if correction_repair["unresolved"]:
+                    print("Reviewed correction checks remain unresolved after the existing cycle budget; quality scores are unchanged.")
+                return 0
+            correction_fallback = (attempt, accepted, cycle)
 
-        _render_rejection(attempt, cycle, cycle_limit)
+        if correction_repair and correction_repair["requested"]:
+            print(f"Quality passed on cycle {cycle}/{cycle_limit}; using a remaining cycle to repair a reviewed literal correction.")
+        else:
+            _render_rejection(attempt, cycle, cycle_limit)
         rejected_openings.update(
             _normalise_opening(candidate.opening)
             for candidate in attempt.candidates
             if candidate.opening
         )
         feedback = _quality_feedback(attempt, cycle)
+        if correction_repair and correction_repair["requested"]:
+            feedback = {**feedback, "correction_repair": correction_repair}
+
+    if correction_fallback is not None:
+        previous_attempt, previous_accepted, previous_cycle = correction_fallback
+        selected = next((item for item in previous_accepted if item.candidate_id == previous_attempt.recommendation), None)
+        if selected is None:
+            selected = max(previous_accepted, key=lambda item: item.effective_total)
+        correction_context.repair_decision({"id": selected.candidate_id, "text": selected.text},
+                                            cycle=cycle_limit, cycle_limit=cycle_limit, project_root=workflow.REPO_ROOT)
+        _render_success(previous_attempt, previous_accepted, previous_cycle, cycle_limit)
+        print("Reviewed corrections remain unresolved; retaining the earlier quality-passing draft after the existing cycle budget.")
+        return 0
 
     if final_attempt is None:
         raise workflow.WorkflowError("Quality search did not execute a draft cycle.")
