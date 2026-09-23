@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Mapping, Sequence
 
-from . import campaign, model_runtime, workflow
+from . import campaign, correction_context, model_runtime, workflow
 
 _INSTALLED = False
 
@@ -144,6 +144,7 @@ def _invoke_writer_revision_codex(
         raise workflow.WorkflowError("Writer revision response must contain one candidate.")
     if set(revised) != {"id", "angle", "text", "claim_ids"}:
         raise workflow.WorkflowError("Writer revision candidate has an invalid schema.")
+    correction_context.check_candidates([revised], role="writer", project_root=workflow.REPO_ROOT)
     return dict(revised)
 
 

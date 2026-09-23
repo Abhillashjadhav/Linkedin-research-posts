@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 from urllib.parse import urlsplit
 
-from . import acceptance_policy, anti_slop, workflow
+from . import acceptance_policy, anti_slop, correction_context, workflow
 from .model_runtime import ModelConfig, invoke_structured
 
 
@@ -1247,6 +1247,7 @@ def _run_day(
     final_post: dict[str, object] | None = None
     final_score: dict[str, object] | None = None
     final_gates: dict[str, object] | None = None
+    correction_fallback: tuple[dict[str, object], dict[str, object], dict[str, object], dict[str, object]] | None = None
 
     for cycle in range(1, MAX_CANDIDATE_CYCLES + 1):
         candidates = _invoke_writer(
@@ -1396,11 +1397,29 @@ def _run_day(
             }]
             trace["regeneration_count"] = cycle
             continue
+        correction_repair = correction_context.repair_decision(
+            selected, cycle=cycle, cycle_limit=MAX_CANDIDATE_CYCLES, project_root=workflow.REPO_ROOT,
+        )
+        trace["correction_checks"] = correction_repair
+        if correction_repair["requested"]:
+            correction_fallback = (dict(selected), dict(rescored), dict(regated), dict(trace["post_edit_recritic"]))
+            diagnostics = [{"candidate_id": selected["id"], "correction_repair": correction_repair}]
+            trace["regeneration_count"] = cycle
+            continue
         final_post = selected
         final_score = dict(rescored)
         final_gates = regated
         trace["regeneration_count"] = cycle - 1
         break
+
+    if final_post is None and correction_fallback is not None:
+        final_post, final_score, final_gates, retained_review = correction_fallback
+        trace["post_edit_recritic"] = {**retained_review, "retained_after_correction_repair": True}
+        trace["correction_checks"] = correction_context.repair_decision(
+            final_post, cycle=MAX_CANDIDATE_CYCLES, cycle_limit=MAX_CANDIDATE_CYCLES,
+            project_root=workflow.REPO_ROOT,
+        )
+        trace["correction_warning"] = "Reviewed corrections unresolved; retained an earlier quality-passing draft within the existing cycle budget."
 
     if final_post is None or final_score is None or final_gates is None:
         trace["final"] = {

@@ -267,9 +267,10 @@ def write_dashboard(
 
 
 def open_dashboard(path: Path) -> bool:
-    """Open locally on macOS without starting or installing a server."""
+    """Open only on request; every run still writes its optional local report."""
 
-    if sys.platform != "darwin" or os.environ.get("CI"):
+    if (sys.platform != "darwin" or os.environ.get("CI")
+            or os.environ.get("LINKEDIN_OS_OPEN_REPORT") != "1"):
         return False
     completed = subprocess.run(
         ["open", str(path)],

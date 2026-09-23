@@ -421,6 +421,13 @@ def _writer_retry_prompt(feedback: Mapping[str, object] | None) -> Iterator[None
         base = original(*args, **kwargs)
         voice_repair = _voice_repair_instruction(feedback)
         anti_slop_repair = _anti_slop_repair_instruction(feedback)
+        correction_repair = (
+            "\nREVIEWED_CORRECTION_REPAIR\n"
+            "This already scheduled cycle addresses the exact reviewed correction violations in correction_repair. "
+            "The prior quality scores may already pass. Fix those literal violations while preserving evidence "
+            "and passing axes; do not invent a score deficit or chase higher scores. The existing cycle budget is unchanged.\n"
+            if feedback.get("correction_repair") else ""
+        )
         return (
             f"{base}\n\n"
             "QUALITY_REPAIR_CYCLE_CONTRACT\n"
@@ -445,6 +452,7 @@ def _writer_retry_prompt(feedback: Mapping[str, object] | None) -> Iterator[None
             "UNTRUSTED_QUALITY_REPAIR_DATA\n"
             f"{json.dumps(dict(feedback), indent=2, sort_keys=True)}\n"
             "END_UNTRUSTED_QUALITY_REPAIR_DATA"
+            f"{correction_repair}"
         )
 
     workflow.build_writer_prompt = build_with_repair  # type: ignore[assignment]

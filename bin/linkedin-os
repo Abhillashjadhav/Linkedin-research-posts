@@ -8,9 +8,13 @@ else
   PYTHON="${PYTHON:-python3}"
 fi
 
+# Import the checked-in adapter directly; launching never installs dependencies.
+PYTHONPATH="$ROOT/src:$ROOT/packages/workflow_beacon/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
+
 if [ "${1:-}" = "discover" ]; then
   shift
-  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -c '
+  exec "$PYTHON" -m authority_os.beacon_integration discover code '
 from authority_os import v1_gates
 v1_gates.install()
 from authority_os import v1_completion
@@ -24,31 +28,37 @@ fi
 
 if [ "${1:-}" = "media" ]; then
   shift
-  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.media "$@"
+  exec "$PYTHON" -m authority_os.beacon_integration media module authority_os.media "$@"
 fi
 
 if [ "${1:-}" = "export-monitoring" ]; then
   shift
-  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.monitoring_export "$@"
+  exec "$PYTHON" -m authority_os.beacon_integration export-monitoring module authority_os.monitoring_export "$@"
 fi
 
 if [ "${1:-}" = "record-spine-performance" ]; then
   shift
-  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.spine_feedback_io record "$@"
+  exec "$PYTHON" -m authority_os.beacon_integration record-spine-performance module authority_os.spine_feedback_io record "$@"
 fi
 
 if [ "${1:-}" = "spine-review" ]; then
   shift
-  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.spine_feedback_io review "$@"
+  exec "$PYTHON" -m authority_os.beacon_integration spine-review module authority_os.spine_feedback_io review "$@"
+fi
+
+if [ "${1:-}" = "corrections" ]; then
+  shift
+  exec "$PYTHON" -m authority_os.beacon_integration corrections module authority_os.correction_context "$@"
 fi
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON" -m authority_os.integrated_cli "$@"
+  "$PYTHON" -m authority_os.beacon_integration help module authority_os.integrated_cli "$@"
   STATUS=$?
   if [ "$STATUS" -eq 0 ]; then
     printf '\nV1 end-to-end workflow:\n'
     printf '  discover            Run parallel discovery; add --generate-post to continue through drafting.\n'
     printf '  export-monitoring   Export one redacted seven-check dashboard case for a completed run.\n'
+    printf '  corrections         Review and approve project-specific corrections.\n'
   fi
   exit "$STATUS"
 fi
@@ -62,10 +72,10 @@ for ARG in "$@"; do
 done
 
 if [ "$MODULE" = "authority_os" ]; then
-  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m "$MODULE" "$@"
+  exec "$PYTHON" -m authority_os.beacon_integration "${1:-help}" module "$MODULE" "$@"
 fi
 
-PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -c '
+exec "$PYTHON" -m authority_os.beacon_integration "${1:-help}" code '
 import sys
 from authority_os import v1_gates
 v1_gates.install()

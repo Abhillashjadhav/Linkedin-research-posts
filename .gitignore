@@ -17,4 +17,7 @@ outputs/**
 .venv/
 __pycache__/
 *.py[cod]
+*.egg-info/
+packages/workflow_beacon/build/
+packages/workflow_beacon/dist/
 .DS_Store
