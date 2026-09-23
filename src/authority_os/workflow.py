@@ -446,9 +446,9 @@ def load_evidence_manifest_file(path: Path | str) -> dict[str, object]:
     if (
         not isinstance(raw_evidence, Sequence)
         or isinstance(raw_evidence, (str, bytes))
-        or not 1 <= len(raw_evidence) <= 2
+        or not 1 <= len(raw_evidence) <= 7
     ):
-        raise WorkflowError("Evidence manifest must contain one or two source URLs.")
+        raise WorkflowError("Evidence manifest must contain one to seven source URLs.")
     source_urls: list[str] = []
     signal_ids: set[str] = set()
     identities: set[tuple[str, str]] = set()
