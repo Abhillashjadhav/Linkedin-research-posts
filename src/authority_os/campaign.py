@@ -1067,6 +1067,16 @@ def _persist_day(directory: Path, trace: Mapping[str, object]) -> None:
             (directory / "post.md").write_text(post.rstrip() + "\n", encoding="utf-8")
         if isinstance(comment, str):
             (directory / "first-comment.md").write_text(comment.rstrip() + "\n", encoding="utf-8")
+    else:
+        retained = trace.get("retained_post")
+        if isinstance(retained, Mapping) and isinstance(retained.get("text"), str):
+            (directory / "retained-post.md").write_text(
+                "# Retained post — downstream package incomplete\n\n"
+                "This scored post passed its writing contract, but the full campaign package is blocked. "
+                "Human approval and publishing remain disabled.\n\n"
+                + str(retained["text"]).rstrip() + "\n",
+                encoding="utf-8",
+            )
 
 
 def _prune_day_outputs(directory: Path, trace: Mapping[str, object]) -> None:
@@ -1079,6 +1089,9 @@ def _prune_day_outputs(directory: Path, trace: Mapping[str, object]) -> None:
             path = directory / name
             if path.is_file():
                 path.unlink()
+    retained_path = directory / "retained-post.md"
+    if (ready or not isinstance(trace.get("retained_post"), Mapping)) and retained_path.is_file():
+        retained_path.unlink()
     artifact = trace.get("artifact")
     keep = (
         {str(name) for name in artifact.get("files", [])}
@@ -1324,81 +1337,38 @@ def _run_day(
 
         selected_score = eligible[0]
         selected = dict(candidate_by_id[str(selected_score["candidate_id"])])
-        artisanal = _invoke_artisanal_editor(
-            text=str(selected["text"]),
-            claim_ids=selected["claim_ids"],  # type: ignore[arg-type]
-            context="locked LinkedIn post candidate",
-            skill=skill,
-            evaluation=evaluation,
-            config=models.artisanal_editor,
-            invoker=invoker,
-            stage="no_ai_slop_artisanal",
-        )
-        changed = workflow._style_normal_form(str(selected["text"])) != workflow._style_normal_form(str(artisanal["edited_text"]))
-        artisanal_trace = {
-            "cycle": cycle,
-            "candidate_id": selected["id"],
-            "changed": changed,
-            "changes_made": artisanal["changes_made"],
-            "status": artisanal["status"],
-            "failed_checks": artisanal["failed_checks"],
-        }
-        trace["no_ai_slop_artisanal"]["attempts"].append(artisanal_trace)  # type: ignore[index]
-        selected["text"] = artisanal["edited_text"]
-        post_slop = [
-            {"code": finding.code, "excerpt": finding.excerpt}
-            for finding in anti_slop.audit(str(selected["text"]))
-        ]
-        if artisanal["status"] != "PASS" or post_slop:
-            diagnostics = [{"candidate_id": selected["id"], "artisanal_status": artisanal["status"], "anti_slop_findings": post_slop}]
-        count = workflow.word_count(str(selected["text"]))
-        minimum, maximum = workflow.TEXT_WORD_LIMITS["authority"]
-        if not minimum <= count <= maximum:
-            diagnostics = [{"candidate_id": selected["id"], "artisanal_status": "word-limit-fail"}]
-
-        if changed:
-            rescored = _invoke_critic(
-                candidates=[selected],
-                brief=brief,
-                evidence=evidence,
-                config=models.critic,
-                invoker=invoker,
-                stage="post_edit_recritic",
-            )[0]
-        else:
-            rescored = selected_score
-        regated_raw = _gate_candidate(selected, brief=brief, evidence=evidence)
-        regated = _gate_trace(regated_raw)
+        # The selected post already meets every writing floor. The shared repair
+        # contract stops here; another optional edit can only introduce a regression.
+        trace["no_ai_slop_artisanal"]["status"] = "NOT_REQUIRED"  # type: ignore[index]
+        trace["no_ai_slop_artisanal"]["reason"] = "Selected post met the writing floors."  # type: ignore[index]
         post_edit_acceptance = acceptance_policy.acceptance_decision(
-            rescored,
+            selected_score,
             hard_gates_pass=acceptance_policy.hard_candidate_gates_pass(
-                regated,
+                gate_by_id[str(selected["id"])],
                 allow_factual_wording_advisory=cycle > 1,
             ),
-            additional_checks_pass=not post_slop,
+            additional_checks_pass=not slop_by_id[str(selected["id"])],
         )
         trace["post_edit_recritic"].update(  # type: ignore[union-attr]
             {
-                "executed": changed,
-                "unchanged_score_reused": not changed,
-                "score": _score_trace(rescored),
-                "gates": regated,
-                "anti_slop_findings": post_slop,
+                "executed": False,
+                "unchanged_score_reused": True,
+                "score": _score_trace(selected_score),
+                "gates": gate_by_id[str(selected["id"])],
+                "anti_slop_findings": slop_by_id[str(selected["id"])],
                 "acceptance": post_edit_acceptance,
             }
         )
-        if post_edit_acceptance["status"] != "PASS":
-            diagnostics = [{
-                "candidate_id": selected["id"],
-                "post_edit_score": int(rescored["effective_total"]),
-                "post_edit_gates": regated,
-                "acceptance": post_edit_acceptance,
-            }]
-            trace["regeneration_count"] = cycle
-            continue
         final_post = selected
-        final_score = dict(rescored)
-        final_gates = regated
+        final_score = dict(selected_score)
+        final_gates = gate_by_id[str(selected["id"])]
+        trace["retained_post"] = {
+            "status": "WRITING_ACCEPTED",
+            "candidate_id": selected["id"],
+            "text": selected["text"],
+            "score": _score_trace(selected_score),
+            "gates": final_gates,
+        }
         trace["regeneration_count"] = cycle - 1
         break
 
@@ -1470,7 +1440,7 @@ def _run_day(
             "status": "BLOCKED",
             "reason": (
                 f"First comment did not clear its separate {MIN_COMMENT_SCORE}/25 "
-                "review contract and all evidence/slop gates."
+                "review contract. The passing post was retained separately."
             ),
             "human_approval_status": "NOT_APPROVED",
             "publishing_status": "DISABLED",

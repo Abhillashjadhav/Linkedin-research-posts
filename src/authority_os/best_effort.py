@@ -150,6 +150,7 @@ def render(
     recommendation = getattr(attempt, "recommendation", None)
     if recommendation == str(getattr(candidate, "candidate_id", "")):
         passed.append(f"- `package_recommendation` — PASS; {recommendation}")
+    package_lines = tuple(getattr(attempt, "package_lines", ()))
     passed_contracts = {
         str(row.get("contract")): str(row.get("reason", "passed"))
         for row in decisions
@@ -172,6 +173,9 @@ def render(
         f"Run failure: {failure_reason}\n\n"
         "## Candidate text\n\n"
         f"{text}\n\n"
+        "## Original scored package references\n\n"
+        + ("\n".join(str(line) for line in package_lines) if package_lines else "No package reference was emitted.")
+        + "\n\n"
         "## Passed gates and checks\n\n"
         + "\n".join(passed)
         + "\n\n## Missed bars\n\n"

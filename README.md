@@ -8,14 +8,14 @@ For trace-first campaign runs, the executable order is:
 
 ```text
 Scout → Thesis → Writer (3) → Narrative Editor → Critic → deterministic gates
-→ integrated Anti-AI-Slop → bounded regeneration → external no-ai-slop edit
-→ post-edit Re-Critic/gates → First Comment Writer/Reviewer → Artifact Editor
+→ integrated Anti-AI-Slop → bounded regeneration if writing floors are unmet
+→ retain passing post → First Comment Writer/Reviewer and separate no-ai-slop edit → Artifact Editor
 → rendered artifact → Visual QA → human-review package
 ```
 
 Every LLM stage records its runtime, exact model, and reasoning effort. The
 preferred campaign hierarchy is GPT-5.6 Sol/high for Writer, GPT-5.6 Sol/max
-for Narrative Editor and the external artisanal edit, and GPT-5.6 Sol/ultra
+for Narrative Editor and the first-comment artisanal edit, and GPT-5.6 Sol/ultra
 for Critic and review stages. The Critic is never weaker than the Writer.
 
 ## See the product before installing
@@ -168,12 +168,13 @@ The coordinator runs each in-scope day independently. Every executed day ends
 in either `READY_FOR_HUMAN_REVIEW` or an explicit `BLOCKED` trace; a preserved
 published day may instead carry an aggregate-only out-of-scope status. The
 coordinator uses the same 17/25 total and named per-axis floors as standalone drafting. The separate first-comment rubric uses an 18/25 total floor while retaining its evidence, anti-slop, and artisanal checks. Rejected prose is omitted from the persisted public trace.
+Once a post clears its writing floors, campaign drafting stops editing that post. If the comment or artifact fails later, the day remains `BLOCKED` but preserves the exact scored post in `trace.json` and `retained-post.md`; this is not a complete or approved package.
 Visual plans are rendered as repository-native SVG files and must pass both
 layout checks and the separate Visual QA stage.
 
 After a complete five-day run, `--campaign-day Tuesday` (or another weekday)
 reruns only that day and rebuilds the aggregate from all five persisted traces.
-The rerun clears only that day's replaceable post, comment, and SVG outputs, so
+The rerun clears only that day's replaceable post, retained-post, comment, and SVG outputs, so
 stale artifacts cannot survive a changed result.
 
 ## What the workflow produces
@@ -200,9 +201,9 @@ flowchart LR
     C --> D[Three candidates]
     D --> E[Narrative Editor]
     E --> F[Critic and deterministic gates]
-    F --> G[Integrated and artisanal anti-slop]
+    F --> G[Integrated anti-slop diagnostics]
     G -->|Below locked bar| D
-    G -->|17+ and all axis floors pass| H[First comment and artifact]
+    G -->|17+ and all axis floors pass; post retained| H[First comment and artifact]
     H --> I[Visual QA]
     I --> J[Human review package]
     J --> K[Manual fact verification]

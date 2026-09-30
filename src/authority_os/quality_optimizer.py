@@ -28,6 +28,9 @@ _ORIGINAL_COMMAND_DRAFT = quality_cli.command_draft
 _ORIGINAL_PACKAGE_DATA = approval_package._package_data  # type: ignore[attr-defined]
 _ORIGINAL_RUN_ATTEMPT = quality_cli._run_attempt  # type: ignore[attr-defined]
 _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY = False
+_ACTIVE_COMMAND_DRAFT = False
+_ACTIVE_QUALIFICATION_SEED: quality_cli.CandidateResult | None = None
+_ACTIVE_CHECKPOINTED_ATTEMPT: quality_cli.AttemptResult | None = None
 
 
 def _failed_gate_count(candidate: quality_cli.CandidateResult) -> int:
@@ -100,6 +103,10 @@ class RepairState:
     ) -> quality_cli.CandidateResult:
         if not attempt.candidates:
             raise workflow.WorkflowError("Quality repair needs at least one candidate.")
+        # Feedback may inspect an attempt already checkpointed before advisory checks.
+        if any(previous_attempt is attempt for _, _, previous_attempt in self.observed):
+            assert self.best is not None
+            return self.best
         observed_cycle = cycle or len(self.cycle_best_scores) + 1
         self.observed.extend(
             (observed_cycle, candidate, attempt) for candidate in attempt.candidates
@@ -138,13 +145,20 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
         if isinstance(feedback, Mapping)
         else 1
     )
-    global _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY
+    global _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY, _ACTIVE_QUALIFICATION_SEED
+    global _ACTIVE_CHECKPOINTED_ATTEMPT
     previous_advisory = _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY
     _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY = cycle > 1
     try:
         attempt = _ORIGINAL_RUN_ATTEMPT(args, feedback)
     finally:
         _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY = previous_advisory
+    # The Resonance/acceptance overlays run after this boundary. Keep the exact
+    # scored attempt, including its package references, before either can time out.
+    if _ACTIVE_COMMAND_DRAFT and _ACTIVE_STATE is not None:
+        _ACTIVE_QUALIFICATION_SEED = _ACTIVE_STATE.best
+        _ACTIVE_STATE.observe(attempt, cycle)
+        _ACTIVE_CHECKPOINTED_ATTEMPT = attempt
     for candidate in attempt.candidates:
         failed_gates = {
             name: status
@@ -465,11 +479,14 @@ def _qualifying_candidates(
     # A strong repaired hook may survive across cycles; the V0 rule that bans every
     # prior opening prevents a genuine best-so-far repair lineage.
     del rejected_openings
+    prior = (
+        _ACTIVE_QUALIFICATION_SEED if _ACTIVE_COMMAND_DRAFT and attempt is _ACTIVE_CHECKPOINTED_ATTEMPT else
+        _ACTIVE_STATE.best if _ACTIVE_STATE is not None else None
+    )
     qualifying = tuple(
         candidate
         for candidate in attempt.candidates
-        if (_ACTIVE_STATE is None or _ACTIVE_STATE.best is None
-            or _candidate_progresses(_ACTIVE_STATE.best, candidate))
+        if (prior is None or _candidate_progresses(prior, candidate))
         and candidate_is_acceptable(
             candidate,
             allow_factual_wording_advisory=allow_factual_wording_advisory,
@@ -626,9 +643,16 @@ def _package_data(
 
 
 def _command_draft(args: object) -> int:
-    global _ACTIVE_STATE
+    global _ACTIVE_STATE, _ACTIVE_COMMAND_DRAFT, _ACTIVE_QUALIFICATION_SEED
+    global _ACTIVE_CHECKPOINTED_ATTEMPT
     previous = _ACTIVE_STATE
+    previous_command_draft = _ACTIVE_COMMAND_DRAFT
+    previous_qualification_seed = _ACTIVE_QUALIFICATION_SEED
+    previous_checkpointed_attempt = _ACTIVE_CHECKPOINTED_ATTEMPT
     _ACTIVE_STATE = RepairState()
+    _ACTIVE_COMMAND_DRAFT = True
+    _ACTIVE_QUALIFICATION_SEED = None
+    _ACTIVE_CHECKPOINTED_ATTEMPT = None
     try:
         try:
             return _ORIGINAL_COMMAND_DRAFT(args)
@@ -677,10 +701,16 @@ def _command_draft(args: object) -> int:
                     f"hook={best.axes.get('hook_strength', 0)}/5; "
                     "editorial checks are advisory."
                 )
+                if interrupted:
+                    print(f"Advisory evaluation incomplete: {exc}")
                 print(
                     "Best-effort artifact: "
                     f"{path.relative_to(workflow.REPO_ROOT)}"
                 )
+                if attempt.package_lines:
+                    print("Original scored package (advisory check incomplete):")
+                    for line in attempt.package_lines:
+                        print(line)
                 v1_completion.record_decision(
                     {
                         "contract": "draft_delivery",
@@ -700,6 +730,9 @@ def _command_draft(args: object) -> int:
             raise
     finally:
         _ACTIVE_STATE = previous
+        _ACTIVE_COMMAND_DRAFT = previous_command_draft
+        _ACTIVE_QUALIFICATION_SEED = previous_qualification_seed
+        _ACTIVE_CHECKPOINTED_ATTEMPT = previous_checkpointed_attempt
 
 
 def wire_integrated_dispatch(integrated_module: object) -> None:
