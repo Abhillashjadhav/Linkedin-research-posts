@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from authority_os import campaign, quality_cli, workflow
+from authority_os import campaign, quality_cli, resonance, workflow
 
 
 def attempt_output(
@@ -272,6 +272,7 @@ class QualitySearchTests(unittest.TestCase):
     def test_campaign_path_carries_post_edit_three_of_five_hook_back_to_writer(self) -> None:
         args = SimpleNamespace(
             run_spec="spec.json",
+            allow_model_egress=True,
             trace_output="outputs/run",
             no_ai_slop_skill="SKILL.md",
             no_ai_slop_eval="eval.md",
@@ -316,6 +317,8 @@ class QualitySearchTests(unittest.TestCase):
         output = io.StringIO()
         with (
             patch.object(campaign, "run_campaign", side_effect=fake_run_campaign),
+            patch.object(resonance, "prepare_campaign_spec", return_value=("spec.json", {})),
+            patch.object(resonance, "apply_post_gate", return_value={}),
             redirect_stdout(output),
         ):
             result = quality_cli.command_draft(args)
@@ -324,7 +327,7 @@ class QualitySearchTests(unittest.TestCase):
         prompt = str(observed["task_prompt"])
         self.assertIn("HOOK_REGENERATION_CONTRACT", prompt)
         self.assertIn("previous hook was 3/5", prompt.casefold())
-        self.assertIn("hook below 4/5 is a hard failure", prompt.casefold())
+        self.assertIn("hook below 4/5 misses the writing target", prompt.casefold())
 
 
 class RetryPromptTests(unittest.TestCase):
@@ -346,7 +349,7 @@ class RetryPromptTests(unittest.TestCase):
                 self.assertIn("QUALITY_SEARCH_RETRY_INSTRUCTION", prompt)
                 self.assertIn('"rejected_cycle": 1', prompt)
                 self.assertIn("Do not reuse a rejected opening", prompt)
-                self.assertIn("hook below 4/5 is a hard failure", prompt.casefold())
+                self.assertIn("hook below 4/5 misses the writing target", prompt.casefold())
             self.assertIs(workflow.build_writer_prompt, patched_original)
         self.assertIs(workflow.build_writer_prompt, original)
 

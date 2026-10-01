@@ -12,6 +12,10 @@ drafting.log
 outputs/**
 !outputs/.gitkeep
 
+# Newly generated campaign drafts and model diagnostics. Historical checked-in
+# reports stay tracked until deliberately migrated.
+campaigns/**/run/**
+
 # Local tool mirrors and Python state
 .agents/
 .venv/

@@ -1,8 +1,8 @@
-"""Topic-value and resonance gates around the live LinkedIn craft pipeline.
+"""Topic-value and resonance diagnostics around the live LinkedIn craft pipeline.
 
 Topic Value decides whether the underlying material deserves a post for the target audience.
 Resonance then packages that selected situation for fast feed comprehension. A craft-approved
-post still fails closed when it withholds value, asks before giving value, or is hard to enter.
+Post-craft resonance shortfalls remain visible for the human editor.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
-from . import workflow
+from . import campaign, workflow
 from .model_runtime import ModelConfig, invoke_structured
 
 SELECTOR_AXES = (
@@ -488,13 +488,14 @@ def prepare_campaign_spec(
         enriched_days.append(enrich_day(raw_day, selector, selected_topic))
     spec["days"] = enriched_days
     selection_dir = output_root / "_resonance"
-    selection_dir.mkdir(parents=True, exist_ok=True)
+    selection_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    selection_dir.chmod(0o700)
     prepared = selection_dir / "prepared-spec.json"
     topic_path = selection_dir / "topic-value.json"
     selector_path = selection_dir / "selector.json"
-    prepared.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    topic_path.write_text(json.dumps(topic_results, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    selector_path.write_text(json.dumps(results, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    campaign._atomic_json(prepared, spec)
+    campaign._atomic_json(topic_path, topic_results)
+    campaign._atomic_json(selector_path, results)
     return prepared, results
 
 
@@ -576,9 +577,9 @@ def _rewrite_summary(
         item["resonance_total"] = overlay["total"]
         item["feed_value"] = overlay.get("feed_value")
         item["value_before_ask"] = overlay.get("value_before_ask")
-        if overlay["status"] == "BLOCKED":
+        if overlay["status"] != "PASS":
             item["resonance_advisory"] = True
-    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    campaign._atomic_json(summary_path, summary)
 
     table = [
         "# Campaign summary",
@@ -597,7 +598,7 @@ def _rewrite_summary(
             f"{item.get('artifact_format') or 'n/a'} | {item.get('visual_qa') or 'n/a'} |"
         )
     table.extend(["", "Human approval: `NOT_APPROVED`", "", "Publishing: `DISABLED`", ""])
-    (output_root / "summary.md").write_text("\n".join(table), encoding="utf-8")
+    campaign._private_text(output_root / "summary.md", "\n".join(table))
 
 
 def apply_post_gate(
@@ -607,7 +608,7 @@ def apply_post_gate(
     only_day: str | None = None,
     invoker: StageInvoker = _default_invoker,
 ) -> dict[str, dict[str, object]]:
-    """Apply resonance after craft approval and fail closed by pruning publishable files."""
+    """Record optional post-craft resonance without discarding a safe post."""
 
     overlays: dict[str, dict[str, object]] = {}
     for day, selector in selectors.items():
@@ -625,19 +626,22 @@ def apply_post_gate(
         post = final.get("post")
         if not isinstance(post, str) or not post.strip():
             raise workflow.WorkflowError("Resonance Critic found a READY trace without a post.")
-        assessment = invoke_post_critic(post, selector, invoker=invoker)
+        try:
+            assessment = invoke_post_critic(post, selector, invoker=invoker)
+        except workflow.WorkflowError as exc:
+            assessment = {
+                "status": "NOT_EVALUATED", "total": None,
+                "diagnosis": f"Optional Resonance Critic incomplete: {exc}",
+            }
         overlays[day] = assessment
         topic_result = selector.get("topic_value")
         if isinstance(topic_result, Mapping):
             trace["topic_value_selector"] = dict(topic_result)
         trace["resonance_selector"] = dict(selector)
         trace["resonance_critic"] = assessment
-        (directory / "resonance-critic.json").write_text(
-            json.dumps(assessment, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        if assessment["status"] == "BLOCKED":
+        campaign._atomic_json(directory / "resonance-critic.json", assessment)
+        if assessment["status"] != "PASS":
             trace["resonance_advisory"] = assessment
-        trace_path.write_text(json.dumps(trace, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        campaign._atomic_json(trace_path, trace)
     _rewrite_summary(output_root, overlays, selectors)
     return overlays

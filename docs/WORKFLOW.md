@@ -2,25 +2,21 @@
 
 ## Current implemented flow
 
-The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, voice-grounded Writer drafting, post-draft Narrative Editor, five-axis Critic scoring, five deterministic local gates, integrated and separate anti-slop stages, a scored first comment, Artifact Editor, SVG rendering, Visual QA, an explicit local human-review package, package-linked manual performance checkpoints, and an evidence-thresholded private weekly review. Legacy ordinary drafting retains its established fixture and package behaviour. `draft --run-spec` selects the complete trace-first campaign coordinator; neither path approves, schedules, or publishes. The single-topic daily draft has a safe-checkpoint delivery-first fallback with visible warnings; the campaign route retains blocking acceptance and can end without a delivered draft.
+The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, voice-grounded Writer drafting, post-draft Narrative Editor, five-axis Critic scoring, five deterministic local gates, integrated and separate anti-slop stages, a scored first comment, Artifact Editor, SVG rendering, Visual QA, an explicit local human-review package, package-linked manual performance checkpoints, and an evidence-thresholded private weekly review. Legacy ordinary drafting retains its established fixture and package behaviour. `draft --run-spec` selects the complete trace-first campaign coordinator; neither path approves, schedules, or publishes. Single-topic daily and campaign-day drafts retain a grounded post privately before optional evaluation and deliver it with visible warnings when editorial checks remain incomplete or below target; a route without a safe post remains blocked.
 
 ### Trace-first campaign order
 
 The campaign coordinator executes this order in Python rather than treating role
 files as documentation:
 
-1. validate five body-read primary-source day envelopes;
-2. invoke Writer for exactly three candidates;
+1. validate five body-read source-grounded day envelopes;
+2. invoke Writer for exactly three candidates and privately checkpoint the first factually safe draft;
 3. invoke Narrative Editor on all three and validate `UNCHANGED`, `EDITED`, or `DROP`;
-4. invoke Critic on survivors and calculate totals and the hook cap locally;
-5. run authority, proof, honesty, citation, relevance, and integrated anti-slop gates;
-6. regenerate the complete candidate set with bounded diagnostics when nothing clears 18/25, every named axis floor, and every gate (maximum four cycles);
-7. invoke the separate `Abhillashjadhav/no-ai-slop` `SKILL.md` plus `eval.md` and re-run Critic and deterministic gates after any change;
-8. write and score the first comment, then run deterministic evidence checks, integrated anti-slop, and the same separate artisanal edit;
-9. invoke Artifact Editor only after text is locked, render the plan as SVG, and invoke Visual QA with deterministic layout metadata;
-10. persist machine-readable and human-readable traces for executed days ending
-    in `READY_FOR_HUMAN_REVIEW` or `BLOCKED`; preserved published days can carry
-    a report-only out-of-scope status without changing their historical trace.
+4. run deterministic factual and editorial diagnostics on survivors, then invoke Critic and calculate totals locally;
+5. retain the best factually safe scored draft and regenerate within the existing four-cycle budget when writing targets remain unmet;
+6. deliver the best grounded post with warnings if writing targets remain unmet after four cycles; leave the day `BLOCKED` only if no grounded post exists;
+7. for a writing-target pass, attempt the optional first comment, evidence checks, artifact and Visual QA; a failure retains the post with honest warnings and no approved comment;
+8. persist private machine-readable and human-readable traces and owner-only post files. A preserved published day may carry a report-only out-of-scope status.
 
 Model judgment never calculates totals, substitutes for a deterministic gate,
 or mutates publication state. Every invocation records runtime, model, and
@@ -114,7 +110,7 @@ The effective-total bands are legacy descriptive optimization tiers, not accepta
 - 22–23 permits one light revision of the current score leader. The Writer may be invoked once, the replacement candidate must still satisfy the full drafting contract, and the Critic may rescore it once. Revision does not recurse.
 - 21 or below misses the legacy optimization tiers but may still be review-eligible under the shared acceptance contract.
 
-The shared acceptance contract requires total at least 18, hook and voice at least 4, middle escalation, earned closer, and specificity/source quality at least 3, plus every hard gate. The package, campaign post route, performance recorder, and learner consume this same decision. Each shortfall is recorded separately.
+The shared writing targets are total at least 17, hook and voice at least 4, and middle escalation, earned closer, and specificity/source quality at least 3. These targets guide bounded repair and remain visible warnings when a grounded draft is delivered below target. Factual support, required proof, private storage and manual publication remain enforced.
 
 The first-comment reviewer uses five different axes. Its independently named total floor is also 18/25 by owner decision; evidence, anti-slop, and artisanal checks still pass separately.
 

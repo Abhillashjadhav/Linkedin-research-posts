@@ -244,11 +244,13 @@ class CampaignTests(unittest.TestCase):
                 researched_at="2026-08-09T00:00:00Z",
             )
             campaign._persist_day(directory, trace)
-            self.assertEqual(trace["final"]["status"], "BLOCKED")
+            self.assertEqual(trace["final"]["status"], "COMPLETED_WITH_WARNINGS")
             self.assertEqual(trace["retained_post"]["text"], invoker.drafts[0]["text"])
             self.assertEqual(trace["retained_post"]["score"]["effective_total"], 25)
             self.assertIn(invoker.drafts[0]["text"], (directory / "retained-post.md").read_text())
-            self.assertFalse((directory / "post.md").exists())
+            self.assertEqual((directory / "post.md").read_text().strip(), invoker.drafts[0]["text"])
+            self.assertFalse((directory / "first-comment.md").exists())
+            self.assertEqual((directory / "post.md").stat().st_mode & 0o777, 0o600)
 
     def test_post_route_never_trades_away_voice_floor(self) -> None:
         class LowVoiceInvoker(FakeInvoker):
@@ -286,7 +288,9 @@ class CampaignTests(unittest.TestCase):
                 },
                 researched_at="2026-08-09T00:00:00Z",
             )
-        self.assertEqual(trace["final"]["status"], "BLOCKED")
+        self.assertEqual(trace["final"]["status"], "COMPLETED_WITH_WARNINGS")
+        self.assertEqual(trace["retained_post"]["score"]["effective_total"], 23)
+        self.assertIn("voice_fidelity", trace["final"]["warnings"])
         self.assertNotIn("no_ai_slop_artisanal", invoker.calls)
         diagnostics = trace["writer"]["cycles"]
         self.assertEqual(len(diagnostics), campaign.MAX_CANDIDATE_CYCLES)

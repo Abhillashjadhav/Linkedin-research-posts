@@ -2,7 +2,7 @@
   "metadata": {
     "contract_id": "linkedin-post-contract",
     "schema_version": 1,
-    "version": "1.6.4",
+    "version": "1.6.5",
     "status": "APPROVED",
     "purpose": "One product and runtime contract for discovery, evidence, selection, drafting, evaluation, repair, packaging, and release, with route-specific delivery outcomes.",
     "hash_algorithm": "sha256",
@@ -15,7 +15,7 @@
     "runtime_slo_seconds": 480,
     "release_success": {
       "required_consecutive_live_runs": 3,
-      "successful_run_definition": "A single-topic daily draft run delivers a validated, factually supported post with source provenance and secure private storage. Critic scores and editorial findings may be NOT_EVALUATED or below target and remain visible warnings. The campaign route retains its own blocking acceptance. Publication remains manual."
+      "successful_run_definition": "A single-topic daily or campaign-day draft run delivers a validated, factually supported post with source provenance and secure private storage. Critic scores and editorial findings may be NOT_EVALUATED or below target and remain visible warnings. Optional comment, visual, and Resonance failures do not erase a retained safe post. Publication remains manual."
     }
   },
   "definitions": {
@@ -491,8 +491,8 @@
     "preserve_passing_mandatory_floors": true,
     "never_lower_a_floor_during_a_run": true,
     "never_change_the_locked_thesis_without_a_recorded_claim_support_decision": true,
-    "campaign_and_single_post_use_same_policy": false,
-    "on_exhaustion": "Single-topic daily draft only: complete with warnings and return the strongest factually supported draft, scorecards when available, unmet score targets and editorial findings. Exit successfully only after secure artifact delivery; do not claim an unevaluated or below-target writing score passed. Campaign runs may remain BLOCKED with no delivered draft. Publication remains manual.",
+    "campaign_and_single_post_use_same_policy": true,
+    "on_exhaustion": "Single-topic daily and campaign-day drafts complete with warnings and return the strongest factually supported draft, scorecards when available, unmet score targets and editorial findings. Exit successfully only after secure artifact delivery; do not claim an unevaluated or below-target writing score passed. A campaign day without a safe post remains BLOCKED. Publication remains manual.",
     "priority": "axis_targets_then_stop"
   },
   "acceptance": {
