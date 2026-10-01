@@ -10,7 +10,6 @@ import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
-from urllib.parse import urlsplit, urlunsplit
 
 from . import acceptance_policy, anti_slop, package as approval_package
 from . import performance, storage, workflow
@@ -245,6 +244,90 @@ def _manifest(document: str, package_path: Path) -> dict[str, object]:
     return manifest
 
 
+def _verify_frozen_citations(
+    documents: Mapping[str, str], evidence: Sequence[Mapping[str, object]]
+) -> None:
+    """Bind copy-ready citations to exact identities without exposing private queries."""
+
+    expected_sources, _public_proof = approval_package._public_sources(evidence, None)
+    source_ids_by_url = {
+        str(item["private_source"]): str(item["id"]) for item in expected_sources
+    }
+    expected_title_changes: dict[str, dict[str, object]] = {}
+    for item in expected_sources:
+        display = (
+            str(item["source"])
+            if item["source"] is not None
+            else approval_package.CITATION_REVIEW_NOTE
+        )
+        original_title = str(item["title"])
+        title, count = workflow.redact_query_urls(original_title, source_ids_by_url)
+        if count:
+            expected_title_changes[f"source.{item['id']}.title"] = {
+                "original_sha256": hashlib.sha256(original_title.encode()).hexdigest(),
+                "exported_sha256": hashlib.sha256(title.encode()).hexdigest(),
+                "redactions": count,
+            }
+        source_section = (
+            f"## `{item['id']}`\n\nTitle:\n\n"
+            + approval_package._markdown_literal(title)
+            + "\n\n- URL:\n\n"
+            + approval_package._markdown_literal(display)
+        )
+        if source_section not in documents["sources.md"]:
+            raise workflow.WorkflowError(
+                "Frozen package source index does not match the evidence manifest."
+            )
+    try:
+        evaluation = json.loads(documents["evaluation.json"])
+    except (json.JSONDecodeError, RecursionError) as exc:
+        raise workflow.WorkflowError("Frozen package evaluation is malformed.") from exc
+    comment = evaluation.get("source_comment") if isinstance(evaluation, Mapping) else None
+    if not isinstance(comment, Mapping):
+        raise workflow.WorkflowError("Frozen package citation identity is missing.")
+    metadata_export = evaluation.get("citation_metadata_export")
+    metadata_fields = (
+        metadata_export.get("fields") if isinstance(metadata_export, Mapping) else None
+    )
+    if expected_title_changes and (
+        not isinstance(metadata_fields, Mapping)
+        or any(metadata_fields.get(key) != value for key, value in expected_title_changes.items())
+    ):
+        raise workflow.WorkflowError("Frozen package source title export is unbound.")
+    expected_digests = {
+        str(item["id"]): str(item["source_url_sha256"]) for item in expected_sources
+    }
+    expected_urls = [str(item["source"]) for item in expected_sources if item["source"] is not None]
+    expected_review_ids = [str(item["id"]) for item in expected_sources if item["source"] is None]
+    recorded_digests = comment.get("private_source_url_sha256")
+    if recorded_digests is None and not expected_review_ids:
+        # Existing query-free packages predate the private digest binding.
+        recorded_digests = expected_digests
+    if (
+        recorded_digests != expected_digests
+        or comment.get("selected_source_urls") != expected_urls
+        or comment.get("citation_review_source_ids", []) != expected_review_ids
+        or comment.get("status")
+        != ("CITATION_REVIEW_REQUIRED" if expected_review_ids else "SOURCE_URLS_PRESENT")
+        or documents["source-comment.md"]
+        != approval_package._source_comment_text(expected_urls, expected_review_ids)
+    ):
+        raise workflow.WorkflowError("Frozen package citations do not match private source identities.")
+
+
+def _require_unredacted_candidate_export(documents: Mapping[str, str]) -> None:
+    """Do not rescore a rendered draft as though it were the scored original."""
+
+    if (
+        "candidate_export" in json.loads(documents["evaluation.json"])
+        or "[citation URL for " in documents["candidates.md"]
+        or "[query URL withheld for citation review]" in documents["candidates.md"]
+    ):
+        raise workflow.WorkflowError(
+            "Frozen candidate text was redacted for citation review and cannot be rescored."
+        )
+
+
 def _load_context(args: object) -> dict[str, object]:
     package_path, documents = _read_package_documents(getattr(args, "package"))
     manifest = _manifest(documents["manifest.json"], package_path)
@@ -265,21 +348,13 @@ def _load_context(args: object) -> dict[str, object]:
     missing = [str(url) for url in source_urls if str(url) not in returned]
     if missing:
         raise workflow.WorkflowError(
-            "Selected source URL is missing from the private ledger: "
-            + ", ".join(missing)
-            + "."
+            f"{len(missing)} selected source URL(s) are missing from the private ledger."
         )
     evidence = workflow.build_drafting_evidence(
         items, topic_slug=str(manifest["topic_slug"]), include_all=True
     )
-    for item in evidence:
-        source = str(item["source"])
-        parts = urlsplit(source)
-        public_source = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
-        if f"## `{item['id']}`" not in documents["sources.md"] or f"    {public_source}" not in documents["sources.md"]:
-            raise workflow.WorkflowError(
-                "Frozen package source index does not match the evidence manifest."
-            )
+    _verify_frozen_citations(documents, evidence)
+    _require_unredacted_candidate_export(documents)
     brief = _parse_brief(
         documents["brief.md"], manifest=manifest, strategy_inputs=strategy_inputs
     )

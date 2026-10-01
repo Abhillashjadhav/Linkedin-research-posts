@@ -772,6 +772,43 @@ def canonicalise_url(url: str) -> str:
 canonicalize_url = canonicalise_url
 
 
+_QUERY_TEXT_URL = re.compile(
+    r"(?<![@\w])(?:https?://|(?:www\.)?[a-z0-9][a-z0-9.-]*\.[a-z]{2,})"
+    r"[^\s<>\"']*",
+    flags=re.IGNORECASE,
+)
+
+
+def redact_query_urls(
+    text: str, source_ids_by_url: Mapping[str, str] | None = None
+) -> tuple[str, int]:
+    """Withhold query-bearing links in prose while retaining its surrounding text."""
+
+    redactions = 0
+    identities = source_ids_by_url or {}
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal redactions
+        raw = match.group(0)
+        if "?" not in raw:
+            return raw
+        url = raw.rstrip(".,;:!?)>]}")
+        redactions += 1
+        candidate = url if url.lower().startswith(("http://", "https://")) else f"https://{url}"
+        try:
+            source_id = identities.get(canonicalise_url(candidate))
+        except ValueError:
+            source_id = None
+        marker = (
+            f"[citation URL for {source_id} requires review]"
+            if source_id is not None
+            else "[query URL withheld for citation review]"
+        )
+        return marker + raw[len(url):]
+
+    return _QUERY_TEXT_URL.sub(replace, text), redactions
+
+
 def normalise_content(title: str, body: str) -> str:
     """Normalize the body as the dedup unit, with title as an honest fallback."""
 
