@@ -921,7 +921,7 @@ def _render_artifact(
     if artifact_format == "DIAGRAM":
         svg, layout = _render_svg_diagram(panels)
         name = "artifact-diagram.svg"
-        (directory / name).write_text(svg, encoding="utf-8")
+        _private_text(directory / name, svg)
         return [name], [layout]
     paths: list[str] = []
     layouts: list[dict[str, object]] = []
@@ -933,7 +933,7 @@ def _render_artifact(
             artifact_format=artifact_format,
         )
         name = f"artifact-{index:02d}.svg"
-        (directory / name).write_text(svg, encoding="utf-8")
+        _private_text(directory / name, svg)
         paths.append(name)
         layouts.append(layout)
     return paths, layouts
@@ -986,6 +986,109 @@ def _score_trace(score: Mapping[str, object]) -> dict[str, object]:
     }
 
 
+def _retain_grounded_post(
+    trace: dict[str, object], candidate: Mapping[str, object],
+    gates: Mapping[str, object], evidence: Sequence[Mapping[str, object]],
+    directory: Path, score: Mapping[str, object] | None = None,
+) -> None:
+    """Checkpoint a factually safe post before any optional model evaluation."""
+    if acceptance_policy.delivery_safety_failures(gates):
+        raise workflow.WorkflowError("Campaign post failed factual safety validation.")
+    claim_ids = candidate.get("claim_ids")
+    source_urls = list(dict.fromkeys(
+        str(item["source"])
+        for item in evidence
+        if isinstance(claim_ids, list) and item.get("id") in claim_ids
+    ))
+    if not source_urls:
+        raise workflow.WorkflowError("Campaign post has no attributable source URL.")
+    text = str(candidate["text"])
+    if not text.strip():
+        raise workflow.WorkflowError("Campaign post is blank.")
+    score_trace = _score_trace(score) if score is not None else None
+    style_findings = [
+        {"code": finding.code, "excerpt": finding.excerpt}
+        for finding in anti_slop.audit(text)
+    ]
+    retained = {
+        "status": "GROUNDED_DRAFT",
+        "candidate_id": candidate["id"],
+        "text": text,
+        "score": score_trace,
+        "gates": dict(gates),
+        "anti_slop_findings": style_findings,
+        "source_urls": source_urls,
+        "artifact_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+    }
+    # Persist before Critic, comment, or visual calls: their failure cannot erase
+    # the first useful post. The checkpoint is private and never authorizes posting.
+    _private_text(directory / "retained-post.md", _retained_markdown(retained))
+    trace["retained_post"] = retained
+
+
+def _retained_markdown(retained: Mapping[str, object]) -> str:
+    score = retained.get("score")
+    total = score.get("effective_total") if isinstance(score, Mapping) else None
+    rating = f"{total}/25" if type(total) is int else "NOT_EVALUATED"
+    sources = retained.get("source_urls", [])
+    lines = [
+        "# Campaign post draft — human review required", "",
+        "Writing score: " + rating,
+        "Editorial scores and style checks are advisory. Verify every fact before use.",
+        "Human approval: NOT_APPROVED", "Publishing: DISABLED", "",
+        str(retained["text"]).rstrip(), "", "Sources:",
+    ]
+    if isinstance(sources, list):
+        lines.extend(f"- {url}" for url in sources)
+    return "\n".join(lines) + "\n"
+
+
+def _finish_with_warnings(trace: dict[str, object], reason: str) -> dict[str, object]:
+    retained = trace.get("retained_post")
+    if not isinstance(retained, Mapping):
+        trace["final"] = {
+            "status": "BLOCKED", "reason": reason,
+            "human_approval_status": "NOT_APPROVED", "publishing_status": "DISABLED",
+        }
+        return trace
+    artifact = trace.get("artifact")
+    if isinstance(artifact, dict) and "files" in artifact:
+        artifact["files"] = []
+        artifact["status"] = "NOT_DELIVERED"
+    score = retained.get("score")
+    warnings = [reason]
+    gates = retained.get("gates", {})
+    if isinstance(gates, Mapping) and not acceptance_policy.hard_candidate_gates_pass(gates):
+        warnings.append("editorial_gate_findings")
+    findings = retained.get("anti_slop_findings", [])
+    if isinstance(findings, list) and findings:
+        warnings.append("anti_slop_findings")
+    if isinstance(score, Mapping):
+        decision = acceptance_policy.acceptance_decision(
+            score,
+            hard_gates_pass=isinstance(gates, Mapping) and acceptance_policy.hard_candidate_gates_pass(gates),
+            additional_checks_pass=not findings,
+            delivery_safety_pass=True,
+        )
+        warnings.extend(str(item) for item in decision["reasons"])
+        warnings.extend(str(item) for item in decision["advisory_warnings"])
+        trace["post_edit_recritic"].update({  # type: ignore[union-attr]
+            "executed": False, "unchanged_score_reused": True,
+            "score": score, "gates": retained["gates"],
+            "anti_slop_findings": findings, "acceptance": decision,
+        })
+    else:
+        warnings.append("critic_not_evaluated")
+    trace["final"] = {
+        "status": "COMPLETED_WITH_WARNINGS", "candidate_id": retained["candidate_id"],
+        "post": retained["text"], "source_urls": retained["source_urls"],
+        "warnings": list(dict.fromkeys(warnings)),
+        "human_approval_status": "NOT_APPROVED", "publishing_status": "DISABLED",
+        "manual_fact_verification_required": True,
+    }
+    return trace
+
+
 def _summary_markdown(trace: Mapping[str, object]) -> str:
     final = trace.get("final", {})
     post = trace.get("post_edit_recritic", {})
@@ -1009,6 +1112,10 @@ def _summary_markdown(trace: Mapping[str, object]) -> str:
         "## Deterministic gates",
         "",
     ]
+    if isinstance(final, Mapping) and isinstance(final.get("warnings"), list):
+        lines.extend(["## Delivery warnings", ""])
+        lines.extend(f"- {warning}" for warning in final["warnings"])
+        lines.append("")
     if isinstance(gates, Mapping):
         for name in workflow.GATE_ORDER:
             value = gates.get(name, {})
@@ -1050,34 +1157,56 @@ def _summary_markdown(trace: Mapping[str, object]) -> str:
 
 
 def _atomic_json(path: Path, payload: Mapping[str, object]) -> None:
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
+    _private_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def _private_text(path: Path, content: str) -> None:
+    """Write campaign outputs atomically, owner-only, without following output links."""
+    directory = path.parent
+    if directory.is_symlink():
+        raise workflow.WorkflowError("Campaign output directory must not be a symlink.")
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory.chmod(0o700)
+    temporary: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", prefix=".campaign-", suffix=".tmp",
+            dir=directory, delete=False,
+        ) as handle:
+            temporary = handle.name
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except OSError as exc:
+        raise workflow.WorkflowError("Private campaign output could not be written.") from exc
+    finally:
+        if temporary is not None and os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def _persist_day(directory: Path, trace: Mapping[str, object]) -> None:
-    directory.mkdir(parents=True, exist_ok=True)
+    if directory.is_symlink():
+        raise workflow.WorkflowError("Campaign day directory must not be a symlink.")
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory.chmod(0o700)
     _prune_day_outputs(directory, trace)
     _atomic_json(directory / "trace.json", trace)
-    (directory / "summary.md").write_text(_summary_markdown(trace), encoding="utf-8")
+    _private_text(directory / "summary.md", _summary_markdown(trace))
     final = trace.get("final")
     if isinstance(final, Mapping) and final.get("status") == "READY_FOR_HUMAN_REVIEW":
         post = final.get("post")
         comment = final.get("first_comment")
         if isinstance(post, str):
-            (directory / "post.md").write_text(post.rstrip() + "\n", encoding="utf-8")
+            _private_text(directory / "post.md", post.rstrip() + "\n")
         if isinstance(comment, str):
-            (directory / "first-comment.md").write_text(comment.rstrip() + "\n", encoding="utf-8")
+            _private_text(directory / "first-comment.md", comment.rstrip() + "\n")
     else:
         retained = trace.get("retained_post")
         if isinstance(retained, Mapping) and isinstance(retained.get("text"), str):
-            (directory / "retained-post.md").write_text(
-                "# Retained post — downstream package incomplete\n\n"
-                "This scored post passed its writing contract, but the full campaign package is blocked. "
-                "Human approval and publishing remain disabled.\n\n"
-                + str(retained["text"]).rstrip() + "\n",
-                encoding="utf-8",
-            )
+            _private_text(directory / "retained-post.md", _retained_markdown(retained))
+            if isinstance(final, Mapping) and final.get("status") == "COMPLETED_WITH_WARNINGS":
+                _private_text(directory / "post.md", str(retained["text"]).rstrip() + "\n")
 
 
 def _prune_day_outputs(directory: Path, trace: Mapping[str, object]) -> None:
@@ -1085,8 +1214,9 @@ def _prune_day_outputs(directory: Path, trace: Mapping[str, object]) -> None:
 
     final = trace.get("final")
     ready = isinstance(final, Mapping) and final.get("status") == "READY_FOR_HUMAN_REVIEW"
+    delivered = ready or (isinstance(final, Mapping) and final.get("status") == "COMPLETED_WITH_WARNINGS")
     if not ready:
-        for name in ("post.md", "first-comment.md"):
+        for name in (("first-comment.md",) if delivered else ("post.md", "first-comment.md")):
             path = directory / name
             if path.is_file():
                 path.unlink()
@@ -1149,11 +1279,17 @@ def _summary_entry(
     final = item.get("final")
     if not isinstance(final, Mapping):
         raise workflow.WorkflowError("Stored campaign trace has no final status.")
+    scored = item.get("post_edit_recritic", {})
+    retained = item.get("retained_post", {})
+    score = scored.get("score") if isinstance(scored, Mapping) else None
+    if not isinstance(score, Mapping) and isinstance(retained, Mapping):
+        score = retained.get("score")
+    score = score if isinstance(score, Mapping) else {}
     return {
         "day": day,
         "status": reported or final["status"],
-        "critic_effective_total": None if reported else item.get("post_edit_recritic", {}).get("score", {}).get("effective_total"),  # type: ignore[union-attr]
-        "hook_strength": None if reported else item.get("post_edit_recritic", {}).get("score", {}).get("hook_strength"),  # type: ignore[union-attr]
+        "critic_effective_total": None if reported else score.get("effective_total"),
+        "hook_strength": None if reported else score.get("hook_strength"),
         "regeneration_count": None if reported else item.get("regeneration_count"),
         "artifact_format": None if reported else item.get("artifact", {}).get("format"),  # type: ignore[union-attr]
         "visual_qa": None if reported else item.get("visual_qa", {}).get("overall"),  # type: ignore[union-attr]
@@ -1244,6 +1380,7 @@ def _run_day(
     editor_provenance: Mapping[str, str],
     researched_at: str,
     trace: dict[str, object] | None = None,
+    checkpoint_directory: Path | None = None,
 ) -> dict[str, object]:
     if trace is None:
         trace = _new_trace(
@@ -1261,6 +1398,7 @@ def _run_day(
     final_post: dict[str, object] | None = None
     final_score: dict[str, object] | None = None
     final_gates: dict[str, object] | None = None
+    checkpoint = checkpoint_directory or directory
 
     for cycle in range(1, MAX_CANDIDATE_CYCLES + 1):
         candidates = _invoke_writer(
@@ -1275,6 +1413,14 @@ def _run_day(
         trace["writer"]["cycles"].append(  # type: ignore[index]
             {"cycle": cycle, "candidate_ids": [item["id"] for item in candidates]}
         )
+        # Validate and retain the Writer's first grounded draft before optional
+        # narrative editing and scoring can fail or exhaust the budget.
+        if "retained_post" not in trace:
+            for candidate in candidates:
+                writer_gates = _gate_trace(_gate_candidate(candidate, brief=brief, evidence=evidence))
+                if not acceptance_policy.delivery_safety_failures(writer_gates):
+                    _retain_grounded_post(trace, candidate, writer_gates, evidence, checkpoint)
+                    break
         survivors, narrative_trace = _invoke_narrative_editor(
             candidates=candidates,
             brief=brief,
@@ -1285,20 +1431,9 @@ def _run_day(
         trace["narrative_editor"]["cycles"].append(  # type: ignore[index]
             {"cycle": cycle, "results": narrative_trace}
         )
-        scores = _invoke_critic(
-            candidates=survivors,
-            brief=brief,
-            evidence=evidence,
-            config=models.critic,
-            invoker=invoker,
-        )
-        trace["critic"]["cycles"].append(  # type: ignore[index]
-            {"cycle": cycle, "scorecards": [_score_trace(item) for item in scores]}
-        )
         gate_by_id: dict[str, dict[str, object]] = {}
         slop_by_id: dict[str, list[dict[str, str]]] = {}
         candidate_by_id = {str(item["id"]): item for item in survivors}
-        score_by_id = {str(item["candidate_id"]): item for item in scores}
         for candidate in survivors:
             candidate_id = str(candidate["id"])
             gate = _gate_candidate(candidate, brief=brief, evidence=evidence)
@@ -1313,6 +1448,31 @@ def _run_day(
         trace["integrated_anti_slop"]["cycles"].append(  # type: ignore[index]
             {"cycle": cycle, "candidates": slop_by_id}
         )
+        for candidate in survivors:
+            candidate_id = str(candidate["id"])
+            if "retained_post" not in trace and not acceptance_policy.delivery_safety_failures(gate_by_id[candidate_id]):
+                _retain_grounded_post(trace, candidate, gate_by_id[candidate_id], evidence, checkpoint)
+        scores = _invoke_critic(
+            candidates=survivors,
+            brief=brief,
+            evidence=evidence,
+            config=models.critic,
+            invoker=invoker,
+        )
+        trace["critic"]["cycles"].append(  # type: ignore[index]
+            {"cycle": cycle, "scorecards": [_score_trace(item) for item in scores]}
+        )
+        safe_scores = [item for item in scores if not acceptance_policy.delivery_safety_failures(
+            gate_by_id[str(item["candidate_id"])]
+        )]
+        if safe_scores:
+            best = safe_scores[0]
+            retained = trace.get("retained_post")
+            retained_score = retained.get("score") if isinstance(retained, Mapping) else None
+            prior_total = retained_score.get("effective_total") if isinstance(retained_score, Mapping) else None
+            if type(prior_total) is not int or int(best["effective_total"]) > prior_total:
+                chosen_id = str(best["candidate_id"])
+                _retain_grounded_post(trace, candidate_by_id[chosen_id], gate_by_id[chosen_id], evidence, checkpoint, best)
         eligible = [
             item
             for item in scores
@@ -1340,6 +1500,17 @@ def _run_day(
             continue
 
         selected_score = eligible[0]
+        retained = trace.get("retained_post")
+        retained_score = retained.get("score") if isinstance(retained, Mapping) else None
+        retained_total = retained_score.get("effective_total") if isinstance(retained_score, Mapping) else None
+        if type(retained_total) is int and retained_total > int(selected_score["effective_total"]):
+            # A later draft can meet the writing targets yet be weaker overall.
+            # Targets guide repair; they cannot replace the stronger safe draft.
+            trace["regeneration_count"] = cycle - 1
+            return _finish_with_warnings(
+                trace,
+                "A later draft met writing targets, but the stronger grounded draft was retained.",
+            )
         selected = dict(candidate_by_id[str(selected_score["candidate_id"])])
         # The selected post already meets every writing floor. The shared repair
         # contract stops here; another optional edit can only introduce a regression.
@@ -1369,24 +1540,12 @@ def _run_day(
         final_post = selected
         final_score = dict(selected_score)
         final_gates = gate_by_id[str(selected["id"])]
-        trace["retained_post"] = {
-            "status": "WRITING_ACCEPTED",
-            "candidate_id": selected["id"],
-            "text": selected["text"],
-            "score": _score_trace(selected_score),
-            "gates": final_gates,
-        }
+        _retain_grounded_post(trace, selected, final_gates, evidence, checkpoint, selected_score)
         trace["regeneration_count"] = cycle - 1
         break
 
     if final_post is None or final_score is None or final_gates is None:
-        trace["final"] = {
-            "status": "BLOCKED",
-            "reason": "No candidate cleared all four high-bar cycles.",
-            "human_approval_status": "NOT_APPROVED",
-            "publishing_status": "DISABLED",
-        }
-        return trace
+        return _finish_with_warnings(trace, "Writing targets remained unmet after four bounded cycles.")
 
     final_comment: dict[str, object] | None = None
     comment_attempts: list[dict[str, object]] = []
@@ -1438,21 +1597,17 @@ def _run_day(
         comment_attempts.append(attempt_trace)
         if (
             int(review["total"]) >= MIN_COMMENT_SCORE
+            and evidence_gates["passes"] is True
+            and not findings
+            and artisanal_comment["status"] == "PASS"
         ):
             final_comment = {**comment, **attempt_trace}
             break
     trace["first_comment"]["attempts"] = comment_attempts  # type: ignore[index]
     if final_comment is None:
-        trace["final"] = {
-            "status": "BLOCKED",
-            "reason": (
-                f"First comment did not clear its separate {MIN_COMMENT_SCORE}/25 "
-                "review contract. The passing post was retained separately."
-            ),
-            "human_approval_status": "NOT_APPROVED",
-            "publishing_status": "DISABLED",
-        }
-        return trace
+        return _finish_with_warnings(
+            trace, f"First comment failed its separate {MIN_COMMENT_SCORE}/25 score, evidence, or style checks."
+        )
     trace["first_comment"].update(  # type: ignore[union-attr]
         {
             "text": final_comment["text"],
@@ -1472,13 +1627,7 @@ def _run_day(
     )
     trace["artifact"].update(artifact)  # type: ignore[union-attr]
     if not _artifact_policy_passes(str(day["day"]), str(artifact["format"])):
-        trace["final"] = {
-            "status": "BLOCKED",
-            "reason": "Artifact Editor did not satisfy the day-specific artifact requirement.",
-            "human_approval_status": "NOT_APPROVED",
-            "publishing_status": "DISABLED",
-        }
-        return trace
+        return _finish_with_warnings(trace, "Artifact Editor did not satisfy the day-specific artifact requirement.")
     artifact_paths, layouts = _render_artifact(artifact, directory=directory)
     trace["artifact"]["status"] = "PASS"  # type: ignore[index]
     trace["artifact"]["files"] = artifact_paths  # type: ignore[index]
@@ -1498,13 +1647,7 @@ def _run_day(
         )
     trace["visual_qa"].update(visual)  # type: ignore[union-attr]
     if visual["overall"] == "FAIL":
-        trace["final"] = {
-            "status": "BLOCKED",
-            "reason": "Visual QA failed.",
-            "human_approval_status": "NOT_APPROVED",
-            "publishing_status": "DISABLED",
-        }
-        return trace
+        return _finish_with_warnings(trace, "Visual QA failed.")
 
     trace["final"] = {
         "status": "READY_FOR_HUMAN_REVIEW",
@@ -1538,7 +1681,8 @@ def run_campaign(
         root.relative_to(workflow.REPO_ROOT.resolve())
     except ValueError as exc:
         raise workflow.WorkflowError("Campaign output must stay inside the repository.") from exc
-    root.mkdir(parents=True, exist_ok=True)
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    root.chmod(0o700)
     researched_at = spec.get("researched_at")
     if not isinstance(researched_at, str) or not researched_at.strip():
         raise workflow.WorkflowError("Campaign spec needs a researched_at timestamp.")
@@ -1568,7 +1712,10 @@ def run_campaign(
         if only_day is not None and day["day"] != only_day:
             continue
         directory = root / str(day["day"]).casefold()
-        directory.mkdir(parents=True, exist_ok=True)
+        if directory.is_symlink():
+            raise workflow.WorkflowError("Campaign day directory must not be a symlink.")
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory.chmod(0o700)
         trace = _new_trace(
             day,
             models=active_models,
@@ -1591,14 +1738,12 @@ def run_campaign(
                     editor_provenance=provenance,
                     researched_at=researched_at.strip(),
                     trace=trace,
+                    checkpoint_directory=directory,
                 )
             except workflow.WorkflowError as exc:
-                trace["final"] = {
-                    "status": "BLOCKED",
-                    "reason": str(exc),
-                    "human_approval_status": "NOT_APPROVED",
-                    "publishing_status": "DISABLED",
-                }
+                if str(exc).startswith(("Private campaign output", "Campaign output directory")):
+                    raise
+                trace = _finish_with_warnings(trace, f"Campaign evaluation incomplete: {exc}")
             _promote_artifacts(staging, directory, trace)
         _persist_day(directory, trace)
         final = trace.get("final")
@@ -1644,5 +1789,5 @@ def run_campaign(
             f"{item['artifact_format'] or 'n/a'} | {item['visual_qa'] or 'n/a'} |"
         )
     table.extend(["", "Human approval: `NOT_APPROVED`", "", "Publishing: `DISABLED`", ""])
-    (root / "summary.md").write_text("\n".join(table), encoding="utf-8")
+    _private_text(root / "summary.md", "\n".join(table))
     return summary

@@ -7,10 +7,11 @@ LinkedIn Authority OS is a local workflow for researching, drafting, critiquing,
 For trace-first campaign runs, the executable order is:
 
 ```text
-Scout → Thesis → Writer (3) → Narrative Editor → Critic → deterministic gates
-→ integrated Anti-AI-Slop → bounded regeneration if writing floors are unmet
-→ retain passing post → First Comment Writer/Reviewer and separate no-ai-slop edit → Artifact Editor
-→ rendered artifact → Visual QA → human-review package
+Scout → Thesis → Writer (3) → deterministic factual checks → private draft checkpoint
+→ Narrative Editor → deterministic checks → Critic → integrated Anti-AI-Slop
+→ bounded regeneration if writing targets are unmet → retain best grounded post
+→ First Comment Writer/Reviewer and separate no-ai-slop edit (optional) → Artifact Editor
+→ rendered artifact → Visual QA → human-review package or warning-marked post
 ```
 
 Every LLM stage records its runtime, exact model, and reasoning effort. The
@@ -180,14 +181,15 @@ git clone --depth 1 https://github.com/Abhillashjadhav/no-ai-slop.git /tmp/no-ai
   --run-spec campaigns/2026-08-10-to-14/spec.json \
   --trace-output campaigns/2026-08-10-to-14/run \
   --no-ai-slop-skill /tmp/no-ai-slop/SKILL.md \
-  --no-ai-slop-eval /tmp/no-ai-slop/eval.md
+  --no-ai-slop-eval /tmp/no-ai-slop/eval.md \
+  --allow-model-egress
 ```
 
 The coordinator runs each in-scope day independently. Every executed day ends
-in either `READY_FOR_HUMAN_REVIEW` or an explicit `BLOCKED` trace; a preserved
+in `READY_FOR_HUMAN_REVIEW`, `COMPLETED_WITH_WARNINGS` for a safely retained post, or `BLOCKED` when no safe post exists; a preserved
 published day may instead carry an aggregate-only out-of-scope status. The
-coordinator uses the same 17/25 total and named per-axis floors as standalone drafting. The separate first-comment rubric uses an 18/25 total floor while retaining its evidence, anti-slop, and artisanal checks. Rejected prose is omitted from the persisted public trace.
-Once a post clears its writing floors, campaign drafting stops editing that post. If the comment or artifact fails later, the day remains `BLOCKED` but preserves the exact scored post in `trace.json` and `retained-post.md`; this is not a complete or approved package.
+coordinator uses the same 17/25 total and named per-axis floors as standalone drafting. The separate first-comment rubric uses an 18/25 total floor while retaining its evidence, anti-slop, and artisanal checks. Rejected prose is omitted from the persisted private trace.
+Once a post clears its writing floors, campaign drafting stops editing that post. A factually grounded Writer post is privately checkpointed before optional editing and scoring. If writing targets remain unmet, or an optional comment, artifact, visual, or Resonance step fails later, the post remains available with explicit warnings in `post.md`, `retained-post.md`, and `trace.json`. Comment failures never make an unsafe comment publishable. No result approves or publishes the post.
 Visual plans are rendered as repository-native SVG files and must pass both
 layout checks and the separate Visual QA stage.
 
@@ -320,8 +322,7 @@ scores when available, unmet axis targets, and an incomplete-evaluation warning.
 A validated Writer checkpoint can be delivered with Critic score `NOT_EVALUATED`;
 without a safe checkpoint, the failure remains an execution failure. No failed
 evaluation is marked as passed. Malformed Writer or factual output and secure-file
-errors remain failures. The `draft --run-spec` campaign route still uses its own
-blocking acceptance and may end without a delivered draft.
+errors remain failures. The `draft --run-spec` campaign route now also delivers a grounded draft with warnings; it remains `BLOCKED` if no grounded post can be retained.
 Repeated editorial findings never terminate the four-cycle budget early. Editorial findings
 stay advisory and remain visible when writing stops. A rejected edit never
 replaces the retained best candidate. If targets remain unmet after repair, the draft is
