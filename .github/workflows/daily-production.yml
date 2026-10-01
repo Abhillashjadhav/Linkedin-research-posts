@@ -1,0 +1,68 @@
+name: Daily LinkedIn production
+
+on:
+  schedule:
+    # 04:00 IST. Start early so the review bundle is ready before the morning review window.
+    - cron: "30 22 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-linkedin-production
+  cancel-in-progress: false
+
+jobs:
+  produce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      PYTHONPATH: src
+      PYTHONWARNINGS: error
+      CLOUD_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Require cloud model credential
+        shell: bash
+        run: |
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "OPENAI_API_KEY repository secret is required for the cloud Authority OS run." >&2
+            exit 2
+          fi
+
+      - name: Install Codex CLI
+        run: npm install --global @openai/codex
+
+      - name: Verify repository safety boundary
+        run: ./bin/linkedin-os privacy-check
+
+      - name: Run actual Authority OS production pipeline
+        id: production
+        shell: bash
+        run: |
+          set +e
+          python -m authority_os.cloud_daily --run-id "$CLOUD_RUN_ID" --days 7
+          status=$?
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Upload morning review bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linkedin-morning-review-${{ env.CLOUD_RUN_ID }}
+          path: data/private/cloud-daily/${{ env.CLOUD_RUN_ID }}/
+          if-no-files-found: warn
+          retention-days: 1
+          compression-level: 6
