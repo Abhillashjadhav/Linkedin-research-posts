@@ -17,6 +17,7 @@ from . import individual_launch_runtime_tuning
 from . import momentum_surface_parallel
 from . import surface_scout_runtime_tuning
 from . import v1_consumability
+from . import v1_discovery_admission
 
 # Reuse the existing daily discovery contract while swapping only the live-web
 # momentum adapter. All downstream thesis, privacy and publishing boundaries stay
@@ -25,6 +26,7 @@ discovery_runtime_tuning.install()
 surface_scout_runtime_tuning.install()
 individual_launch_runtime_tuning.install()
 v1_consumability.install()
+v1_discovery_admission.install()
 base.momentum = momentum_surface_parallel
 
 _ORIGINAL_COMMAND = base.command
