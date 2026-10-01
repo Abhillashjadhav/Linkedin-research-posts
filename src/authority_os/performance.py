@@ -14,6 +14,7 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Mapping, Sequence
+from urllib.parse import urlsplit
 
 from . import acceptance_policy, package as approval_package, storage, workflow
 
@@ -335,17 +336,30 @@ def _load_package_documents(
         if not isinstance(comment, Mapping) or not isinstance(comment.get("selected_source_urls"), list):
             raise workflow.WorkflowError("The source comment identity is missing.")
         urls = comment["selected_source_urls"]
+        review_ids = comment.get("citation_review_source_ids", [])
+        if not isinstance(review_ids, list) or any(
+            not isinstance(source_id, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", source_id) is None
+            for source_id in review_ids
+        ):
+            raise workflow.WorkflowError("The source comment review identities are invalid.")
+        if comment.get("status") not in {"SOURCE_URLS_PRESENT", "CITATION_REVIEW_REQUIRED"} or (
+            comment.get("status") == "SOURCE_URLS_PRESENT" and (not urls or review_ids)
+        ) or (comment.get("status") == "CITATION_REVIEW_REQUIRED" and not review_ids):
+            raise workflow.WorkflowError("The source comment citation status is invalid.")
         try:
-            valid_urls = bool(urls) and all(
-                isinstance(url, str) and workflow.canonicalise_url(url) == url
+            valid_urls = all(
+                isinstance(url, str)
+                and workflow.canonicalise_url(url) == url
+                and not urlsplit(url).query
                 for url in urls
             )
         except ValueError:
             valid_urls = False
         if not valid_urls:
             raise workflow.WorkflowError("The source comment selected URLs are invalid.")
-        if any(url not in documents["source-comment.md"] for url in urls):
-            raise workflow.WorkflowError("The source comment lost a selected URL.")
+        if documents["source-comment.md"] != approval_package._source_comment_text(urls, review_ids):
+            raise workflow.WorkflowError("The source comment does not match selected citations.")
         for name, field in (("post.md", "post_sha256"), ("source-comment.md", "comment_sha256")):
             if comment.get(field) != hashlib.sha256(documents[name].encode("utf-8")).hexdigest():
                 raise workflow.WorkflowError("The scored post or source comment changed after packaging.")
@@ -368,10 +382,21 @@ def _validate_package_context(
 ) -> dict[str, object]:
     """Validate one explicit candidate against an already anchored package snapshot."""
 
-    if set(manifest) != _MANIFEST_FIELDS or set(evaluation) not in (
-        _EVALUATION_FIELDS, _EVALUATION_FIELDS | {"source_comment"}
+    evaluation_fields = set(evaluation)
+    optional_fields = {"source_comment", "candidate_export", "citation_metadata_export"}
+    if (
+        set(manifest) != _MANIFEST_FIELDS
+        or not _EVALUATION_FIELDS <= evaluation_fields <= _EVALUATION_FIELDS | optional_fields
+        or (
+            ("candidate_export" in evaluation_fields or "citation_metadata_export" in evaluation_fields)
+            and "source_comment" not in evaluation_fields
+        )
     ):
         raise workflow.WorkflowError("The performance package schema is invalid.")
+    if "candidate_export" in evaluation:
+        raise workflow.WorkflowError(
+            "A citation-redacted candidate cannot be treated as the scored publication."
+        )
     if (
         manifest["schema_version"] != approval_package.PACKAGE_SCHEMA_VERSION
         or evaluation["schema_version"] != approval_package.PACKAGE_SCHEMA_VERSION

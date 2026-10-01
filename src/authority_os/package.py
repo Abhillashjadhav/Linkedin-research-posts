@@ -12,6 +12,7 @@ import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
+from urllib.parse import urlsplit
 
 from . import acceptance_policy, workflow
 
@@ -37,6 +38,19 @@ LEGACY_PACKAGE_FILES = {
     if key not in {"post", "source_comment"}
 }
 PACKAGE_MODES = {"live", "fixture"}
+CITATION_REVIEW_NOTE = "Citation URL unresolved; verify the public link from private evidence."
+
+
+def _source_comment_text(source_urls: Sequence[str], review_source_ids: Sequence[str]) -> str:
+    if review_source_ids:
+        return (
+            "Citation review required; do not publish this source comment.\n"
+            + ("Verified public URLs:\n" + "\n".join(source_urls) + "\n" if source_urls else "")
+            + "Resolve source IDs: " + ", ".join(review_source_ids)
+        )
+    return "Sources for this post:\n" + "\n".join(source_urls)
+
+
 REVIEW_STATUSES = {
     "READY_FOR_HUMAN_REVIEW",
     "BLOCKED",
@@ -317,7 +331,9 @@ def _public_sources(
     evidence: Sequence[Mapping[str, object]],
     proof: workflow.LoadedProof | None,
 ) -> tuple[list[dict[str, object]], dict[str, object] | None]:
-    projected = workflow._writer_evidence_projection(evidence)
+    # The Writer receives query-free URLs. Packaging instead starts from the
+    # local-only exact identities, then admits only shareable citation links.
+    projected = workflow._gate_evidence_projection(evidence)
     sources: list[dict[str, object]] = []
     for item in projected:
         source_id = _safe_text(item["id"], label="source ID", limit=64)
@@ -325,11 +341,19 @@ def _public_sources(
             raise workflow.WorkflowError(
                 "Approval package source IDs must be safe machine-readable values."
             )
+        exact_url = _safe_text(item["source"], label="source URL", limit=2_048)
+        citation_url = exact_url if not urlsplit(exact_url).query else None
         sources.append(
             {
                 "id": source_id,
                 "title": _safe_text(item["title"], label="source title", limit=300),
-                "source": _safe_text(item["source"], label="source URL", limit=2_048),
+                "source": (
+                    _safe_text(citation_url, label="source URL", limit=2_048)
+                    if citation_url is not None
+                    else None
+                ),
+                "source_url_sha256": hashlib.sha256(exact_url.encode("utf-8")).hexdigest(),
+                "private_source": exact_url,
                 "source_quality": item["source_quality"],
                 "body_read": item["body_read"],
             }
@@ -477,15 +501,120 @@ def _package_data(
     return manifest, evaluation, rendered
 
 
-def _render_files(
+def _export_safe_views(
     *,
-    manifest: Mapping[str, object],
+    manifest: dict[str, object],
     brief: Mapping[str, object],
     candidates: Sequence[Mapping[str, object]],
-    evaluation: Mapping[str, object],
+    evaluation: dict[str, object],
+    sources: Sequence[Mapping[str, object]],
+    public_proof: Mapping[str, object] | None,
+) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]], dict[str, object] | None]:
+    """Sanitize every human-text export without changing scored input in memory."""
+
+    source_ids_by_url = {
+        str(source["private_source"]): str(source["id"]) for source in sources
+    }
+    metadata_changes: dict[str, dict[str, object]] = {}
+
+    def redact(path: str, value: object) -> str:
+        original = str(value)
+        exported, count = workflow.redact_query_urls(original, source_ids_by_url)
+        if count:
+            metadata_changes[path] = {
+                "original_sha256": hashlib.sha256(original.encode()).hexdigest(),
+                "exported_sha256": hashlib.sha256(exported.encode()).hexdigest(),
+                "redactions": count,
+            }
+        return exported
+
+    safe_brief = dict(brief)
+    for name in (
+        "goal_purpose", "target_reader", "reader_problem", "core_hypothesis",
+        "product_decision", "authority_statement",
+    ):
+        safe_brief[name] = redact(f"brief.{name}", brief[name])
+    analysis = dict(brief["analysis"])  # type: ignore[arg-type]
+    for name in ("why_now", "dominant_take", "missing_angle"):
+        analysis[name] = redact(f"brief.analysis.{name}", analysis[name])
+    safe_brief["analysis"] = analysis
+
+    safe_sources: list[dict[str, object]] = []
+    for source in sources:
+        source_copy = dict(source)
+        source_copy["title"] = redact(f"source.{source['id']}.title", source["title"])
+        safe_sources.append(source_copy)
+
+    safe_proof = dict(public_proof) if public_proof is not None else None
+    if safe_proof is not None:
+        safe_proof["public_claim"] = redact("proof.public_claim", safe_proof["public_claim"])
+        safe_proof["attested_personal_sentences"] = [
+            redact(f"proof.attestation.{index}", sentence)
+            for index, sentence in enumerate(safe_proof["attested_personal_sentences"])
+        ]
+
+    safe_candidates: list[dict[str, object]] = []
+    original_text_digests: dict[str, str] = {}
+    exported_text_digests: dict[str, str] = {}
+    original_angle_digests: dict[str, str] = {}
+    exported_angle_digests: dict[str, str] = {}
+    redaction_counts: dict[str, int] = {}
+    for candidate in candidates:
+        candidate_id = str(candidate["id"])
+        original_angle = str(candidate["angle"])
+        original_text = str(candidate["text"])
+        exported_angle, angle_count = workflow.redact_query_urls(
+            original_angle, source_ids_by_url
+        )
+        exported_text, text_count = workflow.redact_query_urls(
+            original_text, source_ids_by_url
+        )
+        safe_candidates.append({**candidate, "angle": exported_angle, "text": exported_text})
+        original_angle_digests[candidate_id] = hashlib.sha256(original_angle.encode()).hexdigest()
+        exported_angle_digests[candidate_id] = hashlib.sha256(exported_angle.encode()).hexdigest()
+        original_text_digests[candidate_id] = hashlib.sha256(original_text.encode()).hexdigest()
+        exported_text_digests[candidate_id] = hashlib.sha256(exported_text.encode()).hexdigest()
+        redaction_counts[candidate_id] = angle_count + text_count
+
+    if metadata_changes:
+        evaluation["citation_metadata_export"] = {
+            "status": "QUERY_URLS_REDACTED_FOR_DISPLAY",
+            "fields": metadata_changes,
+        }
+    if any(redaction_counts.values()):
+        manifest["recommended_candidate_id"] = None
+        evaluation["recommended_candidate_id"] = None
+        if manifest["mode"] == "live":
+            manifest["review_status"] = "BLOCKED"
+            evaluation["review_status"] = "BLOCKED"
+        evaluation["candidate_export"] = {
+            "status": "QUERY_URLS_REDACTED_FOR_CITATION_REVIEW",
+            "original_text_sha256": original_text_digests,
+            "exported_text_sha256": exported_text_digests,
+            "original_angle_sha256": original_angle_digests,
+            "exported_angle_sha256": exported_angle_digests,
+            "redaction_counts": redaction_counts,
+        }
+    return safe_brief, safe_candidates, safe_sources, safe_proof
+
+
+def _render_files(
+    *,
+    manifest: dict[str, object],
+    brief: Mapping[str, object],
+    candidates: Sequence[Mapping[str, object]],
+    evaluation: dict[str, object],
     sources: Sequence[Mapping[str, object]],
     public_proof: Mapping[str, object] | None,
 ) -> dict[str, str]:
+    brief, candidates, sources, public_proof = _export_safe_views(
+        manifest=manifest,
+        brief=brief,
+        candidates=candidates,
+        evaluation=evaluation,
+        sources=sources,
+        public_proof=public_proof,
+    )
     limitations = brief["evidence_status"]["limitations"]  # type: ignore[index]
     limitations_text = ", ".join(str(item) for item in limitations) or "none"
     brief_markdown = f"""# Strategy brief
@@ -559,6 +688,11 @@ Text:
         "Raw source bodies and evidence claims are intentionally excluded.\n",
     ]
     for source in sources:
+        citation_display = (
+            str(source["source"])
+            if source["source"] is not None
+            else CITATION_REVIEW_NOTE
+        )
         source_sections.append(
             f"""## `{source['id']}`
 
@@ -568,7 +702,7 @@ Title:
 
 - URL:
 
-{_markdown_literal(str(source['source']))}
+{_markdown_literal(citation_display)}
 - Quality: `{source['source_quality']}`
 - Full body read: `{'yes' if source['body_read'] else 'no'}`
 """
@@ -599,18 +733,21 @@ Attested public sentences:
     sources_markdown = "\n".join(source_sections)
 
     recommended_id = manifest["recommended_candidate_id"]
-    # A blocked or fixture package retains its exact scored leader for review;
-    # status in the manifest remains authoritative. No editorial comment score
-    # is added to the approved five-axis post acceptance contract.
+    # A blocked or fixture package retains the score leader's identity and
+    # export-safe draft for review. Its original scored text digest remains
+    # separate when links were redacted; no editorial comment score is added.
     retained_id = recommended_id or evaluation["score_leader_id"]
     retained = next(candidate for candidate in candidates if candidate["id"] == retained_id)
-    source_urls = [str(source["source"]) for source in sources]
-    if not source_urls:
-        raise workflow.WorkflowError("Source comment needs selected evidence URLs.")
-    source_comment = "Sources for this post:\n" + "\n".join(source_urls)
+    source_urls = [str(source["source"]) for source in sources if source["source"] is not None]
+    review_source_ids = [str(source["id"]) for source in sources if source["source"] is None]
+    source_comment = _source_comment_text(source_urls, review_source_ids)
     evaluation["source_comment"] = {
-        "status": "SOURCE_URLS_PRESENT",
+        "status": "CITATION_REVIEW_REQUIRED" if review_source_ids else "SOURCE_URLS_PRESENT",
         "selected_source_urls": source_urls,
+        "citation_review_source_ids": review_source_ids,
+        "private_source_url_sha256": {
+            str(source["id"]): str(source["source_url_sha256"]) for source in sources
+        },
         "post_candidate_id": retained_id,
         "post_sha256": hashlib.sha256(str(retained["text"]).encode("utf-8")).hexdigest(),
         "comment_sha256": hashlib.sha256(source_comment.encode("utf-8")).hexdigest(),
@@ -633,6 +770,17 @@ Candidate: `{recommended_id}`
 No actionable recommendation is made from synthetic fixture data. Eligible IDs in the
 evaluation exist only to exercise the deterministic package contract.
 """
+    elif "candidate_export" in evaluation:
+        recommendation = f"""## Draft retained for citation review
+
+No copy-ready recommendation is made because inline query-addressed citation
+links were withheld. The grounded draft is retained for private review, with
+its exported text distinguished from the originally scored candidate.
+
+Candidate: `{retained_id}`
+
+{_markdown_literal(str(retained['text']))}
+"""
     else:
         recommendation = """## Recommendation
 
@@ -640,8 +788,28 @@ No candidate met both the Critic advancement bar and every required local gate. 
 package is blocked and needs a new drafting run rather than approval.
 """
     source_index = "\n\n".join(
-        f"- `{source['id']}`\n\n{_markdown_literal(str(source['source']))}"
+        f"- `{source['id']}`\n\n"
+        + _markdown_literal(
+            str(source["source"])
+            if source["source"] is not None
+            else CITATION_REVIEW_NOTE
+        )
         for source in sources
+    )
+    metadata_export = evaluation.get("citation_metadata_export")
+    metadata_fields = (
+        metadata_export.get("fields") if isinstance(metadata_export, Mapping) else None
+    )
+    citation_display_notice = (
+        "- Review query links withheld from display fields: "
+        + ", ".join(f"`{name}`" for name in sorted(metadata_fields))
+        + ".\n"
+        if isinstance(metadata_fields, Mapping) and metadata_fields
+        else ""
+    )
+    citation_link_notice = (
+        "- Resolve incomplete citation URLs before copying source links.\n"
+        if review_source_ids else ""
     )
     final_markdown = f"""# Human-review content package
 
@@ -660,7 +828,7 @@ package is blocked and needs a new drafting run rather than approval.
 ## Human action required
 
 - Verify every factual statement against the public sources and any supplied public proof.
-- Confirm the candidate still matches the intended reader, voice, context, and format.
+{citation_display_notice}{citation_link_notice}- Confirm the candidate still matches the intended reader, voice, context, and format.
 - Record an explicit human decision outside this runtime.
 - If approved, publish manually through a separate human-controlled process.
 
