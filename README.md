@@ -8,14 +8,14 @@ For trace-first campaign runs, the executable order is:
 
 ```text
 Scout → Thesis → Writer (3) → Narrative Editor → Critic → deterministic gates
-→ integrated Anti-AI-Slop → bounded regeneration → external no-ai-slop edit
-→ post-edit Re-Critic/gates → First Comment Writer/Reviewer → Artifact Editor
+→ integrated Anti-AI-Slop → bounded regeneration if writing floors are unmet
+→ retain passing post → First Comment Writer/Reviewer and separate no-ai-slop edit → Artifact Editor
 → rendered artifact → Visual QA → human-review package
 ```
 
 Every LLM stage records its runtime, exact model, and reasoning effort. The
 preferred campaign hierarchy is GPT-5.6 Sol/high for Writer, GPT-5.6 Sol/max
-for Narrative Editor and the external artisanal edit, and GPT-5.6 Sol/ultra
+for Narrative Editor and the first-comment artisanal edit, and GPT-5.6 Sol/ultra
 for Critic and review stages. The Critic is never weaker than the Writer.
 
 ## See the product before installing
@@ -94,8 +94,8 @@ credible sources can survive the complete handoff.
 See [the discovery decision map](docs/DISCOVERY_DECISION_MAP.md) for the active
 runtime overrides, stop conditions, and remaining policy discrepancies.
 
-If a run stops at Evidence verification, resume from its preserved run folder
-without repeating conversation discovery or topic admission:
+If `discover --generate-post` stops, resume from its preserved private run folder
+into a new output folder:
 
 ```bash
 ./bin/linkedin-os discover \
@@ -108,9 +108,28 @@ without repeating conversation discovery or topic admission:
   --generate-post
 ```
 
-The resume keeps the original `as-of` timestamp, admitted topics, and
-representative URLs. It reuses exact body-verified private evidence first and
-starts up to three targeted verification workers only when evidence is still missing.
+Current runs reuse completed conversation discovery, topic admission, evidence
+verification, Topic Value, and thesis stages in order when their input, active
+contract, runtime/prompt implementation, selected evidence, and output hashes
+still match. The original run remains intact. During drafting, a completed
+structured model-call outcome is durably recorded and replayed only for the same
+request and call position. A handled optional-stage failure followed by completed
+work is replayed too; a terminal failed call or an interrupted call without a
+durable result is retried. Reconstructing drafting can create new local package
+artifacts while preserving the exact scored text and selected source URLs.
+This is not exactly-once provider execution.
+
+The approved 480-second deadline covers each `discover --generate-post`
+invocation, including its drafting child. An expiration records
+`TIME_BUDGET_EXCEEDED` and a resume command. A resumed invocation gets its own
+budget; its elapsed time is not a fresh end-to-end live SLO measurement. Direct
+standalone `draft` has no invocation-wide deadline or cross-run call replay.
+No live 480-second journey is established by offline tests.
+
+Legacy runs without the new stage checkpoints retain the evidence-verification
+resume boundary. The resume keeps the original `as-of` timestamp, admitted
+topics, and representative URLs. It reuses exact body-verified private evidence
+first and starts up to three targeted verification workers only when evidence is still missing.
 Workers verify disjoint batches of the admitted ranked leads under one shared
 180-second deadline, with no serial retry. Verified results are deduplicated and
 kept in ranked-batch order within the seven-source budget. A timed-out worker is
@@ -168,12 +187,13 @@ The coordinator runs each in-scope day independently. Every executed day ends
 in either `READY_FOR_HUMAN_REVIEW` or an explicit `BLOCKED` trace; a preserved
 published day may instead carry an aggregate-only out-of-scope status. The
 coordinator uses the same 17/25 total and named per-axis floors as standalone drafting. The separate first-comment rubric uses an 18/25 total floor while retaining its evidence, anti-slop, and artisanal checks. Rejected prose is omitted from the persisted public trace.
+Once a post clears its writing floors, campaign drafting stops editing that post. If the comment or artifact fails later, the day remains `BLOCKED` but preserves the exact scored post in `trace.json` and `retained-post.md`; this is not a complete or approved package.
 Visual plans are rendered as repository-native SVG files and must pass both
 layout checks and the separate Visual QA stage.
 
 After a complete five-day run, `--campaign-day Tuesday` (or another weekday)
 reruns only that day and rebuilds the aggregate from all five persisted traces.
-The rerun clears only that day's replaceable post, comment, and SVG outputs, so
+The rerun clears only that day's replaceable post, retained-post, comment, and SVG outputs, so
 stale artifacts cannot survive a changed result.
 
 ## What the workflow produces
@@ -200,9 +220,9 @@ flowchart LR
     C --> D[Three candidates]
     D --> E[Narrative Editor]
     E --> F[Critic and deterministic gates]
-    F --> G[Integrated and artisanal anti-slop]
+    F --> G[Integrated anti-slop diagnostics]
     G -->|Below locked bar| D
-    G -->|17+ and all axis floors pass| H[First comment and artifact]
+    G -->|17+ and all axis floors pass; post retained| H[First comment and artifact]
     H --> I[Visual QA]
     I --> J[Human review package]
     J --> K[Manual fact verification]
@@ -294,12 +314,14 @@ sections using the exact Critic anchors and preserve passing sections. Every ret
 deficit without worsening another. A lower total is rejected even if the hook improves.
 Once all targets are met (4 + 4 + 3 + 3 + 3 = 17), stop immediately. Before then, retain a repair only if its total strictly increases, an unmet axis improves, and no axis decreases.
 
-If a later model call times out after a candidate has already been scored, the
-live quality loop delivers that retained draft privately with its original scores,
-unmet axis targets, and an explicit interrupted-evaluation warning. It never
-accepts an unscored revision or claims the timed-out evaluation passed. Without
-a previously scored candidate, a timeout remains an execution failure. Malformed
-responses and secure-file errors also remain failures.
+For the single-topic daily draft path, a later Critic or optional Resonance failure
+after a safe draft was retained delivers that draft privately with its original
+scores when available, unmet axis targets, and an incomplete-evaluation warning.
+A validated Writer checkpoint can be delivered with Critic score `NOT_EVALUATED`;
+without a safe checkpoint, the failure remains an execution failure. No failed
+evaluation is marked as passed. Malformed Writer or factual output and secure-file
+errors remain failures. The `draft --run-spec` campaign route still uses its own
+blocking acceptance and may end without a delivered draft.
 Repeated editorial findings never terminate the four-cycle budget early. Editorial findings
 stay advisory and remain visible when writing stops. A rejected edit never
 replaces the retained best candidate. If targets remain unmet after repair, the draft is

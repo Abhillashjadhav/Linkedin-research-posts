@@ -159,7 +159,7 @@ class AcceptanceTests(unittest.TestCase):
                     quality_optimizer.candidate_is_acceptable(candidate(score, axes))
                 )
 
-    def test_perfect_25_with_failed_honesty_gate_advances_with_finding(self) -> None:
+    def test_perfect_25_cannot_waive_failed_honesty(self) -> None:
         item = candidate(
             25,
             {
@@ -171,7 +171,7 @@ class AcceptanceTests(unittest.TestCase):
             },
             gates_pass=False,
         )
-        self.assertTrue(quality_optimizer.candidate_is_acceptable(item))
+        self.assertFalse(quality_optimizer.candidate_is_acceptable(item))
 
     def test_advisory_label_cannot_turn_honesty_into_a_pass(self) -> None:
         item = candidate(
@@ -192,7 +192,7 @@ class AcceptanceTests(unittest.TestCase):
             passes_required_gates=True,
             gate_reasons=("unsupported-factual-marker",),
         )
-        self.assertTrue(quality_optimizer.candidate_is_acceptable(item))
+        self.assertFalse(quality_optimizer.candidate_is_acceptable(item))
 
     def test_package_floor_uses_same_axis_and_gate_contract(self) -> None:
         scorecard = {
@@ -241,13 +241,57 @@ class AcceptanceTests(unittest.TestCase):
             quality_optimizer._scorecard_is_acceptable(scorecard, nested)  # type: ignore[attr-defined]
         )
         nested["gates"]["honesty"] = {"status": "FAIL"}
-        self.assertTrue(
+        self.assertFalse(
             quality_optimizer._scorecard_is_acceptable(scorecard, nested)  # type: ignore[attr-defined]
         )
 
 
 class RepairStateTests(unittest.TestCase):
-    def test_lower_total_cannot_replace_seed_even_when_hard_gates_improve(self) -> None:
+    def test_replaying_a_completed_rejection_reconstructs_exact_cycle_two_feedback(self) -> None:
+        from authority_os.model_runtime import ModelTimeoutError
+        weak = candidate(
+            16, dict(zip(workflow.CRITIC_AXES, (4, 3, 3, 3, 3), strict=True)),
+            text="Keep this exact grounded but weak first-cycle text.",
+        )
+        improved = candidate(
+            17, dict(zip(workflow.CRITIC_AXES, (4, 3, 3, 3, 4), strict=True)),
+            text="The second cycle repairs the exact voice deficit.",
+        )
+
+        def run_once(interrupt: bool) -> tuple[int, object]:
+            received: list[object] = []
+
+            def scored_attempt(_args: object, feedback: object) -> quality_cli.AttemptResult:
+                received.append(feedback)
+                if len(received) == 1:
+                    return attempt(weak)
+                if interrupt:
+                    raise ModelTimeoutError("Critic call interrupted before a durable result.")
+                return attempt(improved)
+
+            with (
+                patch.object(quality_cli, "_run_attempt", side_effect=scored_attempt),
+                patch.object(quality_cli, "_qualifying_candidates", quality_optimizer._qualifying_candidates),
+                patch.object(quality_cli, "_quality_feedback", quality_optimizer._quality_feedback),
+                patch.object(quality_optimizer.best_effort, "write", return_value=workflow.REPO_ROOT / "data/private/retained.md"),
+                patch.object(v1_completion, "record_decision"),
+                redirect_stdout(io.StringIO()),
+            ):
+                result = quality_optimizer._command_draft(
+                    SimpleNamespace(dry_run=False, package=False, run_spec=None)
+                )
+            self.assertEqual(len(received), 2)
+            return result, received[1]
+
+        interrupted_result, original_feedback = run_once(True)
+        resumed_result, replay_feedback = run_once(False)
+        self.assertEqual(interrupted_result, 0)
+        self.assertEqual(resumed_result, 0)
+        self.assertEqual(replay_feedback, original_feedback)
+        self.assertEqual(replay_feedback["rejected_cycle"], 1)
+        self.assertEqual(replay_feedback["repair_seed"]["text"], weak.text)
+
+    def test_supported_lower_total_replaces_unsupported_high_score(self) -> None:
         state = quality_optimizer.RepairState()
         higher_total = candidate(
             23,
@@ -277,10 +321,10 @@ class RepairStateTests(unittest.TestCase):
         state.observe(attempt(higher_total))
         retained = state.observe(attempt(lower_total))
 
-        self.assertEqual(retained.effective_total, 23)
+        self.assertEqual(retained.effective_total, 22)
         self.assertEqual(
             retained.text,
-            "Keep the higher-total seed while its factual gate is repaired.",
+            "Do not replace the seed with a lower-total edit.",
         )
 
     def test_highest_total_with_voice_three_is_rejected_and_recorded(self) -> None:
@@ -359,8 +403,8 @@ class RepairStateTests(unittest.TestCase):
             allow_factual_wording_advisory=True,
         )
 
-        self.assertEqual(strict, (item,))
-        self.assertEqual(after_rewrite, (item,))
+        self.assertEqual(strict, ())
+        self.assertEqual(after_rewrite, ())
 
     def test_run_attempt_records_every_candidate_critic_scorecard(self) -> None:
         first = candidate(
@@ -689,6 +733,137 @@ class RepairPromptTests(unittest.TestCase):
 
 
 class FourCycleConvergenceTests(unittest.TestCase):
+    def test_checkpoint_preserves_all_first_cycle_acceptable_candidates(self) -> None:
+        first = candidate(25, {axis: 5 for axis in workflow.CRITIC_AXES}, candidate_id="candidate-1")
+        second = candidate(20, dict(zip(workflow.CRITIC_AXES, (4, 4, 4, 4, 4), strict=True)), candidate_id="candidate-2")
+        scored = attempt(first, second)
+        accepted_ids: list[str] = []
+
+        def qualify_after_checkpoint(_args: object) -> int:
+            observed = quality_optimizer._run_attempt(SimpleNamespace(), None)
+            accepted_ids.extend(candidate.candidate_id for candidate in quality_optimizer._qualifying_candidates(
+                observed, rejected_openings=set(), package_requested=False, fixture_mode=False,
+            ))
+            return 0
+
+        with (
+            patch.object(quality_optimizer, "_ORIGINAL_RUN_ATTEMPT", return_value=scored),
+            patch.object(quality_optimizer, "_ORIGINAL_COMMAND_DRAFT", qualify_after_checkpoint),
+            patch.object(v1_completion, "record_decision"),
+        ):
+            self.assertEqual(quality_optimizer._command_draft(SimpleNamespace()), 0)
+        self.assertEqual(accepted_ids, ["candidate-1", "candidate-2"])
+
+    def test_scored_attempt_is_retained_before_advisory_timeout(self) -> None:
+        from authority_os.model_runtime import ModelTimeoutError
+
+        current = candidate(25, {axis: 5 for axis in workflow.CRITIC_AXES}, text="Exact current scored draft.")
+        package = "Content package: data/private/content-packages/current"
+        scored = quality_cli.AttemptResult(
+            candidates=(current,), context_lines=(), review_status="READY_FOR_HUMAN_REVIEW",
+            recommendation=current.candidate_id, package_lines=(package,),
+        )
+
+        def time_out_after_score(_args: object) -> int:
+            quality_optimizer._run_attempt(SimpleNamespace(), None)
+            raise ModelTimeoutError("Resonance Critic timed out.")
+
+        output = io.StringIO()
+        with (
+            patch.object(quality_optimizer, "_ORIGINAL_RUN_ATTEMPT", return_value=scored),
+            patch.object(quality_optimizer, "_ORIGINAL_COMMAND_DRAFT", time_out_after_score),
+            patch.object(v1_completion, "record_decision"),
+            patch.object(quality_optimizer.best_effort, "write", return_value=workflow.REPO_ROOT / "data/private/best-effort-post.md") as write,
+            redirect_stdout(output),
+        ):
+            self.assertEqual(quality_optimizer._command_draft(SimpleNamespace()), 0)
+        self.assertEqual(write.call_args.args[:2], (current, scored))
+        self.assertEqual(write.call_args.kwargs["cycle"], 1)
+        self.assertIn(package, output.getvalue())
+        self.assertIn("Resonance Critic timed out", output.getvalue())
+
+    def test_scored_attempt_is_retained_after_advisory_provider_failure(self) -> None:
+        current = candidate(25, {axis: 5 for axis in workflow.CRITIC_AXES})
+        scored = attempt(current)
+
+        def fail_after_score(_args: object) -> int:
+            quality_optimizer._run_attempt(SimpleNamespace(), None)
+            raise workflow.AdvisoryProviderFailure("Campaign model stage failed; provider output was redacted.")
+
+        output = io.StringIO()
+        with (
+            patch.object(quality_optimizer, "_ORIGINAL_RUN_ATTEMPT", return_value=scored),
+            patch.object(quality_optimizer, "_ORIGINAL_COMMAND_DRAFT", fail_after_score),
+            patch.object(v1_completion, "record_decision") as record,
+            patch.object(quality_optimizer.best_effort, "write", return_value=workflow.REPO_ROOT / "data/private/best-effort-post.md") as write,
+            redirect_stdout(output),
+        ):
+            self.assertEqual(quality_optimizer._command_draft(SimpleNamespace()), 0)
+        self.assertEqual(write.call_args.args[:2], (current, scored))
+        self.assertIn("Advisory evaluation incomplete", output.getvalue())
+        self.assertEqual(record.call_args.args[0]["observed_status"], "COMPLETED_WITH_WARNINGS")
+
+    def test_advisory_provider_failure_does_not_deliver_unsafe_scored_draft(self) -> None:
+        unsafe = candidate(25, {axis: 5 for axis in workflow.CRITIC_AXES}, gates_pass=False)
+
+        def fail_after_score(_args: object) -> int:
+            quality_optimizer._run_attempt(SimpleNamespace(), None)
+            raise workflow.AdvisoryProviderFailure("Campaign model stage failed; provider output was redacted.")
+
+        with (
+            patch.object(quality_optimizer, "_ORIGINAL_RUN_ATTEMPT", return_value=attempt(unsafe)),
+            patch.object(quality_optimizer, "_ORIGINAL_COMMAND_DRAFT", fail_after_score),
+            patch.object(v1_completion, "record_decision"),
+            patch.object(quality_optimizer.best_effort, "write") as write,
+            redirect_stdout(io.StringIO()),
+        ):
+            with self.assertRaises(workflow.AdvisoryProviderFailure):
+                quality_optimizer._command_draft(SimpleNamespace())
+        write.assert_not_called()
+
+    def test_advisory_provider_failure_retains_earlier_safe_draft(self) -> None:
+        safe = candidate(17, dict(zip(workflow.CRITIC_AXES, (3, 3, 3, 4, 4), strict=True)), text="Earlier safe draft.")
+        unsafe = candidate(25, {axis: 5 for axis in workflow.CRITIC_AXES}, gates_pass=False)
+
+        def fail_after_scores(_args: object) -> int:
+            quality_optimizer._run_attempt(SimpleNamespace(), None)
+            quality_optimizer._run_attempt(SimpleNamespace(), {"rejected_cycle": 1})
+            raise workflow.AdvisoryProviderFailure("Campaign model stage failed; provider output was redacted.")
+
+        with (
+            patch.object(quality_optimizer, "_ORIGINAL_RUN_ATTEMPT", side_effect=[attempt(safe), attempt(unsafe)]),
+            patch.object(quality_optimizer, "_ORIGINAL_COMMAND_DRAFT", fail_after_scores),
+            patch.object(v1_completion, "record_decision"),
+            patch.object(quality_optimizer.best_effort, "write", return_value=workflow.REPO_ROOT / "data/private/best-effort-post.md") as write,
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(quality_optimizer._command_draft(SimpleNamespace()), 0)
+        self.assertIs(write.call_args.args[0], safe)
+
+    def test_later_advisory_timeout_retains_latest_scored_candidate(self) -> None:
+        from authority_os.model_runtime import ModelTimeoutError
+
+        prior = candidate(16, dict(zip(workflow.CRITIC_AXES, (4, 3, 3, 3, 3), strict=True)), text="Earlier below-target draft.")
+        latest = candidate(25, {axis: 5 for axis in workflow.CRITIC_AXES}, text="Latest exact scored draft.")
+        attempts = [attempt(prior), attempt(latest)]
+
+        def time_out_after_second_score(_args: object) -> int:
+            quality_optimizer._run_attempt(SimpleNamespace(), None)
+            quality_optimizer._quality_feedback(attempts[0], 1)
+            quality_optimizer._run_attempt(SimpleNamespace(), {"rejected_cycle": 1})
+            raise ModelTimeoutError("Resonance Critic timed out.")
+
+        with (
+            patch.object(quality_optimizer, "_ORIGINAL_RUN_ATTEMPT", side_effect=attempts),
+            patch.object(quality_optimizer, "_ORIGINAL_COMMAND_DRAFT", time_out_after_second_score),
+            patch.object(v1_completion, "record_decision"),
+            patch.object(quality_optimizer.best_effort, "write", return_value=workflow.REPO_ROOT / "data/private/best-effort-post.md") as write,
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(quality_optimizer._command_draft(SimpleNamespace()), 0)
+        self.assertIs(write.call_args.args[0], latest)
+        self.assertEqual(write.call_args.kwargs["cycle"], 2)
+
     def test_later_critic_timeout_delivers_prior_scored_draft_with_honest_warning(self) -> None:
         import os
         import tempfile
@@ -841,7 +1016,7 @@ class FourCycleConvergenceTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         rendered = output.getvalue()
-        self.assertIn("best overall=candidate-1 score=24/25", rendered)
+        self.assertIn("best safe=candidate-1 score=24/25", rendered)
         self.assertNotIn("The retained best overall candidate.", rendered)
         self.assertIn("best-effort-post.md", rendered)
         self.assertIn("COMPLETED_WITH_WARNINGS", rendered)

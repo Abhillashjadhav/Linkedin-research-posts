@@ -8,6 +8,7 @@ import os
 import shutil
 import sqlite3
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from . import (
     storage,
     workflow,
 )
+from .model_runtime import ModelTimeoutError
 
 
 def _path(value: str) -> Path:
@@ -542,7 +544,27 @@ def command_doctor(args: argparse.Namespace) -> int:
             "passed" if privacy_ok else "run privacy-check",
         )
     )
-    checks.append(("optional Claude CLI", shutil.which("claude") is not None, "optional"))
+    # The installed live path uses model_runtime.invoke_structured, which starts
+    # Codex. A version query checks the executable without model egress or an
+    # authentication probe; neither a successful version query nor this doctor
+    # attests that a particular account/model is available.
+    codex = shutil.which("codex")
+    codex_available = False
+    if codex:
+        try:
+            version = subprocess.run(
+                [codex, "--version"], capture_output=True, text=True,
+                timeout=5, check=False,
+            )
+            codex_available = version.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    checks.append((
+        "active Codex CLI",
+        codex_available,
+        "executable responded" if codex_available else "unavailable; live model stages unverified",
+    ))
+    checks.append(("legacy Claude CLI", shutil.which("claude") is not None, "optional for legacy/offline routes"))
 
     forbidden_actions = {
         "publish",
@@ -566,10 +588,11 @@ def command_doctor(args: argparse.Namespace) -> int:
 
     failures: list[str] = []
     for name, passed, detail in checks:
-        label = "OK" if passed else ("WARN" if name == "optional Claude CLI" else "FAIL")
+        label = "OK" if passed else ("WARN" if name in {"active Codex CLI", "legacy Claude CLI"} else "FAIL")
         print(f"[{label}] {name}: {detail}")
-        if not passed and name != "optional Claude CLI":
+        if not passed and name not in {"active Codex CLI", "legacy Claude CLI"}:
             failures.append(name)
+    print("[WARN] Codex authentication and configured model access: unverified (no provider call)")
     print("[OK] credential handling: values were not inspected or printed")
     return 1 if failures else 0
 
@@ -661,6 +684,10 @@ def command_draft(args: argparse.Namespace) -> int:
         analysis = workflow.analyse_research(
             items,
             topic=None if evidence_manifest is not None else args.topic,
+            as_of=(
+                workflow.parse_published_at(os.environ["LINKEDIN_OS_DRAFT_AS_OF"])
+                if "LINKEDIN_OS_DRAFT_AS_OF" in os.environ else None
+            ),
         )
         strategy_input_origin = "explicit-input"
 
@@ -728,6 +755,11 @@ def command_draft(args: argparse.Namespace) -> int:
             f"Stored evidence selected for Writer: topic={brief['topic_slug']}; "
             f"sources={len(evidence)}; selection={selection_mode}."
         )
+    # The live overlay may durably retain a validated, claim-gated Writer draft
+    # before the optional Critic call. No unvalidated Writer output reaches here.
+    checkpoint_writer = globals().get("_checkpoint_validated_writer")
+    if fixture is None and callable(checkpoint_writer):
+        checkpoint_writer(candidates, brief=brief, evidence=evidence, proof=proof)
     if fixture is None:
         workflow.enforce_pre_critic_voice_gate(candidates)
     if fixture is not None:
@@ -801,14 +833,19 @@ def command_draft(args: argparse.Namespace) -> int:
                 proof=proof,
             )
 
-    review = workflow.run_critic_review(
-        candidates,
-        brief,
-        evidence,
-        score_provider,
-        revision_provider,
-        proof=proof,
-    )
+    try:
+        review = workflow.run_critic_review(
+            candidates,
+            brief,
+            evidence,
+            score_provider,
+            revision_provider,
+            proof=proof,
+        )
+    except ModelTimeoutError:
+        raise
+    except workflow.WorkflowError as exc:
+        raise workflow.CriticEvaluationFailure(f"Critic evaluation incomplete: {exc}") from exc
     candidates = review["candidates"]
     gate_results = workflow.evaluate_candidate_set_gates(
         candidates,

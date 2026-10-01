@@ -149,7 +149,23 @@ def _qualifying_candidates(
         ]
         resonance_passed = True
         if _active_single_selector is not None:
-            assessment = resonance.invoke_post_critic(candidate.text, _active_single_selector)
+            try:
+                assessment = resonance.invoke_post_critic(candidate.text, _active_single_selector)
+            except workflow.WorkflowError as exc:
+                # A failed or malformed optional post-score model result cannot
+                # erase a previously claim-gated draft. Missing inputs and
+                # unrelated policy/storage errors keep their original failure.
+                if type(exc) is workflow.WorkflowError and str(exc) in {
+                    "Campaign model stage failed; provider output was redacted.",
+                    "Campaign model stage returned invalid JSON.",
+                    "Campaign model stage must return one JSON object.",
+                    "Resonance Critic failed; provider output was redacted.",
+                    "Resonance stage returned an invalid score inventory.",
+                    "Resonance scores must be integers from 1 to 5.",
+                    "Resonance Critic feed-value gates must be boolean.",
+                }:
+                    raise workflow.AdvisoryProviderFailure(str(exc)) from exc
+                raise
             _active_resonance_diagnostics[candidate.candidate_id] = assessment
             resonance_passed = assessment.get("status") == "PASS"
             if not resonance_passed:

@@ -258,17 +258,19 @@ def _load_package_documents(
         date_fd = _open_directory(date_name, directory_fd=root_fd)
         package_fd = _open_directory(directory_name, directory_fd=date_fd)
         package_metadata = os.fstat(package_fd)
-        expected_files = set(approval_package.PACKAGE_FILES.values())
+        current_files = set(approval_package.PACKAGE_FILES.values())
+        legacy_files = set(approval_package.LEGACY_PACKAGE_FILES.values())
         try:
             entries = set(os.listdir(package_fd))
         except OSError as exc:
             raise workflow.WorkflowError(
                 "The performance package inventory could not be verified."
             ) from exc
-        if entries != expected_files:
+        if entries not in (current_files, legacy_files):
             raise workflow.WorkflowError(
                 "The performance package is incomplete or has an invalid inventory."
             )
+        expected_files = entries
         for filename in sorted(expected_files):
             opened_files[filename] = _open_regular_file(
                 filename,
@@ -280,6 +282,8 @@ def _load_package_documents(
             if include_learning_documents
             else frozenset({"manifest.json", "evaluation.json"})
         )
+        if expected_files == current_files:
+            read_names = read_names | {"post.md", "source-comment.md"}
         for filename in sorted(read_names):
             descriptor, metadata = opened_files[filename]
             documents[filename] = _read_open_regular_file(descriptor, metadata)
@@ -319,6 +323,32 @@ def _load_package_documents(
         ) from exc
     if not isinstance(manifest, Mapping) or not isinstance(evaluation, Mapping):
         raise workflow.WorkflowError("The performance package schema is invalid.")
+    files = manifest.get("files")
+    if (
+        not isinstance(files, Mapping)
+        or any(not isinstance(name, str) for name in files.values())
+        or set(files.values()) != expected_files
+    ):
+        raise workflow.WorkflowError("The performance package manifest inventory differs from the files.")
+    if expected_files == current_files:
+        comment = evaluation.get("source_comment")
+        if not isinstance(comment, Mapping) or not isinstance(comment.get("selected_source_urls"), list):
+            raise workflow.WorkflowError("The source comment identity is missing.")
+        urls = comment["selected_source_urls"]
+        try:
+            valid_urls = bool(urls) and all(
+                isinstance(url, str) and workflow.canonicalise_url(url) == url
+                for url in urls
+            )
+        except ValueError:
+            valid_urls = False
+        if not valid_urls:
+            raise workflow.WorkflowError("The source comment selected URLs are invalid.")
+        if any(url not in documents["source-comment.md"] for url in urls):
+            raise workflow.WorkflowError("The source comment lost a selected URL.")
+        for name, field in (("post.md", "post_sha256"), ("source-comment.md", "comment_sha256")):
+            if comment.get(field) != hashlib.sha256(documents[name].encode("utf-8")).hexdigest():
+                raise workflow.WorkflowError("The scored post or source comment changed after packaging.")
     if manifest.get("package_id") != expected_id:
         raise workflow.WorkflowError("The performance package ID does not match its path.")
     learning_documents = {
@@ -338,12 +368,17 @@ def _validate_package_context(
 ) -> dict[str, object]:
     """Validate one explicit candidate against an already anchored package snapshot."""
 
-    if set(manifest) != _MANIFEST_FIELDS or set(evaluation) != _EVALUATION_FIELDS:
+    if set(manifest) != _MANIFEST_FIELDS or set(evaluation) not in (
+        _EVALUATION_FIELDS, _EVALUATION_FIELDS | {"source_comment"}
+    ):
         raise workflow.WorkflowError("The performance package schema is invalid.")
     if (
         manifest["schema_version"] != approval_package.PACKAGE_SCHEMA_VERSION
         or evaluation["schema_version"] != approval_package.PACKAGE_SCHEMA_VERSION
-        or manifest["files"] != dict(approval_package.PACKAGE_FILES)
+        or manifest["files"] not in (
+            dict(approval_package.PACKAGE_FILES),
+            dict(approval_package.LEGACY_PACKAGE_FILES),
+        )
     ):
         raise workflow.WorkflowError("The performance package schema is unsupported.")
     if (
@@ -453,6 +488,9 @@ def _validate_package_context(
         for ranked_id in ranking
         if acceptance_policy.scorecard_is_acceptable(
             scorecards_by_id[ranked_id],
+            delivery_safety_pass=not acceptance_policy.delivery_safety_failures(
+                gates_by_id[ranked_id]["gates"]
+            ),
             hard_gates_pass=acceptance_policy.hard_candidate_gates_pass(
                 gates_by_id[ranked_id]["gates"],
                 passes_required_gates=bool(

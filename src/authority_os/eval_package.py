@@ -601,6 +601,7 @@ def _evaluate_candidates(
             scorecard,
             hard_gates_pass=hard_gates_pass,
             additional_checks_pass=not findings,
+            delivery_safety_pass=not acceptance_policy.delivery_safety_failures(raw_gates),
         )
         decision["advisory_warnings"] = advisories
         results.append(
@@ -718,6 +719,20 @@ def _monotonic_edit_decision(
     proposed_score = proposed.get("scorecard")
     if not isinstance(previous_score, Mapping) or not isinstance(proposed_score, Mapping):
         raise workflow.WorkflowError("Progressive editor score comparison is malformed.")
+    old_gate = previous.get("gates")
+    new_gate = proposed.get("gates")
+    if not isinstance(old_gate, Mapping) or not isinstance(new_gate, Mapping):
+        raise workflow.WorkflowError("Progressive editor gate comparison is malformed.")
+    old_raw = old_gate.get("gates")
+    new_raw = new_gate.get("gates")
+    if not isinstance(old_raw, Mapping) or not isinstance(new_raw, Mapping):
+        raise workflow.WorkflowError("Progressive editor factual gates are malformed.")
+    old_safe = not acceptance_policy.delivery_safety_failures(old_raw)
+    new_safe = not acceptance_policy.delivery_safety_failures(new_raw)
+    if old_safe and not new_safe:
+        return False, ["factual-safety-regressed"]
+    if new_safe and not old_safe:
+        return True, ["factual-safety-repaired"]
     return acceptance_policy.repair_score_decision(previous_score, proposed_score)
 
 
@@ -946,6 +961,12 @@ def command(
     else:
         print("Frozen candidates were not drafted, revised, selected as a thesis, or published.")
     print("No LinkedIn publishing action was taken.")
+    if not any(
+        not acceptance_policy.delivery_safety_failures(item["gates"]["gates"])  # type: ignore[index]
+        for item in results
+    ):
+        print("Evaluation completed, but no factually supported post is eligible for delivery.")
+        return 1
     if not any(item["acceptance"]["status"] == "PASS" for item in results):  # type: ignore[index]
         print("Completed with warnings: best draft delivered; writing scores remain below target.")
     return 0

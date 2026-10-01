@@ -101,9 +101,17 @@ The owner's subsequent simplification is now implemented:
   The legacy proof_fit axis now means public-evidence grounding. This does not
   authorize fabricated personal achievements or replace factual source checks.
 
-The private checkpoint records work; it is not a claim that the existing
-`--resume-from` command can resume an arbitrary stage. That command still supports
-the documented evidence-verification recovery boundary.
+For current `discover --generate-post` runs, `--resume-from` reuses a contiguous
+prefix of completed pre-draft stages only when the input, selected evidence,
+contract, runtime/prompt implementation, and output hashes still match. Drafting
+reconstructs its pure selection and quality-loop logic from durable, exact-request
+model-call outcomes. A call without a durable result may run again; a handled
+optional-stage failure with later completed work is replayed to preserve the
+existing fallback. A resume may create a new local review package. The shared
+480-second deadline applies per discovery invocation, including its drafting
+child; resumed elapsed time is not a fresh end-to-end live SLO result. Direct
+standalone `draft` does not establish its own global deadline or cross-run call
+cache. Legacy runs still use the evidence-verification recovery boundary.
 
 ## Verification boundary
 

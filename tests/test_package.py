@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from authority_os import package as approval_package
+from authority_os import performance
 from authority_os import workflow
 
 
@@ -161,7 +162,9 @@ class HumanApprovalPackageTests(unittest.TestCase):
             self.assertEqual(manifest["review_status"], "FIXTURE_REVIEW_ONLY")
             self.assertEqual(manifest["human_approval_status"], "NOT_APPROVED")
             self.assertEqual(manifest["publishing_status"], "DISABLED")
-            self.assertEqual(manifest["eligible_candidate_ids"], ["authority-1", "authority-2", "authority-3"])
+            # Fixture candidates 2/3 use unsupported factual markers; their
+            # editorial scores do not waive factual safety.
+            self.assertEqual(manifest["eligible_candidate_ids"], ["authority-1"])
             self.assertIsNone(manifest["recommended_candidate_id"])
             self.assertIs(manifest["manual_fact_verification_required"], True)
             self.assertEqual(
@@ -183,10 +186,26 @@ class HumanApprovalPackageTests(unittest.TestCase):
             result = write_context(context, self.output_root(temporary))
             manifest = result["manifest"]
             self.assertEqual(manifest["review_status"], "READY_FOR_HUMAN_REVIEW")
-            self.assertEqual(manifest["eligible_candidate_ids"], ["authority-1", "authority-2", "authority-3"])
+            linked = performance.load_package_context(
+                manifest["package_id"], manifest["recommended_candidate_id"],
+                output_root=result["path"].parents[1], _allow_test_output_root=True,
+            )
+            self.assertEqual(linked["candidate_id"], manifest["recommended_candidate_id"])
+            self.assertEqual(manifest["eligible_candidate_ids"], ["authority-1"])
             self.assertEqual(manifest["recommended_candidate_id"], "authority-1")
             self.assertEqual(manifest["human_approval_status"], "NOT_APPROVED")
             self.assertEqual(manifest["publishing_status"], "DISABLED")
+            self.assertEqual(
+                (result["path"] / "post.md").read_text(),
+                context["review"]["candidates"][0]["text"],
+            )
+            comment = (result["path"] / "source-comment.md").read_text()
+            selected_urls = {str(item["source"]) for item in context["evidence"]}
+            self.assertTrue(selected_urls)
+            self.assertTrue(all(url in comment for url in selected_urls))
+            evaluation = json.loads((result["path"] / "evaluation.json").read_text())
+            self.assertEqual(evaluation["source_comment"]["editorial_score"], "NOT_EVALUATED")
+            self.assertEqual(manifest["review_status"], "READY_FOR_HUMAN_REVIEW")
             final_text = (result["path"] / "final-package.md").read_text()
             self.assertIn("Recommended candidate for human review", final_text)
             self.assertIn(
@@ -195,6 +214,22 @@ class HumanApprovalPackageTests(unittest.TestCase):
                 ),
                 final_text,
             )
+
+    def test_canonical_http_source_comment_survives_performance_round_trip(self) -> None:
+        context = fixture_context(mode="live")
+        for source in context["evidence"]:
+            source["source"] = str(source["source"]).replace("https://", "http://", 1)
+        with tempfile.TemporaryDirectory() as temporary:
+            result = write_context(context, self.output_root(temporary))
+            manifest = result["manifest"]
+            self.assertEqual(manifest["review_status"], "READY_FOR_HUMAN_REVIEW")
+            comment = (result["path"] / "source-comment.md").read_text()
+            self.assertIn("http://", comment)
+            linked = performance.load_package_context(
+                manifest["package_id"], manifest["recommended_candidate_id"],
+                output_root=result["path"].parents[1], _allow_test_output_root=True,
+            )
+            self.assertEqual(linked["candidate_id"], manifest["recommended_candidate_id"])
 
     def test_next_ranked_eligible_candidate_is_recommended(self) -> None:
         context = fixture_context(mode="live")
@@ -231,10 +266,10 @@ class HumanApprovalPackageTests(unittest.TestCase):
         }
         self.assertIs(gate_results["authority-1"]["passes_required_gates"], False)
         self.assertIs(gate_results["authority-2"]["passes_required_gates"], True)
-        self.assertEqual(evaluation["eligible_candidate_ids"], ["authority-1", "authority-2", "authority-3"])
-        self.assertEqual(evaluation["recommended_candidate_id"], "authority-1")
+        self.assertEqual(evaluation["eligible_candidate_ids"], ["authority-2"])
+        self.assertEqual(evaluation["recommended_candidate_id"], "authority-2")
 
-    def test_legacy_below_bar_at_20_is_eligible_under_shared_contract(self) -> None:
+    def test_score_20_qualifies_only_when_factually_supported(self) -> None:
         context = fixture_context(mode="live")
         candidates = deepcopy(context["review"]["candidates"])  # type: ignore[index]
         raw_scores = [
@@ -249,8 +284,8 @@ class HumanApprovalPackageTests(unittest.TestCase):
             result = write_context(context, self.output_root(temporary))
         manifest = result["manifest"]
         self.assertEqual(manifest["review_status"], "READY_FOR_HUMAN_REVIEW")
-        self.assertEqual(len(manifest["eligible_candidate_ids"]), 3)
-        self.assertIsNotNone(manifest["recommended_candidate_id"])
+        self.assertEqual(manifest["eligible_candidate_ids"], ["authority-1"])
+        self.assertEqual(manifest["recommended_candidate_id"], "authority-1")
         self.assertEqual(manifest["human_approval_status"], "NOT_APPROVED")
 
     def test_voice_below_four_blocks_despite_a_passing_total(self) -> None:
@@ -375,27 +410,24 @@ class HumanApprovalPackageTests(unittest.TestCase):
             self.assertFalse(root.exists())
 
     def test_package_module_import_survives_missing_fcntl(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            blocker = Path(temporary) / "fcntl.py"
-            blocker.write_text("raise ImportError('simulated missing fcntl')\n")
-            environment = dict(os.environ)
-            environment["PYTHONPATH"] = os.pathsep.join(
-                (str(blocker.parent), str(Path(__file__).resolve().parents[1] / "src"))
-            )
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    "-c",
-                    (
-                        "from authority_os import package; "
-                        "assert package.fcntl is None"
-                    ),
-                ],
-                env=environment,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; "
+                    "sys.modules['fcntl'] = None; "
+                    "from authority_os import package; "
+                    "assert package.fcntl is None"
+                ),
+            ],
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_mode_must_match_strategy_and_proof_provenance(self) -> None:

@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from scripts import compare_capture_runtime
-from authority_os import campaign, model_runtime, resonance, topic_value, workflow
+from authority_os import campaign, model_call_checkpoint, model_runtime, resonance, runtime_budget, topic_value, workflow
 
 
 SCHEMA = {
@@ -28,6 +30,227 @@ def successful_run(command: list[str], **_kwargs: object) -> subprocess.Complete
 
 
 class ModelRuntimeTests(unittest.TestCase):
+    def test_optional_editor_failure_is_replayed_before_completed_critic(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            root = Path(temporary)
+            source, resumed = root / "source", root / "resumed"
+            for folder, run_id in ((source, "source-run"), (resumed, "resumed-run")):
+                folder.mkdir()
+                (folder / "run-input.json").write_text(json.dumps({
+                    "schema_version": 1, "run_id": run_id,
+                    "input_fingerprint": "c" * 64,
+                }), encoding="utf-8")
+            stages = ("Writer", "Optional Editor", "Critic", "Advisory")
+            def invoke(label: str) -> dict[str, object]:
+                return model_runtime.invoke_structured(
+                    config=CONFIG, role_prompt=label, task_prompt="Exact same selected evidence.",
+                    schema=SCHEMA, stage_label=label,
+                )
+
+            def first_provider(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+                prompt = str(kwargs.get("input", ""))
+                if "Optional Editor" in prompt or "Advisory" in prompt:
+                    raise subprocess.TimeoutExpired("codex", 180)
+                return successful_run(command, **kwargs)
+
+            model_call_checkpoint.reset_sequence_for_tests()
+            with patch.dict(os.environ, {
+                model_call_checkpoint.OUTPUT_ENV: str(source / "model-calls"),
+                model_call_checkpoint.INPUT_ENV: "c" * 64,
+            }), patch.object(model_runtime.shutil, "which", return_value="/opt/codex"), patch.object(
+                model_runtime.subprocess, "run", side_effect=first_provider,
+            ):
+                self.assertEqual(invoke(stages[0]), {"answer": "ok"})
+                with self.assertRaises(model_runtime.ModelTimeoutError):
+                    invoke(stages[1])  # Existing optional-editor caller continues.
+                self.assertEqual(invoke(stages[2]), {"answer": "ok"})
+                with self.assertRaises(model_runtime.ModelTimeoutError):
+                    invoke(stages[3])
+            self.assertEqual(len(list((source / "model-calls").glob("call-*.json"))), 4)
+
+            model_call_checkpoint.reset_sequence_for_tests()
+            with patch.dict(os.environ, {
+                model_call_checkpoint.SOURCE_ENV: str(source / "model-calls"),
+                model_call_checkpoint.OUTPUT_ENV: str(resumed / "model-calls"),
+                model_call_checkpoint.INPUT_ENV: "c" * 64,
+            }), patch.object(model_runtime.shutil, "which", return_value="/opt/codex"), patch.object(
+                model_runtime.subprocess, "run", side_effect=successful_run,
+            ) as provider:
+                self.assertEqual(invoke(stages[0]), {"answer": "ok"})
+                with self.assertRaises(model_runtime.ModelTimeoutError):
+                    invoke(stages[1])
+                self.assertEqual(invoke(stages[2]), {"answer": "ok"})
+                self.assertEqual(invoke(stages[3]), {"answer": "ok"})
+                provider.assert_called_once()  # Only interrupted advisory reruns.
+
+    def test_writer_checkpoint_survives_critic_interruption_and_rejects_tampering(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            root = Path(temporary)
+            source, resumed = root / "source", root / "resumed"
+            for folder, run_id in ((source, "source-run"), (resumed, "resumed-run")):
+                folder.mkdir()
+                (folder / "run-input.json").write_text(json.dumps({
+                    "schema_version": 1, "run_id": run_id,
+                    "input_fingerprint": "b" * 64,
+                }), encoding="utf-8")
+            writer = dict(config=CONFIG, role_prompt="Writer", task_prompt="Use selected evidence.", schema=SCHEMA)
+            critic = dict(config=CONFIG, role_prompt="Critic", task_prompt="Score the exact post.", schema=SCHEMA)
+            model_call_checkpoint.reset_sequence_for_tests()
+            with patch.dict(os.environ, {
+                model_call_checkpoint.OUTPUT_ENV: str(source / "model-calls"),
+                model_call_checkpoint.INPUT_ENV: "b" * 64,
+            }), patch.object(model_runtime.shutil, "which", return_value="/opt/codex"), patch.object(
+                model_runtime.subprocess, "run",
+                side_effect=lambda command, **kwargs: (
+                    (_ for _ in ()).throw(subprocess.TimeoutExpired("codex", 180))
+                    if "Critic" in kwargs.get("input", "") else successful_run(command, **kwargs)
+                ),
+            ):
+                self.assertEqual(model_runtime.invoke_structured(**writer), {"answer": "ok"})
+                with self.assertRaises(model_runtime.ModelTimeoutError):
+                    model_runtime.invoke_structured(**critic)
+            cached = source / "model-calls" / "call-000001.json"
+            original = cached.read_text(encoding="utf-8")
+            altered = json.loads(original)
+            altered["response"]["answer"] = "tampered"
+            cached.write_text(json.dumps(altered), encoding="utf-8")
+            resumed_env = {
+                model_call_checkpoint.SOURCE_ENV: str(source / "model-calls"),
+                model_call_checkpoint.OUTPUT_ENV: str(resumed / "model-calls"),
+                model_call_checkpoint.INPUT_ENV: "b" * 64,
+            }
+            model_call_checkpoint.reset_sequence_for_tests()
+            with patch.dict(os.environ, resumed_env), self.assertRaisesRegex(
+                workflow.WorkflowError, "no longer matches"
+            ):
+                model_runtime.invoke_structured(**writer)
+            cached.write_text(original, encoding="utf-8")
+            model_call_checkpoint.reset_sequence_for_tests()
+            with patch.dict(os.environ, resumed_env), self.assertRaisesRegex(
+                workflow.WorkflowError, "no longer matches"
+            ):
+                model_runtime.invoke_structured(**{**writer, "task_prompt": "Changed prompt."})
+            model_call_checkpoint.reset_sequence_for_tests()
+            with patch.dict(os.environ, resumed_env), patch.object(
+                model_runtime.shutil, "which", return_value="/opt/codex"
+            ), patch.object(model_runtime.subprocess, "run", side_effect=successful_run) as provider:
+                self.assertEqual(model_runtime.invoke_structured(**writer), {"answer": "ok"})
+                self.assertEqual(model_runtime.invoke_structured(**critic), {"answer": "ok"})
+                self.assertEqual(provider.call_count, 1)
+
+    def test_resume_replays_writer_and_critic_without_duplicate_provider_calls(self) -> None:
+        workflow.DEFAULT_PRIVATE_DATA.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workflow.DEFAULT_PRIVATE_DATA) as temporary:
+            root = Path(temporary)
+            source, resumed = root / "source", root / "resumed"
+            source.mkdir()
+            resumed.mkdir()
+            fingerprint = "a" * 64
+            for folder, run_id in ((source, "run-one"), (resumed, "run-two")):
+                (folder / "run-input.json").write_text(json.dumps({
+                    "schema_version": 1, "run_id": run_id,
+                    "input_fingerprint": fingerprint,
+                }), encoding="utf-8")
+            source_env = {
+                model_call_checkpoint.OUTPUT_ENV: str(source / "model-calls"),
+                model_call_checkpoint.INPUT_ENV: fingerprint,
+            }
+            calls = ["Writer", "Critic", "Advisory"]
+            model_call_checkpoint.reset_sequence_for_tests()
+            with patch.dict(os.environ, source_env), patch.object(
+                model_runtime.shutil, "which", return_value="/opt/codex"
+            ), patch.object(model_runtime.subprocess, "run", side_effect=[
+                successful_run, successful_run, subprocess.TimeoutExpired("codex", 20)
+            ]) as run:
+                # A callable side effect gives each successful call a structured result.
+                run.side_effect = lambda command, **kwargs: (
+                    (_ for _ in ()).throw(subprocess.TimeoutExpired("codex", 20))
+                    if "Advisory" in kwargs.get("input", "") else successful_run(command, **kwargs)
+                )
+                for label in calls[:2]:
+                    model_runtime.invoke_structured(
+                        config=CONFIG, role_prompt=label, task_prompt="Return scores.",
+                        schema=SCHEMA, stage_label=label,
+                    )
+                with self.assertRaises(model_runtime.ModelTimeoutError):
+                    model_runtime.invoke_structured(
+                        config=CONFIG, role_prompt="Advisory", task_prompt="Return scores.",
+                        schema=SCHEMA, stage_label="Advisory", timeout=20,
+                    )
+                self.assertEqual(run.call_count, 3)
+
+            model_call_checkpoint.reset_sequence_for_tests()
+            resumed_env = {
+                model_call_checkpoint.SOURCE_ENV: str(source / "model-calls"),
+                model_call_checkpoint.OUTPUT_ENV: str(resumed / "model-calls"),
+                model_call_checkpoint.INPUT_ENV: fingerprint,
+            }
+            with patch.dict(os.environ, resumed_env), patch.object(
+                model_runtime.shutil, "which", return_value="/opt/codex"
+            ), patch.object(model_runtime.subprocess, "run", side_effect=successful_run) as run:
+                for label in calls:
+                    result = model_runtime.invoke_structured(
+                        config=CONFIG, role_prompt=label, task_prompt="Return scores.",
+                        schema=SCHEMA, stage_label=label, timeout=20 if label == "Advisory" else 180,
+                    )
+                    self.assertEqual(result, {"answer": "ok"})
+                self.assertEqual(run.call_count, 1)
+            self.assertEqual(len(list((resumed / "model-calls").glob("call-*.json"))), 3)
+            third = root / "third"
+            third.mkdir()
+            (third / "run-input.json").write_text(json.dumps({
+                "schema_version": 1, "run_id": "run-three",
+                "input_fingerprint": fingerprint,
+            }), encoding="utf-8")
+            model_call_checkpoint.reset_sequence_for_tests()
+            with patch.dict(os.environ, {
+                model_call_checkpoint.SOURCE_ENV: str(resumed / "model-calls"),
+                model_call_checkpoint.OUTPUT_ENV: str(third / "model-calls"),
+                model_call_checkpoint.INPUT_ENV: fingerprint,
+            }), patch.object(model_runtime.subprocess, "run", side_effect=AssertionError("completed call repeated")):
+                for label in calls:
+                    self.assertEqual(model_runtime.invoke_structured(
+                        config=CONFIG, role_prompt=label, task_prompt="Return scores.",
+                        schema=SCHEMA, stage_label=label, timeout=20 if label == "Advisory" else 180,
+                    ), {"answer": "ok"})
+            (resumed / "model-calls" / "call-000001.json").unlink()
+            (resumed / "model-calls" / "call-000002.json").unlink()
+            fourth = root / "fourth"
+            fourth.mkdir()
+            (fourth / "run-input.json").write_text(json.dumps({
+                "schema_version": 1, "run_id": "run-four",
+                "input_fingerprint": fingerprint,
+            }), encoding="utf-8")
+            model_call_checkpoint.reset_sequence_for_tests()
+            with patch.dict(os.environ, {
+                model_call_checkpoint.SOURCE_ENV: str(resumed / "model-calls"),
+                model_call_checkpoint.OUTPUT_ENV: str(fourth / "model-calls"),
+                model_call_checkpoint.INPUT_ENV: fingerprint,
+            }), patch.object(model_runtime.subprocess, "run") as provider, self.assertRaisesRegex(
+                workflow.WorkflowError, "missing earlier call checkpoint"
+            ):
+                model_runtime.invoke_structured(
+                    config=CONFIG, role_prompt="Writer", task_prompt="Return scores.",
+                    schema=SCHEMA, stage_label="Writer",
+                )
+            provider.assert_not_called()
+
+    def test_shared_deadline_bounds_each_provider_call_without_paid_request(self) -> None:
+        with (
+            patch.dict("os.environ", {runtime_budget.DEADLINE_ENV: "120"}),
+            patch.object(runtime_budget.time, "time", return_value=110),
+            patch.object(model_runtime.shutil, "which", return_value="/opt/codex"),
+            patch.object(model_runtime.subprocess, "run", side_effect=subprocess.TimeoutExpired("codex", 10)) as run,
+            self.assertRaises(runtime_budget.GlobalDeadlineExceeded),
+        ):
+            model_runtime.invoke_structured(
+                config=CONFIG, role_prompt="Score topics.", task_prompt="Return scores.",
+                schema=SCHEMA, timeout=120,
+            )
+        self.assertEqual(run.call_args.kwargs["timeout"], 10)
+
     def test_deadline_has_a_distinct_recoverable_error_type(self) -> None:
         with (
             patch.object(model_runtime.shutil, "which", return_value="/opt/codex"),

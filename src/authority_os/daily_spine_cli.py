@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -20,6 +21,7 @@ from . import daily_cli as base
 from . import (
     __version__,
     acceptance_policy,
+    best_effort,
     campaign,
     eval_dashboard_html,
     momentum,
@@ -30,6 +32,8 @@ from . import (
 )
 from .spine_feedback import CONTENT_SPINES
 from .model_runtime import ModelTimeoutError
+from . import runtime_budget
+from . import model_call_checkpoint
 
 
 CARD_KEYS = frozenset((*base.CARD_KEYS, "recommended_spine", "spine_fit_reason"))
@@ -106,6 +110,35 @@ class EvidenceResolution:
     warnings: tuple[str, ...] = ()
 
 
+def model_call_reuse_summary(folder: Path) -> dict[str, object]:
+    """Report durable new and replayed call counts without reading prompt text."""
+
+    cache = base._under_private(folder / "model-calls")
+    replayed = new = replayed_failures = new_failures = 0
+    source_ids: set[str] = set()
+    if cache.is_dir() and not cache.is_symlink():
+        for path in sorted(cache.glob("call-*.json")):
+            record = base._private_json(path, "Model call checkpoint")
+            if not isinstance(record, Mapping):
+                raise workflow.WorkflowError("Model call checkpoint summary is malformed.")
+            prior = record.get("replayed_from_run_id")
+            if isinstance(prior, str) and prior:
+                replayed += 1
+                replayed_failures += record.get("status") == "RAISED"
+                source_ids.add(prior)
+            else:
+                new += 1
+                new_failures += record.get("status") == "RAISED"
+    return {
+        "replayed_completed_calls": replayed,
+        "new_completed_calls": new,
+        "replayed_failed_calls_continued": replayed_failures,
+        "new_failed_calls": new_failures,
+        "source_run_ids": sorted(source_ids),
+        "incomplete_call_policy": "a call without a durable result may be retried",
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class DiscoveryResume:
     source_folder: Path
@@ -114,6 +147,223 @@ class DiscoveryResume:
     eligible: tuple[dict[str, object], ...]
     route: str
     surface_scouts: tuple[dict[str, object], ...]
+    completed_stages: tuple[str, ...] = ()
+    evidence_items: tuple[dict[str, object], ...] = ()
+    topic_value_candidates: tuple[dict[str, object], ...] = ()
+    theses: tuple[dict[str, object], ...] = ()
+    source_run_id: str = ""
+    source_stage_checks: tuple[dict[str, object], ...] = ()
+
+
+CHECKPOINT_STAGES = (
+    "conversation_discovery", "topic_admission", "evidence_verification",
+    "topic_value", "thesis_search",
+)
+CHECKPOINT_OUTPUTS = {
+    "conversation_discovery": ("momentum.json",),
+    "topic_admission": (ADMITTED_SCOPE_NAME,),
+    "evidence_verification": (EVIDENCE_CACHE_NAME,),
+    "topic_value": ("topic-value.json",),
+    "thesis_search": ("theses.json",),
+}
+
+
+def _contract_sha256() -> str:
+    return hashlib.sha256(
+        (workflow.REPO_ROOT / "config" / "linkedin-post-contract-v1.json").read_bytes()
+    ).hexdigest()
+
+
+def _implementation_sha256() -> str:
+    """Bind reuse to the installed Python/launcher/agent prompt implementation."""
+
+    root = workflow.REPO_ROOT
+    paths = [
+        root / "bin" / "linkedin-os",
+        *sorted((root / "src" / "authority_os").glob("*.py")),
+        *sorted((root / ".claude").rglob("*.md")),
+        *sorted((root / "config").rglob("*.json")),
+        *sorted((root / "data" / "voice").glob("*.md")),
+    ]
+    digest = hashlib.sha256()
+    for path in paths:
+        if path.is_symlink() or not path.is_file():
+            raise workflow.WorkflowError("Runtime implementation identity is unavailable or unsafe.")
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _run_input_fingerprint(args: argparse.Namespace, profile: Mapping[str, object], as_of: str) -> str:
+    return _mapping_sha256({
+        "contract_sha256": _contract_sha256(), "profile": dict(profile),
+        "implementation_sha256": _implementation_sha256(),
+        "as_of": as_of, "topic": args.topic, "days": args.days,
+        "db": str(base._under_private(args.db)),
+        "generate_post": bool(args.generate_post), "week_slot": args.week_slot,
+    })
+
+
+def _artifact_sha256(path: Path) -> str:
+    if path.is_symlink():
+        raise workflow.WorkflowError("Checkpoint artifact must not be a symlink.")
+    _path, text, _metadata = workflow._read_validated_local_text(
+        path, root=workflow.DEFAULT_PRIVATE_DATA, label="Checkpoint artifact"
+    )
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _read_stage_checkpoints(folder: Path, input_fingerprint: str) -> tuple[list[str], str]:
+    identity = base._private_json(folder / "run-input.json", "Run identity")
+    if not isinstance(identity, Mapping) or not isinstance(identity.get("run_id"), str):
+        raise workflow.WorkflowError("Run identity is missing its unique ID.")
+    chain = input_fingerprint
+    completed: list[str] = []
+    gap = False
+    for stage in CHECKPOINT_STAGES:
+        path = folder / f"checkpoint-{stage}.json"
+        if not path.exists():
+            gap = True
+            continue
+        if gap or path.is_symlink():
+            raise workflow.WorkflowError("Stage checkpoints are not a contiguous safe prefix.")
+        record = base._private_json(path, "Stage checkpoint")
+        expected_files = CHECKPOINT_OUTPUTS[stage]
+        if (
+            not isinstance(record, Mapping)
+            or record.get("schema_version") != 1
+            or record.get("stage") != stage
+            or record.get("input_fingerprint") != chain
+            or record.get("contract_sha256") != _contract_sha256()
+            or record.get("run_id") != identity["run_id"]
+            or record.get("run_directory") != str(folder.resolve())
+            or not isinstance(record.get("output_hashes"), Mapping)
+            or set(record["output_hashes"]) != set(expected_files)
+        ):
+            raise workflow.WorkflowError(f"Checkpoint {stage} does not match this run's input and contract.")
+        for filename in expected_files:
+            if record["output_hashes"][filename] != _artifact_sha256(folder / filename):
+                raise workflow.WorkflowError(f"Checkpoint {stage} output hash changed.")
+        chain = _mapping_sha256(dict(record))
+        completed.append(stage)
+    return completed, chain
+
+
+def _write_stage_checkpoint(folder: Path, stage: str, input_fingerprint: str) -> None:
+    completed, chain = _read_stage_checkpoints(folder, input_fingerprint)
+    if stage not in CHECKPOINT_STAGES or len(completed) >= len(CHECKPOINT_STAGES) or CHECKPOINT_STAGES[len(completed)] != stage:
+        raise workflow.WorkflowError("Stage checkpoint order is invalid.")
+    identity = base._private_json(folder / "run-input.json", "Run identity")
+    base.write_private_json(folder / f"checkpoint-{stage}.json", {
+        "schema_version": 1, "stage": stage, "input_fingerprint": chain,
+        "contract_sha256": _contract_sha256(),
+        "run_id": identity["run_id"], "run_directory": str(folder.resolve()),
+        "output_hashes": {
+            filename: _artifact_sha256(folder / filename)
+            for filename in CHECKPOINT_OUTPUTS[stage]
+        },
+    })
+
+
+def load_stage_resume(
+    source: Path, *, args: argparse.Namespace, profile: Mapping[str, object]
+) -> DiscoveryResume:
+    """Reuse only an unchanged, hash-verified prefix of the approved daily run."""
+
+    folder = base._under_private(source)
+    run_input = base._private_json(folder / "run-input.json", "Resume run identity")
+    if (not isinstance(run_input, Mapping) or run_input.get("schema_version") != 1
+            or not isinstance(run_input.get("run_id"), str) or not run_input.get("run_id")):
+        raise workflow.WorkflowError("Resume run identity has an invalid schema.")
+    as_of = run_input.get("as_of")
+    if not isinstance(as_of, str):
+        raise workflow.WorkflowError("Resume run timestamp is missing.")
+    workflow.parse_published_at(as_of)
+    expected = _run_input_fingerprint(args, profile, as_of)
+    if run_input.get("input_fingerprint") != expected or run_input.get("contract_sha256") != _contract_sha256():
+        raise workflow.WorkflowError("Resume input or approved contract differs from the source run.")
+    completed, _chain = _read_stage_checkpoints(folder, expected)
+    dashboard_path = folder / "run-dashboard.json"
+    dashboard = (
+        base._private_json(dashboard_path, "Resume dashboard")
+        if dashboard_path.is_file() else {}
+    )
+    scouts = dashboard.get("surface_scouts", []) if isinstance(dashboard, Mapping) else []
+    prior_checks = dashboard.get("checks", []) if isinstance(dashboard, Mapping) else []
+    if not isinstance(scouts, list):
+        scouts = []
+    top_five: list[dict[str, object]] = []
+    if "conversation_discovery" in completed:
+        momentum_payload = base._private_json(folder / "momentum.json", "Resume momentum")
+        if not isinstance(momentum_payload, Mapping) or not isinstance(momentum_payload.get("candidates"), list):
+            raise workflow.WorkflowError("Resume momentum is malformed.")
+        top_five = [dict(item) for item in momentum_payload["candidates"] if isinstance(item, Mapping)]
+    eligible: list[dict[str, object]] = []
+    route = ""
+    if "topic_admission" in completed:
+        scope = base._private_json(folder / ADMITTED_SCOPE_NAME, "Resume admitted scope")
+        if not isinstance(scope, Mapping) or not isinstance(scope.get("candidates"), list) or not isinstance(scope.get("route"), str):
+            raise workflow.WorkflowError("Resume admitted scope is malformed.")
+        eligible = [dict(item) for item in scope["candidates"] if isinstance(item, Mapping)]
+        route = str(scope["route"])
+        if scope.get("scope_fingerprint") != evidence_scope_fingerprint(eligible, requested_topic=args.topic):
+            raise workflow.WorkflowError("Resume admitted evidence scope changed.")
+    items: list[dict[str, object]] = []
+    if "evidence_verification" in completed:
+        evidence_payload = base._private_json(folder / EVIDENCE_CACHE_NAME, "Resume evidence")
+        if not isinstance(evidence_payload, Mapping) or not isinstance(evidence_payload.get("items"), list):
+            raise workflow.WorkflowError("Resume evidence is malformed.")
+        if evidence_payload.get("scope_fingerprint") != evidence_scope_fingerprint(eligible, requested_topic=args.topic):
+            raise workflow.WorkflowError("Resume evidence does not match admitted topic and URLs.")
+        items = _validate_body_verified_evidence(
+            [dict(item) for item in evidence_payload["items"] if isinstance(item, Mapping)],
+            days=args.days, as_of=as_of, require_stored_hash=True,
+        )
+        db = base._under_private(args.db)
+        if not db.is_file():
+            raise workflow.WorkflowError("Resume private evidence ledger is missing.")
+        stored = storage.list_research_items_by_urls(
+            db, [str(item["canonical_url"]) for item in items],
+            evidence_origin="private-import",
+        )
+        recalculated = workflow.prepare_research_items(stored)
+        if any(
+            raw.get("content_hash") != checked.get("content_hash")
+            for raw, checked in zip(stored, recalculated, strict=True)
+        ):
+            raise workflow.WorkflowError("Resume private ledger body no longer matches its recorded content hash.")
+        stored_hashes = {str(item["canonical_url"]): str(item["content_hash"]) for item in stored}
+        if stored_hashes != {str(item["canonical_url"]): str(item["content_hash"]) for item in items}:
+            raise workflow.WorkflowError("Resume selected evidence identity differs from the private ledger.")
+    topic_cards: list[dict[str, object]] = []
+    if "topic_value" in completed:
+        topic_payload = base._private_json(folder / "topic-value.json", "Resume topic value")
+        if not isinstance(topic_payload, Mapping) or not isinstance(topic_payload.get("candidates"), list):
+            raise workflow.WorkflowError("Resume Topic Value is malformed.")
+        topic_cards = [dict(item) for item in topic_payload["candidates"] if isinstance(item, Mapping)]
+        selected_ids = topic_payload.get("selected_signal_ids")
+        if not isinstance(selected_ids, list) or any(not isinstance(item, str) for item in selected_ids):
+            raise workflow.WorkflowError("Resume selected signal identities are malformed.")
+        projected = topic_value.project_discovery_signals(base.project_signals(items), topic_cards)
+        if [str(item["id"]) for item in projected] != selected_ids:
+            raise workflow.WorkflowError("Resume selected signal identities changed.")
+    theses: list[dict[str, object]] = []
+    if "thesis_search" in completed:
+        thesis_payload = base._private_json(folder / "theses.json", "Resume theses")
+        if not isinstance(thesis_payload, Mapping) or not isinstance(thesis_payload.get("theses"), list):
+            raise workflow.WorkflowError("Resume theses are malformed.")
+        theses = [dict(item) for item in thesis_payload["theses"] if isinstance(item, Mapping)]
+        if not theses:
+            raise workflow.WorkflowError("Resume selected thesis is missing.")
+    return DiscoveryResume(
+        folder, as_of, tuple(top_five), tuple(eligible), route,
+        tuple(dict(item) for item in scouts if isinstance(item, Mapping)),
+        tuple(completed), tuple(items), tuple(topic_cards), tuple(theses),
+        str(run_input["run_id"]),
+        tuple(dict(item) for item in prior_checks if isinstance(item, Mapping) and item.get("stage") in completed),
+    )
 
 
 def run_drafting_child(
@@ -123,10 +373,11 @@ def run_drafting_child(
     folder: Path,
     env: Mapping[str, str] | None = None,
 ) -> DraftingRun:
-    """Stream one child to the operator while retaining its complete private log."""
+    """Run one child within the shared budget and retain its complete private log."""
 
     chunks: list[str] = []
     returncode = 127
+    remaining = runtime_budget.remaining_seconds()
     try:
         with subprocess.Popen(
             list(command),
@@ -136,13 +387,23 @@ def run_drafting_child(
             text=True,
             bufsize=1,
             env=dict(env) if env is not None else None,
+            start_new_session=True,
         ) as process:
-            if process.stdout is None:
-                raise workflow.WorkflowError("Drafting child output pipe was unavailable.")
-            for line in process.stdout:
-                print(line, end="", flush=True)
-                chunks.append(line)
-            returncode = process.wait()
+            try:
+                output, _ = process.communicate(timeout=remaining)
+                returncode = process.returncode
+            except subprocess.TimeoutExpired:
+                # The child can itself have an active Codex subprocess. End the
+                # process group so no paid model work continues after the budget.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                output, _ = process.communicate()
+                output += "\nERROR: TIME_BUDGET_EXCEEDED: shared daily deadline expired.\n"
+                returncode = 124
+            print(output, end="", flush=True)
+            chunks.append(output)
     except OSError as exc:
         line = f"ERROR: drafting child could not start: {exc}\n"
         print(line, end="", flush=True)
@@ -161,6 +422,40 @@ def run_drafting_child(
         log_path=log.relative_to(workflow.REPO_ROOT).as_posix(),
         captured_tail=tuple(lines[-20:]),
     )
+
+
+def recover_timed_out_draft(folder: Path, result: DraftingRun) -> DraftingRun:
+    """A killed Critic cannot erase a securely checkpointed, grounded Writer draft."""
+
+    if result.returncode != 124:
+        return result
+    output = folder / "best-effort-post.md"
+    candidate = best_effort.load_checkpoint(output)
+    if candidate is None:
+        return result
+    best_effort.write(
+        candidate,
+        None,
+        cycle=1,
+        failure_reason="TIME_BUDGET_EXCEEDED: Critic evaluation incomplete",
+        target_path=output,
+    )
+    v1_completion.record_decision(
+        {
+            "contract": "draft_delivery",
+            "mode": "diagnostic",
+            "status": "PASS",
+            "observed_status": "COMPLETED_WITH_WARNINGS",
+            "reason": "Validated grounded Writer post delivered; Critic NOT_EVALUATED after deadline.",
+            "execution_warning": "TIME_BUDGET_EXCEEDED",
+            "interrupted_evaluation": True,
+        },
+        stage="draft-delivery",
+        subject_id=candidate.candidate_id,
+        artifact_sha256=v1_completion._sha256_text(candidate.text),
+    )
+    print("Draft delivered from validated Writer checkpoint with warnings; Critic NOT_EVALUATED.")
+    return DraftingRun(0, "TIME_BUDGET_EXCEEDED after safe draft delivery", result.log_path, result.captured_tail)
 
 
 def record_drafting_stage(
@@ -1550,6 +1845,15 @@ def _validate_body_verified_evidence(
     seen_urls: set[str] = set()
     seen_hashes: set[str] = set()
     for raw, item in zip(raw_items, prepared, strict=True):
+        if require_stored_hash:
+            original_fetch = raw.get("fetched_at")
+            if not isinstance(original_fetch, str) or not original_fetch.strip():
+                raise workflow.WorkflowError("Resumed evidence is missing its original fetch time.")
+            try:
+                workflow.parse_published_at(original_fetch)
+            except ValueError as exc:
+                raise workflow.WorkflowError("Resumed evidence fetch time is invalid.") from exc
+            item["fetched_at"] = original_fetch
         body = item.get("body")
         if not isinstance(body, str) or not body.strip():
             raise workflow.WorkflowError("Evidence verification requires a non-blank source body.")
@@ -1913,6 +2217,8 @@ def _resolve_parallel_evidence(
                     seen_urls.add(url)
                     seen_hashes.add(digest)
         except workflow.WorkflowError as exc:
+            if isinstance(exc, runtime_budget.GlobalDeadlineExceeded):
+                raise
             timeout = isinstance(exc, ModelTimeoutError) or _timed_out(exc)
             row.update(status="TIMEOUT" if timeout else "FAIL", reason=str(exc))
             if timeout:
@@ -2038,6 +2344,8 @@ def resolve_signal_evidence(
         )
         return EvidenceResolution(tuple(items), "live-targeted", 1, fingerprint, _evidence_warnings(items))
     except workflow.WorkflowError as exc:
+        if isinstance(exc, runtime_budget.GlobalDeadlineExceeded):
+            raise
         trace.append(
             {
                 "route": "live-targeted",
@@ -2073,16 +2381,16 @@ def command(args: argparse.Namespace) -> int:
     )
     ledger_start = len(v1_completion._read_jsonl(ledger_path))
     profile = base.validate_profile(base._private_json(args.profile, "Authority profile"))
-    resume = (
-        load_discovery_resume(
-            args.resume_from,
-            days=args.days,
-            requested_topic=args.topic,
-            profile=profile,
+    resume = None
+    if getattr(args, "resume_from", None) is not None:
+        source = base._under_private(args.resume_from)
+        resume = (
+            load_stage_resume(source, args=args, profile=profile)
+            if (source / "run-input.json").is_file()
+            else load_discovery_resume(
+                source, days=args.days, requested_topic=args.topic, profile=profile,
+            )
         )
-        if getattr(args, "resume_from", None) is not None
-        else None
-    )
     as_of = resume.as_of if resume is not None else (
         args.as_of
         or datetime.now(timezone.utc)
@@ -2104,10 +2412,34 @@ def command(args: argparse.Namespace) -> int:
             "Resume output must be different from the preserved source run."
         )
     run_dashboard = new_run_dashboard(run_id)
+    input_fingerprint = _run_input_fingerprint(args, profile, as_of)
+    base.write_private_json(folder / "run-input.json", {
+        "schema_version": 1, "run_id": run_id, "as_of": as_of,
+        "input_fingerprint": input_fingerprint,
+        "contract_sha256": _contract_sha256(),
+        "implementation_sha256": _implementation_sha256(),
+        "resumed_from": (
+            resume.source_folder.relative_to(workflow.REPO_ROOT).as_posix()
+            if resume is not None else None
+        ),
+        "reused_stages": list(resume.completed_stages) if resume is not None else [],
+        "runtime_scope": "fresh invocation; resumed stages retain prior-run provenance" if resume is not None else "fresh full run",
+    })
+    if resume is not None:
+        run_dashboard["resume"] = {
+            "source": resume.source_folder.relative_to(workflow.REPO_ROOT).as_posix(),
+            "source_run_id": resume.source_run_id or "legacy-run-id-unavailable",
+            "reused_stages": list(resume.completed_stages),
+            "source_stage_checks": [dict(item) for item in resume.source_stage_checks],
+            "runtime_scope": "fresh invocation only; not an end-to-end fresh-run SLO measurement",
+        }
+    legacy_resume = resume is not None and not resume.completed_stages and not (resume.source_folder / "run-input.json").is_file()
+    reuse_conversation = resume is not None and (legacy_resume or "conversation_discovery" in resume.completed_stages)
+    reuse_admission = resume is not None and (legacy_resume or "topic_admission" in resume.completed_stages)
     authority_warning = ""
 
     try:
-        if resume is not None:
+        if reuse_conversation:
             top_five = [dict(item) for item in resume.top_five]
             momentum_candidates = list(top_five)
             ranked = list(top_five)
@@ -2130,6 +2462,8 @@ def command(args: argparse.Namespace) -> int:
                 authority_scores = momentum.score_authority_fit(top_five, profile)
                 top_five = momentum.attach_authority_fit(top_five, authority_scores)
             except ModelTimeoutError as exc:
+                if isinstance(exc, runtime_budget.GlobalDeadlineExceeded):
+                    raise
                 authority_warning = str(exc)
                 top_five = [{**item, "authority_fit": None} for item in ranked]
                 print("Authority ranking unavailable; continuing with observed momentum. No authority scores were inferred.")
@@ -2160,7 +2494,7 @@ def command(args: argparse.Namespace) -> int:
         raise
     run_dashboard["surface_scouts"] = (
         [dict(item) for item in resume.surface_scouts]
-        if resume is not None
+        if reuse_conversation
         else surface_diagnostics(folder)
     )
     record_surface_decisions(run_dashboard, run_dashboard["surface_scouts"])  # type: ignore[arg-type]
@@ -2171,7 +2505,7 @@ def command(args: argparse.Namespace) -> int:
         "COMPLETED_WITH_WARNINGS" if authority_warning else "PASS",
         (
             "conversation candidates and rankings were resumed from the preserved run"
-            if resume is not None
+            if reuse_conversation
             else ("topics collected; authority scorer timed out; ranking uses observed momentum"
                   if authority_warning else "conversation candidates were collected and ranked")
         ),
@@ -2193,7 +2527,7 @@ def command(args: argparse.Namespace) -> int:
             if isinstance(item, Mapping)
         ),
     )
-    if resume is None:
+    if not reuse_admission:
         inventory_path, inventory = update_candidate_inventory(
             top_five,
             as_of=as_of,
@@ -2224,7 +2558,7 @@ def command(args: argparse.Namespace) -> int:
             ),
         },
     )
-    if resume is None:
+    if not reuse_conversation:
         momentum.print_top(top_five)
     else:
         print(f"Resumed {len(top_five)} previously ranked topic candidate(s).")
@@ -2232,7 +2566,7 @@ def command(args: argparse.Namespace) -> int:
         f"Momentum evidence stored: "
         f"{momentum_package.relative_to(workflow.REPO_ROOT)}."
     )
-    if resume is None:
+    if not reuse_admission:
         print(
             f"Rolling candidate inventory: {len(inventory)} scored topic(s) at "
             f"{inventory_path.relative_to(workflow.REPO_ROOT)}."
@@ -2242,7 +2576,8 @@ def command(args: argparse.Namespace) -> int:
             "Resume: conversation discovery and topic admission were not executed again."
         )
 
-    if resume is None:
+    _write_stage_checkpoint(folder, "conversation_discovery", input_fingerprint)
+    if not reuse_admission:
         eligible, discovery_route = select_topic_scope(top_five, inventory)
     else:
         eligible = [dict(item) for item in resume.eligible]
@@ -2269,7 +2604,7 @@ def command(args: argparse.Namespace) -> int:
         )
     record_topic_admission_decisions(
         run_dashboard,
-        eligible if resume is not None else top_five,
+        eligible if reuse_admission else top_five,
         eligible,
         discovery_route,
     )
@@ -2282,7 +2617,7 @@ def command(args: argparse.Namespace) -> int:
         admitted_topics=[str(item["topic"]) for item in eligible],
         resumed_from=(
             resume.source_folder.relative_to(workflow.REPO_ROOT).as_posix()
-            if resume is not None
+            if reuse_admission
             else None
         ),
     )
@@ -2312,19 +2647,27 @@ def command(args: argparse.Namespace) -> int:
             ),
         },
     )
+    _write_stage_checkpoint(folder, "topic_admission", input_fingerprint)
 
     db = base._under_private(args.db)
     evidence_attempts: list[dict[str, object]] = []
     try:
-        evidence_resolution = resolve_signal_evidence(
-            args.topic,
-            args.days,
-            as_of,
-            eligible,
-            folder=folder,
-            db_path=db,
-            attempt_trace=evidence_attempts,
-        )
+        if resume is not None and "evidence_verification" in resume.completed_stages:
+            evidence_resolution = EvidenceResolution(
+                resume.evidence_items, "resumed-verified", 0,
+                evidence_scope_fingerprint(eligible, requested_topic=args.topic),
+                _evidence_warnings(resume.evidence_items),
+            )
+        else:
+            evidence_resolution = resolve_signal_evidence(
+                args.topic,
+                args.days,
+                as_of,
+                eligible,
+                folder=folder,
+                db_path=db,
+                attempt_trace=evidence_attempts,
+            )
         evidence_attempt_path = base.write_private_json(
             folder / "evidence-attempts.json",
             {
@@ -2400,15 +2743,19 @@ def command(args: argparse.Namespace) -> int:
         database_inserted=inserted,
         database_duplicates=duplicates,
     )
+    _write_stage_checkpoint(folder, "evidence_verification", input_fingerprint)
 
     topic_value_pre_gate_path = folder / "topic-value-evaluations-pre-gate.json"
     topic_value_post_gate_path = folder / "topic-value-evaluations-post-gate.json"
     try:
-        topic_value_candidates = topic_value.invoke_discovery_selector(
-            profile,
-            raw_signals,
-            observer=TopicValueDashboardObserver(run_dashboard, folder),
-        )
+        if resume is not None and "topic_value" in resume.completed_stages:
+            topic_value_candidates = [dict(item) for item in resume.topic_value_candidates]
+        else:
+            topic_value_candidates = topic_value.invoke_discovery_selector(
+                profile,
+                raw_signals,
+                observer=TopicValueDashboardObserver(run_dashboard, folder),
+            )
         signals = topic_value.project_discovery_signals(raw_signals, topic_value_candidates)
     except STAGE_EXCEPTIONS as exc:
         gate_decision = getattr(exc, "decision", None)
@@ -2488,6 +2835,7 @@ def command(args: argparse.Namespace) -> int:
         f"Topic Value evidence stored: "
         f"{topic_value_package.relative_to(workflow.REPO_ROOT)}."
     )
+    _write_stage_checkpoint(folder, "topic_value", input_fingerprint)
     print(
         f"{len(topic_value_candidates)} situation(s) selected by Topic Value rank before "
         "thesis generation:"
@@ -2503,11 +2851,19 @@ def command(args: argparse.Namespace) -> int:
 
     thesis_trace_path = folder / "thesis-evaluations.json"
     try:
-        theses = search_theses(
-            profile,
-            signals,
-            trace_path=thesis_trace_path,
-        )
+        if resume is not None and "thesis_search" in resume.completed_stages:
+            theses = [dict(item) for item in resume.theses]
+            base.write_private_json(thesis_trace_path, {
+                "schema_version": 2, "outcome": "PASS", "selection_policy": "resumed-unchanged-thesis",
+                "selected_id": str(theses[0]["id"]), "resumed_from":
+                resume.source_folder.relative_to(workflow.REPO_ROOT).as_posix(),
+            })
+        else:
+            theses = search_theses(
+                profile,
+                signals,
+                trace_path=thesis_trace_path,
+            )
     except STAGE_EXCEPTIONS as exc:
         record_thesis_decisions(run_dashboard, thesis_trace_path)
         trace_details: dict[str, object] = {}
@@ -2560,6 +2916,7 @@ def command(args: argparse.Namespace) -> int:
             "human_selection_required": True,
         },
     )
+    _write_stage_checkpoint(folder, "thesis_search", input_fingerprint)
     db_rel = db.relative_to(workflow.REPO_ROOT).as_posix()
     print(
         f"Live research stored: inserted={inserted}; duplicates={duplicates}; "
@@ -2658,12 +3015,23 @@ def command(args: argparse.Namespace) -> int:
         child_env["LINKEDIN_OS_BEST_EFFORT_OUTPUT"] = str(
             folder / "best-effort-post.md"
         )
+        child_env["LINKEDIN_OS_DRAFT_AS_OF"] = as_of
+        child_env[model_call_checkpoint.OUTPUT_ENV] = str(folder / "model-calls")
+        child_env[model_call_checkpoint.INPUT_ENV] = input_fingerprint
+        if resume is not None and (resume.source_folder / "model-calls").is_dir():
+            child_env[model_call_checkpoint.SOURCE_ENV] = str(resume.source_folder / "model-calls")
+        else:
+            child_env.pop(model_call_checkpoint.SOURCE_ENV, None)
         completed = run_drafting_child(
             selected[1],
             cwd=workflow.REPO_ROOT,
             folder=folder,
             env=child_env,
         )
+        completed = recover_timed_out_draft(folder, completed)
+        if completed.returncode not in {0, 124}:
+            runtime_budget.remaining_seconds()
+        run_dashboard["model_call_reuse"] = model_call_reuse_summary(folder)
         current_rows = v1_completion._read_jsonl(ledger_path)[ledger_start:]
         dashboard = render_eval_dashboard(current_rows)
         dashboard["run_id"] = run_id
@@ -2731,8 +3099,8 @@ def parser() -> argparse.ArgumentParser:
         "--resume-from",
         type=Path,
         help=(
-            "Resume a run that stopped at evidence verification without repeating "
-            "conversation discovery or topic admission."
+            "Resume a stopped discover run in a new output folder, reusing only "
+            "completed hash-bound stages and exact-request drafting calls."
         ),
     )
     result.add_argument(

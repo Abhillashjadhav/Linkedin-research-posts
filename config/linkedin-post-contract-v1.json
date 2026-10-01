@@ -2,9 +2,9 @@
   "metadata": {
     "contract_id": "linkedin-post-contract",
     "schema_version": 1,
-    "version": "1.6.2",
+    "version": "1.6.4",
     "status": "APPROVED",
-    "purpose": "One product and runtime contract for discovery, evidence, selection, drafting, evaluation, repair, packaging, and release.",
+    "purpose": "One product and runtime contract for discovery, evidence, selection, drafting, evaluation, repair, packaging, and release, with route-specific delivery outcomes.",
     "hash_algorithm": "sha256",
     "source_of_truth_after_approval": true
   },
@@ -15,7 +15,7 @@
     "runtime_slo_seconds": 480,
     "release_success": {
       "required_consecutive_live_runs": 3,
-      "successful_run_definition": "A run finishes within the runtime SLO, delivers the post and source comment, meets the writing score target, and records complete provenance. Editorial findings remain visible warnings."
+      "successful_run_definition": "A single-topic daily draft run delivers a validated, factually supported post with source provenance and secure private storage. Critic scores and editorial findings may be NOT_EVALUATED or below target and remain visible warnings. The campaign route retains its own blocking acceptance. Publication remains manual."
     }
   },
   "definitions": {
@@ -25,7 +25,7 @@
     "narrowing": "Remove unsupported detail or move to a true, evidence-supported parent category. Narrowing may not add severity, prevalence, causality, scope, materiality, or certainty.",
     "atomic_idea": "The one transferable product judgment or decision made by the post, not merely the broad subject or company name.",
     "reader_stake": "The opening makes clear why the target reader should care now.",
-    "hard_gate": "Legacy name for editorial findings. Editorial checks are advisory; filesystem security and authorization remain enforced separately.",
+    "hard_gate": "Factual support, citation, required proof, privacy, and publication authorization are enforced. Writing scores, resonance, and style checks are advisory.",
     "selector": "A rule that ranks or chooses among eligible inputs; it is not final post acceptance.",
     "diagnostic": "A signal used for repair and observability; it cannot independently veto publication.",
     "human_choice": "A decision requested only when the workflow cannot resolve a material evidence or product ambiguity safely."
@@ -234,7 +234,7 @@
         "proof_value": "recorded_but_not_counted"
       },
       "role": "diagnostic_and_repair_feedback",
-      "claim_support_remains_separate_hard_gate": false,
+      "claim_support_remains_separate_hard_gate": true,
       "decision_status": "RESOLVED"
     },
     "post_critic": {
@@ -491,8 +491,8 @@
     "preserve_passing_mandatory_floors": true,
     "never_lower_a_floor_during_a_run": true,
     "never_change_the_locked_thesis_without_a_recorded_claim_support_decision": true,
-    "campaign_and_single_post_use_same_policy": true,
-    "on_exhaustion": "Complete with warnings and return the best draft, exact scorecards, unmet score targets and editorial findings. Exit successfully when artifacts were written; do not claim the writing score passed. Publication remains manual.",
+    "campaign_and_single_post_use_same_policy": false,
+    "on_exhaustion": "Single-topic daily draft only: complete with warnings and return the strongest factually supported draft, scorecards when available, unmet score targets and editorial findings. Exit successfully only after secure artifact delivery; do not claim an unevaluated or below-target writing score passed. Campaign runs may remain BLOCKED with no delivered draft. Publication remains manual.",
     "priority": "axis_targets_then_stop"
   },
   "acceptance": {
@@ -500,7 +500,7 @@
     "model_reported_status_is_authoritative": false,
     "python_computes_acceptance": true,
     "model_scores_and_evidence_are_inputs": true,
-    "no_score_can_waive_a_hard_gate": false,
+    "no_score_can_waive_a_hard_gate": true,
     "no_secondary_scorecard_can_veto_after_acceptance": true,
     "editorial_checks_are_advisory": true
   },
@@ -519,7 +519,7 @@
   },
   "runtime": {
     "global_deadline_seconds": 480,
-    "deadline_behavior": "Stop safely, persist the current checkpoint, record TIME_BUDGET_EXCEEDED, and print one resume command.",
+    "deadline_behavior": "Stop safely. If a validated factually supported Writer post was securely checkpointed, deliver it with NOT_EVALUATED Critic and warnings. Otherwise record TIME_BUDGET_EXCEEDED and print one resume command.",
     "stage_retries_share_global_budget": true,
     "completed_stage_reuse": true,
     "quality_cycle_resume": true,

@@ -85,7 +85,7 @@ def package_documents() -> tuple[dict[str, object], dict[str, object]]:
         "eligible_candidate_ids": eligible,
         "recommended_candidate_id": "candidate-1",
         "manual_fact_verification_required": True,
-        "files": dict(approval_package.PACKAGE_FILES),
+        "files": dict(approval_package.LEGACY_PACKAGE_FILES),
     }
     evaluation: dict[str, object] = {
         "schema_version": 1,
@@ -472,7 +472,7 @@ class PerformancePackageTests(unittest.TestCase):
         )
 
     def test_learning_context_opens_each_package_file_once_and_detects_a_race(self) -> None:
-        package_filenames = set(approval_package.PACKAGE_FILES.values())
+        package_filenames = set(approval_package.LEGACY_PACKAGE_FILES.values())
         opened: list[str] = []
         real_open = performance.os.open
 

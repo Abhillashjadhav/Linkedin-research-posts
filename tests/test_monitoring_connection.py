@@ -207,7 +207,7 @@ class MonitoringConnectionTests(unittest.TestCase):
     def test_completed_package_preserves_nested_gates_and_evaluates_actual_scores(self):
         import json
 
-        from test_eval_package import _evaluated_result
+        from test_eval_package import _evaluated_result, _failed_honesty_gate
 
         from authority_os import workflow
         from authority_os.monitoring_dashboard_export import export_completed_dashboard
@@ -224,6 +224,10 @@ class MonitoringConnectionTests(unittest.TestCase):
             context(), case_id="fixed-case", input_fingerprint="sha256:" + "a" * 64
         )
         first = _evaluated_result((4, 4, 4, 4, 4), hard_gates_pass=False)
+        # Monitoring must preserve an explicitly failed factual gate even
+        # though editorial-only failures elsewhere remain advisory.
+        first["gates"] = _failed_honesty_gate("candidate-2")
+        first["acceptance"]["status"] = "FAIL"
         second = _evaluated_result((5, 4, 4, 4, 4))
         second["candidate_id"] = "candidate-3"
         second["acceptance"]["status"] = "NOT_EVALUATED"

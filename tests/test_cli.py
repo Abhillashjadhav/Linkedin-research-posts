@@ -128,6 +128,23 @@ class MinimalCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn(secret, result.stdout + result.stderr)
             self.assertIn("values were not inspected", result.stdout)
+            self.assertIn("active Codex CLI", result.stdout)
+            self.assertIn("authentication and configured model access: unverified", result.stdout)
+
+    def test_doctor_checks_active_runtime_without_model_egress(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "authority.sqlite"
+            with patch.object(cli.privacy, "scan_repository", return_value=[]), patch.object(cli.shutil, "which", side_effect=lambda name: "/usr/bin/codex" if name == "codex" else None), patch.object(
+                cli.subprocess, "run", return_value=SimpleNamespace(returncode=0)
+            ) as run:
+                with redirect_stdout(io.StringIO()) as output:
+                    cli.command_doctor(SimpleNamespace(db=database))
+            run.assert_called_once_with(
+                ["/usr/bin/codex", "--version"], capture_output=True,
+                text=True, timeout=5, check=False,
+            )
+            self.assertIn("active Codex CLI: executable responded", output.getvalue())
+            self.assertIn("authentication and configured model access: unverified", output.getvalue())
 
     def test_doctor_is_read_only_and_does_not_create_a_missing_database(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -560,7 +577,7 @@ class MinimalCliTests(unittest.TestCase):
             self.assertEqual(manifest["human_approval_status"], "NOT_APPROVED")
             self.assertEqual(manifest["publishing_status"], "DISABLED")
             self.assertIsNone(manifest["recommended_candidate_id"])
-            self.assertEqual(len(list(package_path.iterdir())), 6)
+            self.assertEqual(len(list(package_path.iterdir())), 8)
             self.assertIn("Recommendation: none; synthetic fixture", result.stdout)
             self.assertIn("Performance recording: unavailable", result.stdout)
             self.assertNotIn("Performance package ID:", result.stdout)
