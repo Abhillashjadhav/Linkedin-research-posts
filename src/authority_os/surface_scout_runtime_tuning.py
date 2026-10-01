@@ -152,6 +152,9 @@ Social engagement may establish momentum only. It does not prove factual claims.
             caveat = str(validated["caveat"])
             signals = list(validated["signals"])  # type: ignore[arg-type]
         except workflow.WorkflowError as exc:
+            from . import runtime_budget
+            if isinstance(exc, runtime_budget.GlobalDeadlineExceeded):
+                raise
             status = _failure_status(exc)
             caveat = str(exc)
             signals = []

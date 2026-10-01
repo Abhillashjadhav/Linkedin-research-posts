@@ -2,7 +2,7 @@
 
 ## Current implemented flow
 
-The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, voice-grounded Writer drafting, post-draft Narrative Editor, five-axis Critic scoring, five deterministic local gates, integrated and separate anti-slop stages, a scored first comment, Artifact Editor, SVG rendering, Visual QA, an explicit local human-review package, package-linked manual performance checkpoints, and an evidence-thresholded private weekly review. Legacy ordinary drafting retains its established fixture and package behaviour. `draft --run-spec` selects the complete trace-first campaign coordinator; neither path approves, schedules, or publishes.
+The current runtime implements a safe Scout-to-Analyst evidence path, strategic goal routing, voice-grounded Writer drafting, post-draft Narrative Editor, five-axis Critic scoring, five deterministic local gates, integrated and separate anti-slop stages, a scored first comment, Artifact Editor, SVG rendering, Visual QA, an explicit local human-review package, package-linked manual performance checkpoints, and an evidence-thresholded private weekly review. Legacy ordinary drafting retains its established fixture and package behaviour. `draft --run-spec` selects the complete trace-first campaign coordinator; neither path approves, schedules, or publishes. The single-topic daily draft has a safe-checkpoint delivery-first fallback with visible warnings; the campaign route retains blocking acceptance and can end without a delivered draft.
 
 ### Trace-first campaign order
 

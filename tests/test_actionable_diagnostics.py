@@ -104,7 +104,12 @@ class ActionableDiagnosticsTests(unittest.TestCase):
         from dataclasses import replace
         from types import SimpleNamespace
 
-        stalled = replace(candidate(22), axes={
+        # Keep factual gates clear here: this test covers bounded editorial
+        # hook repair. Unsupported factual findings are exercised separately.
+        stalled = replace(candidate(22), gates={
+            "authority_conversion": "PASS", "proof": "NOT_REQUIRED",
+            "honesty": "PASS", "citation": "PASS", "relevance": "PASS",
+        }, passes_required_gates=True, gate_reasons=(), axes={
             "hook_strength": 3, "middle_escalation": 5, "earned_closer": 5,
             "specificity_and_source_quality": 5, "voice_fidelity": 4,
         })

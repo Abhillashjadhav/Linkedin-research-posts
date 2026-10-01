@@ -48,6 +48,16 @@ def _failed_honesty_gate(candidate_id: str) -> dict[str, object]:
     return gate
 
 
+def _failed_relevance_gate(candidate_id: str) -> dict[str, object]:
+    gate = _gate(candidate_id)
+    gate["gates"]["relevance"] = {  # type: ignore[index]
+        "status": "FAIL",
+        "reason_codes": ["reader-problem-not-reflected"],
+    }
+    gate["passes_required_gates"] = False
+    return gate
+
+
 def _evaluated_result(
     values: tuple[int, int, int, int, int],
     *,
@@ -61,7 +71,7 @@ def _evaluated_result(
         "raw_total": total,
         "effective_total": total,
     }
-    gates = _gate("candidate-2") if hard_gates_pass else _failed_honesty_gate("candidate-2")
+    gates = _gate("candidate-2") if hard_gates_pass else _failed_relevance_gate("candidate-2")
     return {
         "candidate_id": "candidate-2",
         "candidate": _candidate(2),
@@ -168,7 +178,7 @@ class EvalPackageTests(unittest.TestCase):
         with (
             patch.object(eval_package, "_load_context", return_value=context),
             patch.object(eval_package, "_rubric_identity", return_value={"rubric_id": "test", "sha256": "a" * 64}),
-            patch.object(workflow, "evaluate_candidate_set_gates", side_effect=lambda candidates, **kwargs: [_failed_honesty_gate(c["id"]) for c in candidates]),
+            patch.object(workflow, "evaluate_candidate_set_gates", side_effect=lambda candidates, **kwargs: [_failed_relevance_gate(c["id"]) for c in candidates]),
             patch.object(workflow, "candidate_factual_support_diagnostics", return_value=[]),
             patch.object(workflow, "validate_draft_candidates", side_effect=lambda candidates, **kwargs: candidates),
         ):
@@ -553,7 +563,7 @@ class EvalPackageTests(unittest.TestCase):
         self.assertEqual(final["scorecard"]["effective_total"], 21)
         self.assertEqual(final["acceptance"]["status"], "PASS")
 
-    def test_passing_axes_stop_even_with_visible_wording_advisories(self) -> None:
+    def test_passing_axes_stop_even_with_visible_editorial_advisories(self) -> None:
         context = _repair_context()
         captured: dict[str, object] = {}
 
@@ -587,7 +597,7 @@ class EvalPackageTests(unittest.TestCase):
                 workflow,
                 "evaluate_candidate_set_gates",
                 side_effect=lambda candidates, **_kwargs: [
-                    _failed_honesty_gate(str(candidate["id"]))
+                    _failed_relevance_gate(str(candidate["id"]))
                     for candidate in candidates
                 ],
             ),

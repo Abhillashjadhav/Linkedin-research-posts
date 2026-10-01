@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import secrets
@@ -25,9 +26,15 @@ PACKAGE_FILES = {
     "manifest": "manifest.json",
     "brief": "brief.md",
     "candidates": "candidates.md",
+    "post": "post.md",
+    "source_comment": "source-comment.md",
     "evaluation": "evaluation.json",
     "sources": "sources.md",
     "final_package": "final-package.md",
+}
+LEGACY_PACKAGE_FILES = {
+    key: value for key, value in PACKAGE_FILES.items()
+    if key not in {"post", "source_comment"}
 }
 PACKAGE_MODES = {"live", "fixture"}
 REVIEW_STATUSES = {
@@ -406,6 +413,9 @@ def _package_data(
         for candidate_id in ranking
         if acceptance_policy.scorecard_is_acceptable(
             scorecards_by_id[candidate_id],
+            delivery_safety_pass=not acceptance_policy.delivery_safety_failures(
+                gates_by_id[candidate_id]["gates"]
+            ),
             hard_gates_pass=(
                 gates_by_id[candidate_id]["passes_required_gates"] is True
                 and acceptance_policy.hard_candidate_gates_pass(
@@ -589,6 +599,24 @@ Attested public sentences:
     sources_markdown = "\n".join(source_sections)
 
     recommended_id = manifest["recommended_candidate_id"]
+    # A blocked or fixture package retains its exact scored leader for review;
+    # status in the manifest remains authoritative. No editorial comment score
+    # is added to the approved five-axis post acceptance contract.
+    retained_id = recommended_id or evaluation["score_leader_id"]
+    retained = next(candidate for candidate in candidates if candidate["id"] == retained_id)
+    source_urls = [str(source["source"]) for source in sources]
+    if not source_urls:
+        raise workflow.WorkflowError("Source comment needs selected evidence URLs.")
+    source_comment = "Sources for this post:\n" + "\n".join(source_urls)
+    evaluation["source_comment"] = {
+        "status": "SOURCE_URLS_PRESENT",
+        "selected_source_urls": source_urls,
+        "post_candidate_id": retained_id,
+        "post_sha256": hashlib.sha256(str(retained["text"]).encode("utf-8")).hexdigest(),
+        "comment_sha256": hashlib.sha256(source_comment.encode("utf-8")).hexdigest(),
+        "editorial_score": "NOT_EVALUATED",
+        "editorial_score_mode": "diagnostic",
+    }
     if recommended_id is not None:
         recommended = next(
             candidate for candidate in candidates if candidate["id"] == recommended_id
@@ -641,6 +669,8 @@ This package records no approval, creates no schedule, and takes no LinkedIn act
     rendered = {
         "brief.md": brief_markdown.rstrip() + "\n",
         "candidates.md": candidates_markdown.rstrip() + "\n",
+        "post.md": str(retained["text"]),
+        "source-comment.md": source_comment,
         "evaluation.json": json.dumps(
             evaluation, indent=2, sort_keys=True, ensure_ascii=False
         )
@@ -730,6 +760,8 @@ def _write_stage_files(stage_fd: int, rendered: Mapping[str, str]) -> None:
     for filename in (
         "brief.md",
         "candidates.md",
+        "post.md",
+        "source-comment.md",
         "evaluation.json",
         "sources.md",
         "final-package.md",
@@ -908,6 +940,8 @@ def write_human_approval_package(
         for filename in (
             "brief.md",
             "candidates.md",
+            "post.md",
+            "source-comment.md",
             "evaluation.json",
             "sources.md",
             "final-package.md",

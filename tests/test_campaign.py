@@ -94,6 +94,26 @@ class FakeInvoker:
 
 
 class CampaignTests(unittest.TestCase):
+    def test_passing_first_iteration_is_retained_without_artisanal_rewrite(self) -> None:
+        class RegressiveEditor(FakeInvoker):
+            def __call__(self, stage, config, role, task, schema):
+                if stage == "no_ai_slop_artisanal":
+                    raise AssertionError("A passing post must stop before a further edit.")
+                return super().__call__(stage, config, role, task, schema)
+
+        invoker = RegressiveEditor()
+        with tempfile.TemporaryDirectory(dir=workflow.REPO_ROOT) as temporary:
+            trace = campaign._run_day(
+                self.day(), directory=Path(temporary), models=campaign.StageModels.preferred(),
+                invoker=invoker, skill="Minimum edit.", evaluation="Pass or fail.",
+                editor_provenance={"repository": "test", "skill_sha256": "a", "eval_sha256": "b"},
+                researched_at="2026-08-09T00:00:00Z",
+            )
+        self.assertEqual(trace["final"]["status"], "READY_FOR_HUMAN_REVIEW")
+        self.assertEqual(trace["final"]["post"], invoker.drafts[0]["text"])
+        self.assertEqual(trace["post_edit_recritic"]["score"]["effective_total"], 25)
+        self.assertNotIn("no_ai_slop_artisanal", invoker.calls)
+
     def day(self) -> dict[str, object]:
         return {
             "day": "Monday",
@@ -146,7 +166,6 @@ class CampaignTests(unittest.TestCase):
                 "writer",
                 "narrative_editor",
                 "critic",
-                "no_ai_slop_artisanal",
                 "first_comment_writer",
                 "first_comment_no_ai_slop",
                 "first_comment_reviewer",
@@ -205,7 +224,31 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(trace["final"]["status"], "READY_FOR_HUMAN_REVIEW")
         self.assertEqual(trace["post_edit_recritic"]["score"]["effective_total"], 18)
         self.assertEqual(trace["first_comment"]["review"]["total"], 18)
-        self.assertIn("no_ai_slop_artisanal", invoker.calls)
+        self.assertNotIn("no_ai_slop_artisanal", invoker.calls)
+
+    def test_comment_failure_preserves_exact_passing_post_and_score(self) -> None:
+        class LowComment(FakeInvoker):
+            def __call__(self, stage, config, role, task, schema):
+                if stage == "first_comment_reviewer":
+                    self.calls.append(stage)
+                    return {"scores": {axis: 3 for axis in campaign.COMMENT_AXES}}
+                return super().__call__(stage, config, role, task, schema)
+
+        invoker = LowComment()
+        with tempfile.TemporaryDirectory(dir=workflow.REPO_ROOT) as temporary:
+            directory = Path(temporary)
+            trace = campaign._run_day(
+                self.day(), directory=directory, models=campaign.StageModels.preferred(),
+                invoker=invoker, skill="Minimum edit.", evaluation="Pass or fail.",
+                editor_provenance={"repository": "test", "skill_sha256": "a", "eval_sha256": "b"},
+                researched_at="2026-08-09T00:00:00Z",
+            )
+            campaign._persist_day(directory, trace)
+            self.assertEqual(trace["final"]["status"], "BLOCKED")
+            self.assertEqual(trace["retained_post"]["text"], invoker.drafts[0]["text"])
+            self.assertEqual(trace["retained_post"]["score"]["effective_total"], 25)
+            self.assertIn(invoker.drafts[0]["text"], (directory / "retained-post.md").read_text())
+            self.assertFalse((directory / "post.md").exists())
 
     def test_post_route_never_trades_away_voice_floor(self) -> None:
         class LowVoiceInvoker(FakeInvoker):

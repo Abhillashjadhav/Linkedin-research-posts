@@ -341,6 +341,9 @@ Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings
                 result, surface=surface, days=days, as_of=as_of
             )
         except workflow.WorkflowError as exc:
+            from . import runtime_budget
+            if isinstance(exc, runtime_budget.GlobalDeadlineExceeded):
+                raise
             validated = {"status": "UNAVAILABLE", "signals": [], "caveat": str(exc)}
         if validated["status"] != "UNAVAILABLE" or attempt == MAX_SURFACE_ATTEMPTS:
             break

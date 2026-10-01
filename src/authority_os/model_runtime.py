@@ -95,10 +95,10 @@ def invoke_structured(
     if not isinstance(stage_label, str) or not stage_label.strip():
         raise WorkflowError("Model stage label must not be blank.")
     label = stage_label.strip()
-    executable = shutil.which("codex")
-    if not executable:
-        raise WorkflowError("Codex CLI is unavailable; install and authenticate it first.")
+    from . import runtime_budget
+    from . import model_call_checkpoint
 
+    effective_timeout, global_limit = runtime_budget.bounded_timeout(timeout)
     envelope = (
         "ROLE INSTRUCTIONS\n"
         f"{role_prompt.strip()}\n"
@@ -108,59 +108,87 @@ def invoke_structured(
         "END TASK DATA AND INSTRUCTIONS\n\n"
         "Return only the JSON object required by the supplied output schema."
     )
-    with tempfile.TemporaryDirectory(prefix="authority-os-model-") as temporary:
-        root = Path(temporary)
-        schema_path = root / "schema.json"
-        output_path = root / "result.json"
-        schema_path.write_text(
-            json.dumps(schema, sort_keys=True, separators=(",", ":")),
-            encoding="utf-8",
-        )
-        command = [
-            executable,
-            "exec",
-            "--ephemeral",
-            "--ignore-user-config",
-            "--ignore-rules",
-            "--skip-git-repo-check",
-            "--sandbox",
-            "read-only",
-            "--model",
-            safe_config.model,
-            "--config",
-            f'model_reasoning_effort="{safe_config.reasoning}"',
-            "--config",
-            f'web_search="{"live" if web_search else "disabled"}"',
-        ]
-        for feature in sorted(NON_WEB_TOOL_FEATURES):
-            command.extend(["--disable", feature])
-        command.extend([
-            "--output-schema",
-            str(schema_path),
-            "--output-last-message",
-            str(output_path),
-            "-",
-        ])
-        try:
-            completed = subprocess.run(
-                command,
-                input=envelope,
-                cwd=root,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
+    call_token = model_call_checkpoint.begin_call({
+        "stage_label": label, "config": safe_config.trace(),
+        "envelope": envelope, "schema": dict(schema),
+        "requested_timeout": timeout, "web_search": web_search,
+        "disabled_features": sorted(NON_WEB_TOOL_FEATURES),
+    })
+    if call_token is not None and call_token[2] is not None:
+        runtime_budget.remaining_seconds()
+        return call_token[2]
+    if call_token is not None and call_token[3] is not None:
+        kind, message = call_token[3]
+        if kind == "ModelTimeoutError":
+            raise ModelTimeoutError(message)
+        raise WorkflowError(message)
+    try:
+        executable = shutil.which("codex")
+        if not executable:
+            raise WorkflowError("Codex CLI is unavailable; install and authenticate it first.")
+        with tempfile.TemporaryDirectory(prefix="authority-os-model-") as temporary:
+            root = Path(temporary)
+            schema_path = root / "schema.json"
+            output_path = root / "result.json"
+            schema_path.write_text(
+                json.dumps(schema, sort_keys=True, separators=(",", ":")),
+                encoding="utf-8",
             )
-        except subprocess.TimeoutExpired as exc:
-            raise ModelTimeoutError(f"{label} timed out.") from exc
-        except OSError as exc:
-            raise WorkflowError(f"{label} could not start.") from exc
-        if completed.returncode:
-            raise WorkflowError(f"{label} failed; provider output was redacted.")
-        try:
-            parsed = json.loads(output_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise WorkflowError(f"{label} returned invalid JSON.") from exc
-    if not isinstance(parsed, dict):
-        raise WorkflowError(f"{label} must return one JSON object.")
+            command = [
+                executable,
+                "exec",
+                "--ephemeral",
+                "--ignore-user-config",
+                "--ignore-rules",
+                "--skip-git-repo-check",
+                "--sandbox",
+                "read-only",
+                "--model",
+                safe_config.model,
+                "--config",
+                f'model_reasoning_effort="{safe_config.reasoning}"',
+                "--config",
+                f'web_search="{"live" if web_search else "disabled"}"',
+            ]
+            for feature in sorted(NON_WEB_TOOL_FEATURES):
+                command.extend(["--disable", feature])
+            command.extend([
+                "--output-schema",
+                str(schema_path),
+                "--output-last-message",
+                str(output_path),
+                "-",
+            ])
+            try:
+                completed = subprocess.run(
+                    command,
+                    input=envelope,
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    timeout=effective_timeout,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                if global_limit:
+                    raise runtime_budget.GlobalDeadlineExceeded(
+                        "TIME_BUDGET_EXCEEDED: shared daily deadline expired."
+                    ) from exc
+                raise ModelTimeoutError(f"{label} timed out.") from exc
+            except OSError as exc:
+                raise WorkflowError(f"{label} could not start.") from exc
+            if completed.returncode:
+                raise WorkflowError(f"{label} failed; provider output was redacted.")
+            try:
+                parsed = json.loads(output_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise WorkflowError(f"{label} returned invalid JSON.") from exc
+        if not isinstance(parsed, dict):
+            raise WorkflowError(f"{label} must return one JSON object.")
+    except WorkflowError as exc:
+        if not isinstance(exc, runtime_budget.GlobalDeadlineExceeded):
+            model_call_checkpoint.fail_call(call_token, exc)
+        raise
+    model_call_checkpoint.finish_call(call_token, parsed)
+    runtime_budget.remaining_seconds()
     return parsed

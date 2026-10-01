@@ -26,7 +26,23 @@ AXIS_FLOORS: Mapping[str, int] = MappingProxyType(
 HARD_GATES = frozenset({"honesty", "citation", "proof", "privacy", "relevance"})
 ADVISORY_FACTUAL_WORDING_CODE = "unsupported-factual-marker"
 ADVISORY_FACTUAL_WORDING_GATES = frozenset({"honesty", "citation"})
-ACCEPTANCE_CONTRACT_VERSION = "five-axis-v8"
+ACCEPTANCE_CONTRACT_VERSION = "five-axis-v9"
+
+
+def delivery_safety_failures(gates: Mapping[str, object]) -> list[str]:
+    """Factual support is required even when editorial evaluation is advisory.
+
+    The caller must separately enforce owner-only storage and manual publishing.
+    Missing or unevaluated findings fail closed; a high score cannot waive them.
+    """
+
+    failures: list[str] = []
+    for name in ("honesty", "citation", "proof"):
+        status, _reasons = _gate_status_and_reasons(gates.get(name), ())
+        allowed = {"PASS", "NOT_REQUIRED"} if name == "proof" else {"PASS"}
+        if status not in allowed:
+            failures.append(name)
+    return failures
 
 
 def axis_shortfalls(axes: Mapping[str, object]) -> dict[str, dict[str, int]]:
@@ -173,6 +189,7 @@ def acceptance_decision(
     *,
     hard_gates_pass: bool,
     additional_checks_pass: bool = True,
+    delivery_safety_pass: bool = True,
 ) -> dict[str, object]:
     """Evaluate the shared five-axis contract and record every shortfall.
 
@@ -187,11 +204,14 @@ def acceptance_decision(
     accepted = (
         total_shortfall == 0
         and not axis_failures
+        and delivery_safety_pass
     )
     reasons: list[str] = []
     if total_shortfall:
         reasons.append("total_score")
     reasons.extend(axis_failures)
+    if not delivery_safety_pass:
+        reasons.append("factual_safety")
     advisories = []
     if hard_gates_pass is not True:
         advisories.append("editorial-gate-findings")
@@ -206,6 +226,7 @@ def acceptance_decision(
         "axis_shortfalls": axis_failures,
         "hard_gates_pass": hard_gates_pass is True,
         "additional_checks_pass": additional_checks_pass is True,
+        "delivery_safety_pass": delivery_safety_pass is True,
         "reasons": reasons,
         "advisory_warnings": advisories,
     }
@@ -216,6 +237,7 @@ def scorecard_is_acceptable(
     *,
     hard_gates_pass: bool,
     additional_checks_pass: bool = True,
+    delivery_safety_pass: bool = True,
 ) -> bool:
     """Return whether a scorecard clears the shared acceptance contract."""
 
@@ -224,6 +246,7 @@ def scorecard_is_acceptable(
             scorecard,
             hard_gates_pass=hard_gates_pass,
             additional_checks_pass=additional_checks_pass,
+            delivery_safety_pass=delivery_safety_pass,
         )["status"]
         == "PASS"
     )

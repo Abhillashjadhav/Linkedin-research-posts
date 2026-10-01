@@ -11,9 +11,10 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Iterator, Mapping, Sequence
 
-from . import acceptance_policy, anti_slop, best_effort
+from . import acceptance_policy, anti_slop, best_effort, __main__ as legacy_cli
 from . import package as approval_package
 from . import quality_cli, v1_completion, workflow
 from .model_runtime import ModelTimeoutError
@@ -28,6 +29,9 @@ _ORIGINAL_COMMAND_DRAFT = quality_cli.command_draft
 _ORIGINAL_PACKAGE_DATA = approval_package._package_data  # type: ignore[attr-defined]
 _ORIGINAL_RUN_ATTEMPT = quality_cli._run_attempt  # type: ignore[attr-defined]
 _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY = False
+_ACTIVE_COMMAND_DRAFT = False
+_ACTIVE_QUALIFICATION_SEED: quality_cli.CandidateResult | None = None
+_ACTIVE_CHECKPOINTED_ATTEMPT: quality_cli.AttemptResult | None = None
 
 
 def _failed_gate_count(candidate: quality_cli.CandidateResult) -> int:
@@ -71,7 +75,7 @@ def candidate_is_acceptable(
 ) -> bool:
     """Return the V1 floor, optionally after the bounded wording repair."""
 
-    return acceptance_policy.scorecard_is_acceptable(
+    return not best_effort.blocking_failures(candidate) and acceptance_policy.scorecard_is_acceptable(
         {**candidate.axes, "effective_total": candidate.effective_total},
         hard_gates_pass=acceptance_policy.hard_candidate_gates_pass(
             candidate.gates,
@@ -88,6 +92,7 @@ class RepairState:
 
     best: quality_cli.CandidateResult | None = None
     best_attempt: quality_cli.AttemptResult | None = None
+    early: best_effort.EarlyCandidate | None = None
     cycle_best_scores: list[int] = field(default_factory=list)
     observed: list[
         tuple[int, quality_cli.CandidateResult, quality_cli.AttemptResult]
@@ -100,16 +105,27 @@ class RepairState:
     ) -> quality_cli.CandidateResult:
         if not attempt.candidates:
             raise workflow.WorkflowError("Quality repair needs at least one candidate.")
+        # Feedback may inspect an attempt already checkpointed before advisory checks.
+        if any(previous_attempt is attempt for _, _, previous_attempt in self.observed):
+            assert self.best is not None
+            return self.best
         observed_cycle = cycle or len(self.cycle_best_scores) + 1
         self.observed.extend(
             (observed_cycle, candidate, attempt) for candidate in attempt.candidates
         )
         current = max(attempt.candidates, key=_candidate_rank)
         self.cycle_best_scores.append(current.effective_total)
-        progressing = [
+        safe = [
             candidate for candidate in attempt.candidates
-            if self.best is None or _candidate_progresses(self.best, candidate)
+            if not best_effort.blocking_failures(candidate)
         ]
+        if self.best is None:
+            progressing = safe or list(attempt.candidates)
+        elif best_effort.blocking_failures(self.best) and safe:
+            progressing = safe
+        else:
+            pool = safe if not best_effort.blocking_failures(self.best) else list(attempt.candidates)
+            progressing = [candidate for candidate in pool if _candidate_progresses(self.best, candidate)]
         if progressing:
             self.best = max(progressing, key=_candidate_rank)
             self.best_attempt = attempt
@@ -118,13 +134,65 @@ class RepairState:
 
     def best_safe(
         self,
+        *,
+        require_claim_gates: bool = False,
     ) -> tuple[int, quality_cli.CandidateResult, quality_cli.AttemptResult] | None:
         eligible = [
             item
             for item in self.observed
-            if item[1] == self.best and not best_effort.blocking_failures(item[1])
+            if not best_effort.blocking_failures(item[1])
         ]
-        return max(eligible, key=lambda item: _candidate_rank(item[1])) if eligible else None
+        if eligible:
+            retained = [item for item in eligible if item[1] is self.best]
+            if retained:
+                return retained[-1]
+            return max(eligible, key=lambda item: _candidate_rank(item[1]))
+        if self.early is not None:
+            return (1, self.early, SimpleNamespace(review_status=None, recommendation=None, package_lines=()))
+        return None
+
+
+def _checkpoint_validated_writer(
+    candidates: Sequence[Mapping[str, object]], *,
+    brief: Mapping[str, object], evidence: Sequence[Mapping[str, object]],
+    proof: workflow.LoadedProof | None,
+) -> None:
+    """Retain the first actually claim-gated Writer draft before Critic egress."""
+
+    state = _ACTIVE_STATE
+    if not _ACTIVE_COMMAND_DRAFT or state is None or state.early is not None:
+        return
+    results = workflow.evaluate_candidate_set_gates(
+        candidates, brief=brief, evidence=evidence, proof=proof
+    )
+    by_id = {str(result["candidate_id"]): result for result in results}
+    evidence_by_id = {str(item["id"]): item for item in evidence}
+    for candidate in candidates:
+        result = by_id[str(candidate["id"])]
+        raw_gates = result["gates"]
+        statuses = {
+            str(name): str(value.get("status", "NOT_EVALUATED"))
+            for name, value in raw_gates.items()
+        }
+        if acceptance_policy.delivery_safety_failures(statuses):
+            continue
+        reasons = tuple(
+            str(reason)
+            for value in raw_gates.values()
+            for reason in value.get("reason_codes", ())
+        )
+        sources = tuple(dict.fromkeys(
+            str(evidence_by_id[claim_id]["source"])
+            for claim_id in candidate["claim_ids"]
+            if claim_id in evidence_by_id
+        ))
+        early = best_effort.EarlyCandidate(
+            str(candidate["id"]), str(candidate["text"]), str(candidate["angle"]),
+            statuses, reasons, sources,
+        )
+        best_effort.write_checkpoint(early)
+        state.early = early
+        return
 
 
 _ACTIVE_STATE: RepairState | None = None
@@ -138,13 +206,20 @@ def _run_attempt(args: object, feedback: Mapping[str, object] | None):
         if isinstance(feedback, Mapping)
         else 1
     )
-    global _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY
+    global _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY, _ACTIVE_QUALIFICATION_SEED
+    global _ACTIVE_CHECKPOINTED_ATTEMPT
     previous_advisory = _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY
     _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY = cycle > 1
     try:
         attempt = _ORIGINAL_RUN_ATTEMPT(args, feedback)
     finally:
         _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY = previous_advisory
+    # The Resonance/acceptance overlays run after this boundary. Keep the exact
+    # scored attempt, including its package references, before either can time out.
+    if _ACTIVE_COMMAND_DRAFT and _ACTIVE_STATE is not None:
+        _ACTIVE_QUALIFICATION_SEED = _ACTIVE_STATE.best
+        _ACTIVE_STATE.observe(attempt, cycle)
+        _ACTIVE_CHECKPOINTED_ATTEMPT = attempt
     for candidate in attempt.candidates:
         failed_gates = {
             name: status
@@ -465,11 +540,14 @@ def _qualifying_candidates(
     # A strong repaired hook may survive across cycles; the V0 rule that bans every
     # prior opening prevents a genuine best-so-far repair lineage.
     del rejected_openings
+    prior = (
+        _ACTIVE_QUALIFICATION_SEED if _ACTIVE_COMMAND_DRAFT and attempt is _ACTIVE_CHECKPOINTED_ATTEMPT else
+        _ACTIVE_STATE.best if _ACTIVE_STATE is not None else None
+    )
     qualifying = tuple(
         candidate
         for candidate in attempt.candidates
-        if (_ACTIVE_STATE is None or _ACTIVE_STATE.best is None
-            or _candidate_progresses(_ACTIVE_STATE.best, candidate))
+        if (prior is None or bool(best_effort.blocking_failures(prior)) or _candidate_progresses(prior, candidate))
         and candidate_is_acceptable(
             candidate,
             allow_factual_wording_advisory=allow_factual_wording_advisory,
@@ -489,7 +567,7 @@ def _scorecard_is_acceptable(
     if allow_factual_wording_advisory is None:
         allow_factual_wording_advisory = _ACTIVE_ALLOW_FACTUAL_WORDING_ADVISORY
     raw_gates = gate_result.get("gates")
-    return acceptance_policy.scorecard_is_acceptable(
+    return isinstance(raw_gates, Mapping) and not acceptance_policy.delivery_safety_failures(raw_gates) and acceptance_policy.scorecard_is_acceptable(
         scorecard,
         hard_gates_pass=(
             isinstance(raw_gates, Mapping)
@@ -626,19 +704,33 @@ def _package_data(
 
 
 def _command_draft(args: object) -> int:
-    global _ACTIVE_STATE
+    global _ACTIVE_STATE, _ACTIVE_COMMAND_DRAFT, _ACTIVE_QUALIFICATION_SEED
+    global _ACTIVE_CHECKPOINTED_ATTEMPT
     previous = _ACTIVE_STATE
+    previous_command_draft = _ACTIVE_COMMAND_DRAFT
+    previous_qualification_seed = _ACTIVE_QUALIFICATION_SEED
+    previous_checkpointed_attempt = _ACTIVE_CHECKPOINTED_ATTEMPT
     _ACTIVE_STATE = RepairState()
+    _ACTIVE_COMMAND_DRAFT = True
+    _ACTIVE_QUALIFICATION_SEED = None
+    _ACTIVE_CHECKPOINTED_ATTEMPT = None
     try:
         try:
             return _ORIGINAL_COMMAND_DRAFT(args)
         except workflow.WorkflowError as exc:
             state = _ACTIVE_STATE
+            advisory_failure = (
+                isinstance(exc, workflow.AdvisoryProviderFailure)
+                and _ACTIVE_CHECKPOINTED_ATTEMPT is not None
+            )
+            critic_failure = isinstance(exc, workflow.CriticEvaluationFailure)
             if (
-                (str(exc).startswith("No candidate cleared the locked ") or isinstance(exc, ModelTimeoutError))
+                (str(exc).startswith("No candidate cleared the locked ")
+                 or isinstance(exc, ModelTimeoutError)
+                 or advisory_failure or critic_failure)
                 and state is not None
             ):
-                selected = state.best_safe()
+                selected = state.best_safe(require_claim_gates=advisory_failure)
                 if selected is None:
                     failed = sorted(
                         {
@@ -667,20 +759,45 @@ def _command_draft(args: object) -> int:
                     )
                     raise exc from write_exc
                 interrupted = isinstance(exc, ModelTimeoutError)
+                evaluation_incomplete = interrupted or advisory_failure or critic_failure
                 delivery_reason = (
                     f"{exc} Previously scored draft delivered; interrupted evaluation remains incomplete."
                     if interrupted else "best draft delivered; writing scores remain below target"
                 )
+                if advisory_failure:
+                    delivery_reason = (
+                        f"{exc} Previously scored, claim-gated draft delivered; "
+                        "advisory evaluation remains incomplete."
+                    )
+                if critic_failure and best.effective_total is not None:
+                    delivery_reason = (
+                        f"{exc} Previously scored, claim-gated draft delivered with retained "
+                        f"{best.effective_total}/25; later Critic evaluation remains incomplete."
+                    )
+                if (critic_failure or interrupted) and best.effective_total is None:
+                    delivery_reason = (
+                        f"{exc} Validated, claim-gated Writer draft delivered; "
+                        "Critic score is NOT_EVALUATED."
+                    )
+                score_label = (
+                    f"{best.effective_total}/25"
+                    if best.effective_total is not None else "not_evaluated"
+                )
                 print(
-                    f"Quality search {'interrupted by model timeout' if interrupted else 'exhausted'}; best overall={best.candidate_id} "
-                    f"score={best.effective_total}/25; "
-                    f"hook={best.axes.get('hook_strength', 0)}/5; "
+                    f"Quality search {'interrupted by model timeout' if interrupted else 'interrupted by advisory evaluation' if advisory_failure or critic_failure else 'exhausted'}; best safe={best.candidate_id} "
+                    f"score={score_label}; "
                     "editorial checks are advisory."
                 )
+                if evaluation_incomplete:
+                    print(f"Advisory evaluation incomplete: {exc}")
                 print(
                     "Best-effort artifact: "
                     f"{path.relative_to(workflow.REPO_ROOT)}"
                 )
+                if attempt.package_lines:
+                    print("Original scored package (advisory check incomplete):")
+                    for line in attempt.package_lines:
+                        print(line)
                 v1_completion.record_decision(
                     {
                         "contract": "draft_delivery",
@@ -688,8 +805,8 @@ def _command_draft(args: object) -> int:
                         "status": "PASS",
                         "observed_status": "COMPLETED_WITH_WARNINGS",
                         "reason": delivery_reason,
-                        "execution_warning": str(exc) if interrupted else None,
-                        "interrupted_evaluation": interrupted,
+                        "execution_warning": str(exc) if evaluation_incomplete else None,
+                        "interrupted_evaluation": evaluation_incomplete,
                     },
                     stage="draft-delivery",
                     subject_id=best.candidate_id,
@@ -700,6 +817,9 @@ def _command_draft(args: object) -> int:
             raise
     finally:
         _ACTIVE_STATE = previous
+        _ACTIVE_COMMAND_DRAFT = previous_command_draft
+        _ACTIVE_QUALIFICATION_SEED = previous_qualification_seed
+        _ACTIVE_CHECKPOINTED_ATTEMPT = previous_checkpointed_attempt
 
 
 def wire_integrated_dispatch(integrated_module: object) -> None:
@@ -719,6 +839,7 @@ def install() -> None:
     if _INSTALLED:
         return
     quality_cli.MIN_QUALITY_SCORE = ACCEPTABLE_QUALITY_FLOOR
+    legacy_cli._checkpoint_validated_writer = _checkpoint_validated_writer  # type: ignore[attr-defined]
     quality_cli.MIN_HOOK_SCORE = MIN_HOOK_SCORE
     quality_cli._run_attempt = _run_attempt  # type: ignore[attr-defined,assignment]
     quality_cli._qualifying_candidates = _qualifying_candidates  # type: ignore[assignment]

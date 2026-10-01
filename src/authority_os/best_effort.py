@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import hashlib
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import acceptance_policy, anti_slop, daily_cli, v1_completion, workflow
@@ -11,6 +13,66 @@ from . import acceptance_policy, anti_slop, daily_cli, v1_completion, workflow
 
 OUTPUT_ENV = "LINKEDIN_OS_BEST_EFFORT_OUTPUT"
 BLOCKING_GATES = ("honesty", "citation", "proof", "privacy", "relevance")
+
+
+@dataclass(frozen=True)
+class EarlyCandidate:
+    candidate_id: str
+    text: str
+    angle: str
+    gates: Mapping[str, str]
+    gate_reasons: tuple[str, ...]
+    sources: tuple[str, ...] = ()
+    axes: Mapping[str, int] = field(default_factory=dict)
+    effective_total: None = None
+
+
+def checkpoint_path(output: Path | None = None) -> Path:
+    return (output if output is not None else output_path()).with_name("writer-checkpoint.json")
+
+
+def write_checkpoint(candidate: EarlyCandidate) -> Path:
+    failures = blocking_failures(candidate)
+    if failures:
+        raise workflow.WorkflowError("Writer checkpoint failed factual gate(s): " + ", ".join(failures))
+    payload = {
+        "schema_version": 1,
+        "candidate_id": candidate.candidate_id,
+        "angle": candidate.angle,
+        "text": candidate.text,
+        "gates": dict(candidate.gates),
+        "gate_reasons": list(candidate.gate_reasons),
+        "sources": list(candidate.sources),
+        "artifact_sha256": hashlib.sha256(candidate.text.encode("utf-8")).hexdigest(),
+        "critic_score": None,
+        "evaluation_status": "NOT_EVALUATED",
+    }
+    return daily_cli.write_private_json(checkpoint_path(), payload)
+
+
+def load_checkpoint(output: Path | None = None) -> EarlyCandidate | None:
+    path = daily_cli._under_private(checkpoint_path(output))
+    if not path.exists():
+        return None
+    raw = daily_cli._private_json(path, "Writer checkpoint")
+    if not isinstance(raw, Mapping) or raw.get("schema_version") != 1:
+        raise workflow.WorkflowError("Writer checkpoint has an invalid schema.")
+    candidate_id, text, angle = (raw.get(key) for key in ("candidate_id", "text", "angle"))
+    gates, reasons, sources = (raw.get(key) for key in ("gates", "gate_reasons", "sources"))
+    if not all(isinstance(value, str) and value.strip() for value in (candidate_id, text, angle)):
+        raise workflow.WorkflowError("Writer checkpoint candidate is invalid.")
+    if not isinstance(gates, Mapping) or not isinstance(reasons, list) or not isinstance(sources, list):
+        raise workflow.WorkflowError("Writer checkpoint evidence is invalid.")
+    if not all(isinstance(value, str) for value in (*reasons, *sources)):
+        raise workflow.WorkflowError("Writer checkpoint evidence is malformed.")
+    if raw.get("critic_score") is not None or raw.get("evaluation_status") != "NOT_EVALUATED":
+        raise workflow.WorkflowError("Writer checkpoint evaluation status is invalid.")
+    if hashlib.sha256(text.encode("utf-8")).hexdigest() != raw.get("artifact_sha256"):
+        raise workflow.WorkflowError("Writer checkpoint content hash differs.")
+    candidate = EarlyCandidate(candidate_id, text, angle, dict(gates), tuple(reasons), tuple(sources))
+    if blocking_failures(candidate):
+        raise workflow.WorkflowError("Writer checkpoint failed factual safety validation.")
+    return candidate
 
 
 def output_path() -> Path:
@@ -26,9 +88,12 @@ def output_path() -> Path:
 
 
 def blocking_failures(candidate: object) -> list[str]:
-    """Editorial findings cannot prevent delivery; secure writes still validate."""
+    """Reject unsupported claims; editorial relevance and quality remain advisory."""
 
-    return []
+    gates = getattr(candidate, "gates", None)
+    if not isinstance(gates, Mapping):
+        return ["missing-gates"]
+    return acceptance_policy.delivery_safety_failures(gates)
 
 
 def _run_decisions(artifact_sha256: str) -> list[dict[str, object]]:
@@ -60,8 +125,11 @@ def _shortfalls(
             shortfalls.append((bar, detail))
             seen.add(bar)
 
-    total = int(getattr(candidate, "effective_total", 0))
-    if total < acceptance_policy.ACCEPTABLE_QUALITY_FLOOR:
+    raw_total = getattr(candidate, "effective_total", None)
+    total = raw_total if type(raw_total) is int else None
+    if total is None:
+        add("critic_total", "NOT_EVALUATED; no writing score was produced")
+    elif total < acceptance_policy.ACCEPTABLE_QUALITY_FLOOR:
         add(
             "critic_total",
             f"observed {total}/25; required at least "
@@ -70,7 +138,7 @@ def _shortfalls(
         )
 
     axes = getattr(candidate, "axes", {})
-    if isinstance(axes, Mapping):
+    if total is not None and isinstance(axes, Mapping):
         for axis, detail in acceptance_policy.axis_shortfalls(axes).items():
             add(
                 axis,
@@ -128,14 +196,15 @@ def render(
         if str(status) in {"PASS", "NOT_REQUIRED"}
     ] if isinstance(gates, Mapping) else []
     passed.append("- `privacy` — PASS; private path enforced and file mode is 0o600")
-    total = int(getattr(candidate, "effective_total", 0))
-    if total >= acceptance_policy.ACCEPTABLE_QUALITY_FLOOR:
+    raw_total = getattr(candidate, "effective_total", None)
+    total = raw_total if type(raw_total) is int else None
+    if total is not None and total >= acceptance_policy.ACCEPTABLE_QUALITY_FLOOR:
         passed.append(
             f"- `critic_total` — PASS; {total}/25 meets the "
             f"{acceptance_policy.ACCEPTABLE_QUALITY_FLOOR}/25 floor"
         )
     axes = getattr(candidate, "axes", {})
-    if isinstance(axes, Mapping):
+    if total is not None and isinstance(axes, Mapping):
         for axis, required in acceptance_policy.AXIS_FLOORS.items():
             value = int(axes.get(axis, 0))
             if value >= required:
@@ -150,6 +219,7 @@ def render(
     recommendation = getattr(attempt, "recommendation", None)
     if recommendation == str(getattr(candidate, "candidate_id", "")):
         passed.append(f"- `package_recommendation` — PASS; {recommendation}")
+    package_lines = tuple(getattr(attempt, "package_lines", ()))
     passed_contracts = {
         str(row.get("contract")): str(row.get("reason", "passed"))
         for row in decisions
@@ -161,17 +231,24 @@ def render(
     )
     shortfalls = _shortfalls(candidate, attempt, decisions, failure_reason)
     candidate_id = str(getattr(candidate, "candidate_id", "unknown"))
-    score = total
+    score = f"{total}/25" if total is not None else "not_evaluated"
+    sources = tuple(getattr(candidate, "sources", ()))
 
     return (
         "# BEST_EFFORT — NOT READY_FOR_HUMAN_REVIEW\n\n"
         "> Best retained draft, delivered with warnings. Publication remains manual.\n\n"
         f"Candidate: `{candidate_id}`  \n"
         f"Cycle: `{cycle}`  \n"
-        f"Critic score: `{score}/25`  \n"
+        f"Critic score: `{score}`  \n"
         f"Run failure: {failure_reason}\n\n"
         "## Candidate text\n\n"
         f"{text}\n\n"
+        "## Source URLs for a manual source comment\n\n"
+        + ("\n".join(str(source) for source in sources) if sources else "See the verified research input for source URLs.")
+        + "\n\n"
+        "## Original scored package references\n\n"
+        + ("\n".join(str(line) for line in package_lines) if package_lines else "No package reference was emitted.")
+        + "\n\n"
         "## Passed gates and checks\n\n"
         + "\n".join(passed)
         + "\n\n## Missed bars\n\n"
@@ -193,6 +270,7 @@ def write(
     *,
     cycle: int,
     failure_reason: str,
+    target_path: Path | None = None,
 ) -> Path:
     payload = render(
         candidate,
@@ -223,7 +301,7 @@ def write(
             pass
 
     try:
-        target = output_path()
+        target = daily_cli._under_private(target_path) if target_path is not None else output_path()
         written = daily_cli.write_private_text(target, payload)
     except (OSError, workflow.WorkflowError):
         record_privacy("FAIL", "private-path-or-owner-only-write-failed")
