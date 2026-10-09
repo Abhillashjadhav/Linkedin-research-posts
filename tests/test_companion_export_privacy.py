@@ -164,6 +164,10 @@ class CompanionExportPrivacyTests(unittest.TestCase):
             "https://192.168.1.10/First Last/private-prose-sentinel/demo.mp4",
             "https://example.com/demo?path=/Users/First Last/private-prose-sentinel/demo.mp4",
             "https://example.com/demo?token=First Last/private-prose-sentinel/demo.mp4",
+            "example.com/demo?token=First Last/private-prose-sentinel/demo.mp4",
+            "localhost/First Last/private-prose-sentinel/demo.mp4",
+            "192.168.1.10/First Last/private-prose-sentinel/demo.mp4",
+            "builder.local/First Last/private-prose-sentinel/demo.mp4",
         ):
             with self.subTest(url=url):
                 context = self.context()
@@ -248,19 +252,27 @@ class CompanionExportPrivacyTests(unittest.TestCase):
         self.assertEqual(context["review"]["candidates"], original)
 
     def test_denied_query_with_spaced_private_fragments_in_candidate_is_wholly_withheld(self):
-        context = self.context()
-        for candidate in context["review"]["candidates"]:
-            candidate["text"] += " Open https://example.com/demo?token=First Last/private-prose-sentinel/demo.mp4"
-        original = deepcopy(context["review"]["candidates"])
-        exports = self.exports(context)
-        for name, text in exports.items():
-            self.assertNotIn("private-prose-sentinel", text, name)
-        self.assertIn("Source prose withheld: unsafe-url", exports["post.md"])
-        evaluation = json.loads(exports["evaluation.json"])
-        self.assertIn("candidate_export", evaluation)
-        self.assertEqual(context["review"]["candidates"], original)
-        with self.assertRaises(workflow.WorkflowError):
-            eval_package._require_unredacted_candidate_export(exports)
+        for url in (
+            "https://example.com/demo?token=First Last/private-prose-sentinel/demo.mp4",
+            "example.com/demo?token=First Last/private-prose-sentinel/demo.mp4",
+            "localhost/First Last/private-prose-sentinel/demo.mp4",
+            "192.168.1.10/First Last/private-prose-sentinel/demo.mp4",
+            "builder.local/First Last/private-prose-sentinel/demo.mp4",
+        ):
+            with self.subTest(url=url):
+                context = self.context()
+                for candidate in context["review"]["candidates"]:
+                    candidate["text"] += " Open " + url
+                original = deepcopy(context["review"]["candidates"])
+                exports = self.exports(context)
+                for name, text in exports.items():
+                    self.assertNotIn("private-prose-sentinel", text, name)
+                self.assertIn("Source prose withheld: unsafe-url", exports["post.md"])
+                evaluation = json.loads(exports["evaluation.json"])
+                self.assertIn("candidate_export", evaluation)
+                self.assertEqual(context["review"]["candidates"], original)
+                with self.assertRaises(workflow.WorkflowError):
+                    eval_package._require_unredacted_candidate_export(exports)
 
     def test_public_links_and_normal_narrative_are_preserved(self):
         context = self.context()

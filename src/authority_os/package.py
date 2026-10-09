@@ -205,24 +205,24 @@ def _export_prose(
     path_view = list(value)
     for start, end in public_urls.url_text_spans(value):
         candidate = value[start:end]
-        if re.match(r"[a-z][a-z0-9+.-]*:", candidate, re.IGNORECASE):
-            projection = public_urls.project_public_url(candidate)
-            if projection.url is None:
-                if (
-                    preserve_terminal_query_prose
-                    and projection.reason in {"sensitive-query", "unsupported-query", "invalid-query", "invalid-video-id"}
-                    and not value[end:].strip(" \t\n.,;:!)]}")
-                ):
-                    # Keep the established terminal candidate-citation display
-                    # only when no substantive URI fragment can trail the token.
-                    path_view[start:end] = " " * (end - start)
-                    continue
-                # Any denied URI can contain spaces in a private path/query;
-                # token replacement would expose its trailing fragments.
-                # Retain only the shared policy's safe citation marker so the
-                # private source identity can still be resolved by a reviewer.
-                marker, count = public_urls.redact_public_urls(candidate, source_ids_by_url)
-                return "[Source prose withheld: unsafe-url] " + marker, max(count, 1), ["unsafe-url"]
+        explicit_uri = re.match(r"[a-z][a-z0-9+.-]*:", candidate, re.IGNORECASE)
+        projection = public_urls.project_public_url(candidate if explicit_uri else f"https://{candidate}")
+        if projection.url is None:
+            if (
+                preserve_terminal_query_prose
+                and projection.reason in {"sensitive-query", "unsupported-query", "invalid-query", "invalid-video-id"}
+                and not value[end:].strip(" \t\n.,;:!)]}")
+            ):
+                # Keep the established terminal candidate-citation display
+                # only when no substantive URI fragment can trail the token.
+                path_view[start:end] = " " * (end - start)
+                continue
+            # A denied explicit or bare URL can contain spaces in a private
+            # path/query; token replacement would expose trailing fragments.
+            # Retain only the policy's safe citation marker for private review.
+            marker, count = public_urls.redact_public_urls(candidate, source_ids_by_url)
+            return "[Source prose withheld: unsafe-url] " + marker, max(count, 1), ["unsafe-url"]
+        if explicit_uri:
             path_view[start:end] = " " * (end - start)
     if _PRIVATE_PROSE_PATH.search("".join(path_view)):
         return "[Source prose withheld: local-path]", 1, ["local-path"]
