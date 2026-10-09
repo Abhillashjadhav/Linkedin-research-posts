@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from authority_os import integrated_cli, workflow
+from authority_os import integrated_cli, thursday_capability, workflow
 
 
 def brief() -> dict[str, object]:
@@ -69,6 +69,36 @@ def selector() -> dict[str, object]:
 
 
 class SingleTopicSelectionTests(unittest.TestCase):
+    def test_single_day_preserves_the_resolved_thursday_route(self) -> None:
+        routes = (
+            {"day": "Thursday", "weekly_slot": 4},
+            {"weekly_slot": 3},
+            {"editorial_workflow": thursday_capability.POLICY_VERSION},
+        )
+        for route in routes:
+            with self.subTest(route=route):
+                routed = integrated_cli._single_day({**brief(), **route}, evidence(), None)
+                self.assertEqual(routed["day"], "Thursday")
+                self.assertTrue(thursday_capability.is_thursday(brief=routed))
+
+    def test_single_day_keeps_other_weekdays_and_topic_text_on_the_existing_route(self) -> None:
+        routes = [
+            {"day": weekday, "weekly_slot": 3}
+            for weekday in ("Monday", "Tuesday", "Wednesday", "Friday", "Saturday", "Sunday")
+        ] + [
+            {},
+            {"weekly_slot": 2},
+            {"weekly_slot": 4},
+            {"weekly_slot": "3"},
+            {"weekly_slot": True},
+        ]
+        for route in routes:
+            with self.subTest(route=route):
+                supplied = {**brief(), **route, "core_hypothesis": "A Thursday capability demo."}
+                routed = integrated_cli._single_day(supplied, evidence(), None)
+                self.assertEqual(routed["day"], "Single")
+                self.assertFalse(thursday_capability.is_thursday(brief=routed))
+
     def test_blocked_selector_is_reported_as_advisory_in_final_summary(self) -> None:
         import io
         from contextlib import redirect_stdout

@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
-from . import campaign, workflow
+from . import campaign, thursday_capability, workflow
 from .model_runtime import ModelConfig, invoke_structured
 
 SELECTOR_AXES = (
@@ -278,6 +278,7 @@ def invoke_selector(
     if not selected_id:
         raise workflow.WorkflowError("Resonance requires an identified Topic Value situation.")
     config = ModelConfig("codex", "gpt-5.6-sol", "ultra")
+    is_thursday = thursday_capability.is_thursday(brief=day)
     narrowing_instruction = ""
     if narrow_to_evidence:
         narrowing_instruction = (
@@ -311,6 +312,7 @@ def invoke_selector(
         f"ARTIFACT_POLICY\n{day.get('artifact_policy', '')}\n"
         f"EVIDENCE\n{json.dumps(day.get('evidence', []), indent=2, sort_keys=True)}"
         f"{narrowing_instruction}"
+        + (f"\n\n{thursday_capability.guidance('writer')}" if is_thursday else "")
     )
     result = invoker(
         "resonance_selector",
@@ -373,6 +375,8 @@ def invoke_selector(
     return {
         **dict(result),
         **narrowed_fields,
+        # The caller's resolved route is authoritative, never model prose.
+        "day": "Thursday" if is_thursday else "Single",
         "model_claim_support": supports,
         "supports_locked_thesis": effective_support,
         "status": expected_status,
@@ -517,6 +521,10 @@ def invoke_post_critic(
         "or method before asking the reader to click, register, join, star, subscribe, comment, or perform another action.\n\n"
         f"SELECTION_RESULT\n{json.dumps(dict(selector), indent=2, sort_keys=True)}\n"
         f"POST\n{post_text}"
+        + (
+            f"\n\n{thursday_capability.guidance('review')}"
+            if thursday_capability.is_thursday(brief=selector) else ""
+        )
     )
     result = invoker(
         "resonance_critic",
