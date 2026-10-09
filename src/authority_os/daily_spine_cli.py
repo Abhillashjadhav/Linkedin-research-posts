@@ -184,6 +184,14 @@ def select_thursday_evidence(items: Sequence[Mapping[str, object]], *, as_of: st
     excluded: list[dict[str, str]] = []
     for item in items:
         try:
+            from . import public_urls
+            raw_metadata = _capability_metadata(item)
+            for key in ("primary_url", "executable_url", "demo_url", "attention_url"):
+                if isinstance(raw_metadata, Mapping) and raw_metadata.get(key) is not None:
+                    projection = public_urls.project_public_url(raw_metadata[key])
+                    if projection.url is None:
+                        raise workflow.WorkflowError(
+                            f"Thursday evidence needs a usable public {key}: {projection.reason}.")
             metadata = _checked_thursday_capability(item, as_of=as_of, days=days)
         except workflow.WorkflowError as exc:
             excluded.append({"url": str(item.get("canonical_url", "")), "reason": str(exc)})

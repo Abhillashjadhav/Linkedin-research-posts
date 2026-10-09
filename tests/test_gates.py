@@ -1016,12 +1016,12 @@ class GateEvaluationTests(unittest.TestCase):
         )
 
     def test_query_addressed_citations_require_the_exact_canonical_query(self) -> None:
-        cited = evidence(source="https://example.com/research?id=good")
+        cited = evidence(source="https://www.youtube.com/watch?v=AbCdEfG_h12")
         swapped = workflow.evaluate_candidate_gates(
             candidate(
                 text=(
                     f"{candidate()['text']} The source is "
-                    "https://example.com/research?id=fake."
+                    "https://www.youtube.com/watch?v=AbCdEfG_h13."
                 )
             ),
             brief=brief(),
@@ -1036,7 +1036,7 @@ class GateEvaluationTests(unittest.TestCase):
             candidate(
                 text=(
                     f"{candidate()['text']} The source is "
-                    "https://example.com/research?id=good."
+                    "https://www.youtube.com/watch?v=AbCdEfG_h12."
                 )
             ),
             brief=brief(),

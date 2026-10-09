@@ -18,7 +18,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-from . import acceptance_policy, thursday_capability
+from . import acceptance_policy, public_urls, thursday_capability
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -782,31 +782,8 @@ _QUERY_TEXT_URL = re.compile(
 def redact_query_urls(
     text: str, source_ids_by_url: Mapping[str, str] | None = None
 ) -> tuple[str, int]:
-    """Withhold query-bearing links in prose while retaining its surrounding text."""
-
-    redactions = 0
-    identities = source_ids_by_url or {}
-
-    def replace(match: re.Match[str]) -> str:
-        nonlocal redactions
-        raw = match.group(0)
-        if "?" not in raw:
-            return raw
-        url = raw.rstrip(".,;:!?)>]}")
-        redactions += 1
-        candidate = url if url.lower().startswith(("http://", "https://")) else f"https://{url}"
-        try:
-            source_id = identities.get(canonicalise_url(candidate))
-        except ValueError:
-            source_id = None
-        marker = (
-            f"[citation URL for {source_id} requires review]"
-            if source_id is not None
-            else "[query URL withheld for citation review]"
-        )
-        return marker + raw[len(url):]
-
-    return _QUERY_TEXT_URL.sub(replace, text), redactions
+    """Compatibility entry point for the shared public-link prose projection."""
+    return public_urls.redact_public_urls(text, source_ids_by_url)
 
 
 def normalise_content(title: str, body: str) -> str:
@@ -1830,10 +1807,12 @@ def _writer_evidence_projection(
             raise WorkflowError(
                 f"Writer evidence item {index} has an invalid public source URL."
             ) from exc
-        source_parts = urlsplit(canonical_source)
-        query_free_source = urlunsplit(
-            (source_parts.scheme, source_parts.netloc, source_parts.path, "", "")
-        )
+        public_source = public_urls.project_public_url(item["source"])
+        if public_source.url is None and public_source.reason not in {
+            "sensitive-query", "unsupported-query", "invalid-query", "invalid-video-id",
+        }:
+            raise WorkflowError(
+                f"Writer evidence item {index} has an invalid public source URL.")
         body_read = item.get("body_read")
         if type(body_read) is not bool:
             raise WorkflowError(
@@ -1862,12 +1841,10 @@ def _writer_evidence_projection(
         if "thursday_capability" in item:
             try:
                 capability = thursday_capability.validate_evidence(item["thursday_capability"])
-                # Match ordinary source-URL egress: no query credentials or
-                # signed links may leak through newly structured metadata.
                 for key, value in capability.items():
                     if isinstance(value, str):
-                        if key.endswith("_url") and urlsplit(value).query:
-                            capability[key] = None
+                        if key.endswith("_url"):
+                            capability[key] = public_urls.project_public_url(value).url
                         else:
                             capability[key] = redact_query_urls(value)[0]
                 if capability.get("attention_url") is None:
@@ -1878,9 +1855,9 @@ def _writer_evidence_projection(
         projected.append(
             {
                 "id": text_values["id"],
-                "title": text_values["title"],
-                "claim": text_values["claim"],
-                "source": query_free_source,
+                "title": redact_query_urls(text_values["title"])[0],
+                "claim": redact_query_urls(text_values["claim"])[0],
+                "source": public_source.url or f"[source URL withheld: {public_source.reason}]",
                 "source_quality": text_values["source_quality"],
                 "body_read": body_read,
                 **date_metadata,
@@ -1899,11 +1876,14 @@ def _gate_evidence_projection(
     exact_sources = {
         str(item["id"]): canonicalise_url(str(item["source"])) for item in evidence
     }
+    original_text = {str(item["id"]): {key: str(item[key]).strip() for key in ("title", "claim")}
+                     for item in evidence}
     exact_capabilities = {
         str(item["id"]): thursday_capability.validate_evidence(item["thursday_capability"])
         for item in evidence if "thursday_capability" in item
     }
     for item in projected:
+        item.update(original_text[str(item["id"])])
         item["source"] = exact_sources[str(item["id"])]
         if str(item["id"]) in exact_capabilities:
             item["thursday_capability"] = exact_capabilities[str(item["id"])]
@@ -3926,6 +3906,12 @@ def _factual_support_diagnostics(
 ) -> list[dict[str, object]]:
     """Return exact public-text clauses that exceed the supplied evidence boundary."""
 
+    # Semantic resource identifiers (for example a YouTube v value) are links,
+    # not asserted measurements. The separate citation gate checks their exact
+    # public identity; factual checks still inspect the surrounding prose.
+    for start, end, _url in reversed(public_urls.public_url_spans(text)):
+        text = text[:start] + text[end:]
+
     normalized_records = [
         (
             _style_normal_form(contextual_clause),
@@ -4092,12 +4078,18 @@ def _candidate_urls_supported(
     *,
     proof_public_claim: str | None = None,
 ) -> bool:
+    if public_urls.redact_public_urls(text)[1]:
+        return False
     raw_references, unsafe_markdown_target = _candidate_references(text)
     if unsafe_markdown_target:
         return False
     if not raw_references:
         return True
     cited_urls = {str(item["source"]) for item in cited_evidence}
+    for item in cited_evidence:
+        capsule = item.get("thursday_capability")
+        if isinstance(capsule, Mapping):
+            cited_urls.update(str(capsule[key]) for key in ("primary_url", "executable_url", "demo_url") if capsule.get(key))
     if proof_public_claim is not None:
         proof_urls = [
             match.rstrip(".,;:!?")
@@ -4107,7 +4099,7 @@ def _candidate_urls_supported(
         ]
         for proof_url in proof_urls:
             try:
-                canonical_proof_url = canonicalise_url(proof_url)
+                canonical_proof_url = public_urls.require_public_url(proof_url)
             except ValueError:
                 continue
             cited_urls.add(canonical_proof_url)
@@ -4115,7 +4107,7 @@ def _candidate_urls_supported(
     cited_scheme_free: set[tuple[str, str, str]] = set()
     for cited_url in cited_urls:
         try:
-            canonical_cited = canonicalise_url(cited_url)
+            canonical_cited = public_urls.require_public_url(cited_url)
         except ValueError:
             continue
         cited_parts = urlsplit(canonical_cited)
@@ -4125,7 +4117,7 @@ def _candidate_urls_supported(
         )
     for raw_url, explicit_scheme in raw_references:
         try:
-            canonical = canonicalise_url(
+            canonical = public_urls.require_public_url(
                 raw_url if explicit_scheme else f"https://{raw_url}"
             )
         except ValueError:
