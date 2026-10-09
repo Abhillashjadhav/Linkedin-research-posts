@@ -129,14 +129,17 @@ def _checked_thursday_capability(item: Mapping[str, object], *, as_of: str, days
     for key in ("creator", "capability", "reader_benefit", "mechanism", "change_evidence", "limitation", "attention_evidence"):
         if not isinstance(data[key], str) or not str(data[key]).strip():
             raise workflow.WorkflowError(f"Thursday evidence needs {key}.")
+    # Canonical URLs are a derived validation view. The returned evidence must
+    # remain identical to the factual capsule covered by the source-body hash.
+    canonical_urls: dict[str, str] = {}
     for key in ("primary_url", "executable_url", "demo_url"):
         if not isinstance(data[key], str) or not str(data[key]).strip():
             raise workflow.WorkflowError(f"Thursday evidence needs an inspectable {key}.")
         try:
-            data[key] = workflow.canonicalise_url(str(data[key]))
+            canonical_urls[key] = workflow.canonicalise_url(str(data[key]))
         except ValueError as exc:
             raise workflow.WorkflowError(f"Thursday evidence has an invalid {key}.") from exc
-    if data["primary_url"] != item.get("canonical_url") or item.get("source_quality") != "primary":
+    if canonical_urls["primary_url"] != item.get("canonical_url") or item.get("source_quality") != "primary":
         raise workflow.WorkflowError("Thursday change must be verified in the supplied primary-source body.")
     end = workflow.parse_published_at(as_of)
     start = end - timedelta(days=min(days, 7))
@@ -164,7 +167,7 @@ def _checked_thursday_capability(item: Mapping[str, object], *, as_of: str, days
     attention_url = data["attention_url"]
     if attention_url is not None:
         try:
-            data["attention_url"] = workflow.canonicalise_url(str(attention_url))
+            workflow.canonicalise_url(str(attention_url))
         except ValueError as exc:
             raise workflow.WorkflowError("Thursday attention URL is invalid.") from exc
     observed_at = data["attention_observed_at"]
