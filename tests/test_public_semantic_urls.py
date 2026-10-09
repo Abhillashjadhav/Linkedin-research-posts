@@ -59,6 +59,7 @@ class PublicSemanticURLTests(unittest.TestCase):
             "http://localhost./demo", "http://sub.localhost/demo",
             "https://intranet/demo", "https://build.internal/demo",
             "https://build.local/demo", "https://build.test/demo", "https://router.home.arpa/demo",
+            "https://home.arpa/private-sentinel",
             "https://printer.localdomain/demo",
             "https://127.0.0.1/demo", "http://127.1/demo", "http://2130706433/demo",
             "http://0x7f000001/demo", "http://0177.0.0.1/demo", "https://[::1]/demo",
@@ -72,6 +73,11 @@ class PublicSemanticURLTests(unittest.TestCase):
                 result = public_urls.project_public_url(raw)
                 self.assertIsNone(result.url)
                 self.assertNotIn("private-sentinel", result.reason)
+                if raw.startswith("https://home.arpa/"):
+                    self.assertEqual(public_urls.extract_public_urls(raw), [])
+                    exported, count = public_urls.redact_public_urls(raw)
+                    self.assertEqual(count, 1)
+                    self.assertNotIn("private-sentinel", exported)
 
     def test_prose_uses_same_policy_and_balanced_url_delimiters(self):
         text = (f"Demo: {DEMO_URL}&utm_source=launch. "

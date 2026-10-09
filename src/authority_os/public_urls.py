@@ -56,7 +56,7 @@ def project_public_url(value: object) -> PublicURL:
         hostname = parts.hostname.casefold().rstrip(".")
         if "." not in hostname and ":" not in hostname:
             return PublicURL(None, "local-destination")
-        if "%" in hostname or hostname.endswith((".internal", ".lan", ".home", ".home.arpa", ".localdomain", ".local", ".localhost", ".test", ".invalid")) or hostname == "localhost":
+        if "%" in hostname or hostname.endswith((".internal", ".lan", ".home", ".home.arpa", ".localdomain", ".local", ".localhost", ".test", ".invalid")) or hostname in {"localhost", "home.arpa"}:
             return PublicURL(None, "local-destination")
         canonical = workflow.canonicalise_url(raw)
         normalized = urlsplit(canonical)
