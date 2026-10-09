@@ -254,6 +254,7 @@ def _verify_frozen_citations(
         str(item["private_source"]): str(item["id"]) for item in expected_sources
     }
     expected_title_changes: dict[str, dict[str, object]] = {}
+    expected_title_privacy_reasons: dict[str, list[str]] = {}
     for item in expected_sources:
         display = (
             str(item["source"])
@@ -261,7 +262,9 @@ def _verify_frozen_citations(
             else approval_package.CITATION_REVIEW_NOTE
         )
         original_title = str(item["title"])
-        title, count = workflow.redact_query_urls(original_title, source_ids_by_url)
+        title, count, reasons = approval_package._export_prose(original_title, source_ids_by_url)
+        if "local-path" in reasons:
+            expected_title_privacy_reasons[f"source.{item['id']}.title"] = reasons
         if count or title != original_title:
             expected_title_changes[f"source.{item['id']}.title"] = {
                 "original_sha256": hashlib.sha256(original_title.encode()).hexdigest(),
@@ -294,6 +297,15 @@ def _verify_frozen_citations(
         or any(metadata_fields.get(key) != value for key, value in expected_title_changes.items())
     ):
         raise workflow.WorkflowError("Frozen package source title export is unbound.")
+    recorded_privacy_reasons = (
+        metadata_export.get("privacy_reasons") if isinstance(metadata_export, Mapping) else None
+    )
+    if expected_title_privacy_reasons and (
+        not isinstance(recorded_privacy_reasons, Mapping)
+        or any(recorded_privacy_reasons.get(key) != value
+               for key, value in expected_title_privacy_reasons.items())
+    ):
+        raise workflow.WorkflowError("Frozen package source title privacy reason is unbound.")
     expected_digests = {
         str(item["id"]): str(item["source_url_sha256"]) for item in expected_sources
     }
