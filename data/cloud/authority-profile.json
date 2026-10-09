@@ -1,0 +1,30 @@
+{
+  "target_audience": "Senior product leaders, AI founders, relevant recruiters, and event organisers",
+  "authority_goal": "Be remembered for practical product judgment in building reliable enterprise AI systems",
+  "proof_inventory": [
+    {
+      "id": "proof-production-engineering-os",
+      "label": "Production Engineering OS",
+      "public_safe_claim": "A public repository demonstrates deterministic state, validation, permissions, evidence, and human approval around agent-generated work.",
+      "evidence_type": "repository"
+    },
+    {
+      "id": "proof-model-complexity-router",
+      "label": "Public model-complexity router",
+      "public_safe_claim": "A public routing skill makes scope, reasoning depth, error cost, context load, and the resulting model-tier recommendation visible for review.",
+      "evidence_type": "repository"
+    },
+    {
+      "id": "proof-linkedin-authority-os",
+      "label": "LinkedIn Authority OS",
+      "public_safe_claim": "A public repository demonstrates an evidence-backed content workflow with deterministic quality gates, bounded regeneration, and human-review-only publication.",
+      "evidence_type": "repository"
+    }
+  ],
+  "avoid_topics": [
+    "Generic AI trend summaries",
+    "News commentary without an original product decision",
+    "Topics with weak current conversation momentum"
+  ],
+  "recent_theses": []
+}
