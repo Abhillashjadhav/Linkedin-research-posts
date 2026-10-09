@@ -30,4 +30,12 @@ Read the strongest bodies in the leading clusters. For the selected topic state:
 
 Use `Incident → Mechanism → Decision → Artifact` only where evidence supports it. Never turn a title into a claim. Never infer ownership, personal experience, or proof.
 
+For caller-routed `thursday-capability-v1`, prioritise **working capability →
+immediate reader benefit → inspectable demo → bounded product implication**.
+Prefer useful surprise backed by primary evidence and observed current attention.
+An incident narrative is not the Thursday default. Preserve original and release
+dates separately, real limitations and unknown momentum; do not convert a
+trending mention into a new-release claim. No user restatement is needed once
+the caller supplies this routing.
+
 The 8K-post dataset is unavailable. If private aggregate patterns are later supplied, use them for hooks, narrative, length, format, and language—not as comparable engagement rates.

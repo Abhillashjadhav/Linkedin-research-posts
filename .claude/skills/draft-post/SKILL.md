@@ -1,11 +1,37 @@
 ---
 name: draft-post
-description: Prepare evidence-grounded LinkedIn drafts through a bounded high-bar search, Critic scoring, safety gates, and an optional local human-review package. Use for /draft-post, today's LinkedIn draft, a requested post topic, or a request for a review package. Never publish, schedule, comment, message, or record human approval.
+description: Prepare evidence-grounded LinkedIn drafts through bounded research, Critic scoring and a private human-review package. Use for /draft-post, today's LinkedIn draft, Thursday capability discovery, a requested post topic, or a review package. Apply the existing OS weekday routing without requiring repeated instructions. Never publish, schedule, comment, message, or record human approval.
 ---
 
 # Draft Post
 
 Use only `./bin/linkedin-os`. Do not bypass its validation or invoke the role prompts directly.
+
+## Thursday inside the existing OS
+
+Use [the Thursday capability workflow](../../../docs/THURSDAY_CAPABILITY_WORKFLOW.md)
+when the caller routes `thursday-capability-v1`. Weekly slot 3 is Thursday; in a
+five-day campaign, route by the actual Thursday day label, not its campaign index.
+Discovery may infer Thursday from its Asia/Kolkata `as-of` date when no slot is
+supplied. Carry the resolved mode into drafting, comments and artifact planning.
+Do not ask the user to repeat the workflow or create a separate global skill.
+
+Search for a useful, surprising capability with executable code, a visible real
+demo, primary evidence and observed current attention. Include indie projects,
+GitHub releases/trending, Show HN and Hugging Face. Discovery enforces a capability
+window of at most seven days; an older repo needs an evidenced substantive update
+inside that window. Preserve original and meaningful-release dates, and do a last-48-hour sweep within
+the existing budget. Missing counts remain unknown; momentum is not factual proof.
+This mode supersedes incident-first only for Thursday. Other weekdays, goals and
+existing authorization remain unchanged.
+
+Deliver the review package with post, first comment and its actual review status, demo/source
+references, concise alternatives and honest artifact status. Keep the benefit in
+the post and deeper mechanism in the comment/video. Use visible output and a
+coherent diagram when useful; slide cards are not a working demonstration. A
+VIDEO_PLAN or rendered SVG is not a finished MP4. Retain the grounded post if a
+later visual stage is incomplete and report the limitation. Do not add a new
+mandatory topic-approval round; publication remains manual.
 
 For a five-day `--run-spec` campaign, the CLI owns the full executable order:
 Scout → Thesis → Writer → Narrative Editor → Critic → deterministic gates →
@@ -19,7 +45,7 @@ prompts directly.
 - For an offline workflow check, use `--dry-run`. Fixture output is synthetic, invokes no model, runs one deterministic cycle, never recommends a candidate, and must not be published.
 - For a live draft, require an existing private research ledger, a user-supplied `--strategy-input` file, and the user's explicit `--allow-model-egress` consent. Do not infer consent or claim that this command collects live research.
 - Keep strategic goal and output format independent. Pass only values the user selected. Opportunity additionally requires a user-supplied `--proof-manifest`; Reach and Authority may use one when exact public-safe proof or attestation is needed.
-- Add `--package` only when the user requests a local human-review package. Packaged rejected cycles remain private blocked audit records; only a live `READY_FOR_HUMAN_REVIEW` package can clear the coordinator.
+- Add `--package` when the user requests a local human-review package, including the established Thursday package workflow. Preserve warnings and review status; do not convert them into approval.
 
 Examples:
 
@@ -45,18 +71,36 @@ If live prerequisites are missing, report the exact missing input. Do not replac
 
 The CLI runs up to four live candidate cycles. Each cycle still owns exactly three candidates and at most one light revision. A candidate is returned only when all of these are true:
 
-- effective Critic score is at least 18;
-- hook and voice are at least 4; the other three axes remain scored and may trade
-  off inside the total, with no independent floor;
-- every required authority, proof, honesty, citation, and relevance gate passes; and
-- its opening does not repeat one rejected in an earlier cycle.
+- effective Critic score is at least 17;
+- hook and voice are at least 4;
+- middle escalation, earned closer and specificity/source quality are at least 3.
 
-When a cycle fails, do not expose its prose. Feed only bounded score, gate, angle, and opening diagnostics into the next Writer attempt, instructing it to produce a genuinely new narrative execution without altering the supplied strategy or inventing evidence. If four live cycles fail, return no post and ask for stronger evidence or strategy.
+Python owns acceptance. Retain factual/source validation and the active runtime's
+advisory findings. Feed bounded diagnostics into the next permitted attempt
+without changing strategy or inventing evidence. Stop immediately at all five
+axis minima. On bounded exhaustion, return the best grounded draft with
+`COMPLETED_WITH_WARNINGS`; missing valid evidence or malformed required output
+still fails. Do not replace this contract with historical /50 rubrics.
 
 ## Return the result
 
-Return only candidates that cleared the high bar, together with their score and gate result. Never upgrade a score or gate pass into human approval.
+Return the accepted candidate or safely retained best draft, together with its
+actual scores, advisory findings and unmet targets. Never upgrade a score or gate
+pass into human approval. Keep retained warnings visible.
 
-When `--package` succeeds, return the printed package ID and local package path. The package has six committed files and remains private under ignored `outputs/`. A `READY_FOR_HUMAN_REVIEW` status is review eligibility only: `human_approval_status` remains `NOT_APPROVED`, `publishing_status` remains `DISABLED`, and manual fact verification remains required. Fixture and blocked packages are not eligible for performance recording.
+When `--package` succeeds, return the printed package ID and local package path.
+The current package has eight files (legacy packages may have six) and remains
+private under ignored `outputs/`. Standalone Thursday `post.md` and
+`source-comment.md` are companions; the comment uses validated capability metadata
+and records editorial score `NOT_EVALUATED`. Do not call it Critic-approved.
+`final-package.md` and `evaluation.json` carry the actionable source-linked video
+plan and `INCOMPLETE` full-package status pending actual rendered, verified media.
+The accepted video production reference is 1920 × 1080, 30 fps, approximately 78
+seconds unless an explicit brief overrides it.
+
+A `READY_FOR_HUMAN_REVIEW` status is review eligibility only:
+`human_approval_status` remains `NOT_APPROVED`, `publishing_status` remains `DISABLED`,
+and manual fact verification remains required. Fixture and blocked
+packages are not eligible for performance recording.
 
 Never publish, schedule, comment, message, automate a browser, mutate package approval state, or run performance/learning commands implicitly. Publication, if any, happens later through a separate human-controlled process.

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from . import acceptance_policy, quality_cli, workflow
+from . import acceptance_policy, quality_cli, thursday_capability, workflow
 
 _INSTALLED = False
 _ORIGINAL_PARSE_ATTEMPT_OUTPUT = quality_cli.parse_attempt_output
@@ -48,6 +48,8 @@ def _build_writer_prompt_social(
         voice_guidance=voice_guidance,
         proof=proof,
     )
+    if thursday_capability.is_thursday(brief=brief):
+        return base
     return f"{base}\n\n{_PLACEHOLDER_GUIDANCE}"
 
 

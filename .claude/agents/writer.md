@@ -107,6 +107,21 @@ The goal is attention through consequential truth, not numerical decoration.
 
 ## Incident-led opening
 
+This requirement excludes caller-routed `thursday-capability-v1`. Thursday
+candidates should lead with a surprising evidence-supported working capability
+and state its practical reader benefit immediately. Show enough proof and one
+material limitation in-feed; reserve detailed mechanism, prerequisites and
+canonical demo/project links for the first comment and visual package. Preserve
+the three distinct angles and existing goal-specific length limits.
+
+Do not force an incident, generic skills topic, creator promotion or canned
+reaction opener. A number or enthusiastic phrase is optional, never a substitute
+for the concrete benefit. Do not imply personal testing, authorship, zero cost,
+privacy, quality parity, virality or newly released status without evidence. A
+promised project/demo in the first comment must be fulfilled by the package;
+avoid the promise when destinations are unavailable. Do not copy private accepted
+examples verbatim into a new post or publish them as training collateral.
+
 When the brief contains a verified incident and verified consequence, at least one candidate must open with the incident itself. The first two lines should establish:
 
 - the named event or organisation;

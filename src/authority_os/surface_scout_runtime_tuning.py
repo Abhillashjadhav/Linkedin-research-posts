@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Mapping, Sequence
 
 from . import momentum_surface_parallel as surface_runtime
-from . import workflow
+from . import workflow, thursday_capability
 from .model_runtime import ModelConfig
 
 SURFACE_TIMEOUT = 180
@@ -119,6 +119,9 @@ For each signal return only:
 - engagement_units: visible public interactions excluding raw page/video views, or null if unavailable.
 
 Social engagement may establish momentum only. It does not prove factual claims. Do NOT calculate acceleration. Do NOT perform cross-platform comparison. Do NOT rank against other surfaces. Do not invent timestamps, URLs, engagement, consequences, or popularity rankings. If this lane is unavailable or has no defensible current signal, return that honestly. Return evidence only; do not use the private authority profile and do not draft."""
+    if surface_runtime.daily_cli.thursday_discovery_active():
+        prompt += "\n" + thursday_capability.guidance("discovery")
+        prompt += "\nSearch this lane within the most recent seven days (or the shorter requested window), then make a final targeted 48-hour sweep for a newer release, substantial update or correction. Keep both date windows explicit; report an incomplete sweep in caveat if access or budget prevents it. Do not claim the sweep completed merely because it was requested."
     status = "UNAVAILABLE"
     caveat = "Surface Scout did not execute."
     signals: list[dict[str, object]] = []

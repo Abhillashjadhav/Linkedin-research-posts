@@ -2,7 +2,14 @@
 
 ## Purpose
 
-The strongest default hook for authority posts is a verified real-world incident with a concrete consequence, followed by the product mechanism that failed and the bounded solution Abhillash has built or recommends.
+For incident-eligible slots, prefer a verified real-world incident with a concrete consequence, followed by the product mechanism that failed and the bounded solution Abhillash has built or recommends.
+
+Thursday / weekly slot 3 is explicitly excluded from this default. Its routed
+`thursday-capability-v1` mode follows
+[Thursday capability discovery](THURSDAY_CAPABILITY_WORKFLOW.md): a useful new
+capability, visible working proof and immediate reader benefit. Do not turn that
+slot into a failure-and-prevention post or borrow this document's six-month
+incident window as its freshness rule. Other weekday assignments are unchanged.
 
 ## Freshness rule
 

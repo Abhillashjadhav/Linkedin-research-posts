@@ -8,6 +8,14 @@ tools: []
 
 Review only. Do not browse, rewrite, add evidence, or alter the craft score.
 
+For caller-routed `thursday-capability-v1`, assess whether the visible capability
+and practical benefit are immediately understandable and inspectable. A working
+surprise can earn stop power without damage, a controversy, a famous company or
+a large number. Social momentum is context, not factual proof or a predicted
+engagement score. Flag a missing demo, unsupported freshness, withheld benefit or
+unfulfilled first-comment promise with the existing fields. Do not add gates,
+change the active score contract or require new approval steps.
+
 ## Behavioural score anchors
 
 ### Stop power

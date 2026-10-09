@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 from urllib.parse import urlsplit
 
-from . import acceptance_policy, workflow
+from . import acceptance_policy, thursday_capability, workflow
 
 try:
     import fcntl
@@ -49,6 +49,58 @@ def _source_comment_text(source_urls: Sequence[str], review_source_ids: Sequence
             + "Resolve source IDs: " + ", ".join(review_source_ids)
         )
     return "Sources for this post:\n" + "\n".join(source_urls)
+
+
+def _thursday_companions(
+    sources: Sequence[Mapping[str, object]], claim_ids: Sequence[str],
+) -> tuple[str | None, str, list[str]]:
+    """Build a grounded companion and proposed production plan from safe evidence.
+
+    This is source-attributed prose, not a claim that the author reproduced a demo.
+    The caller has already redacted query-addressed URLs and metadata text.
+    """
+    selected = next((source for source in sources if source["id"] in claim_ids
+                     and isinstance(source.get("thursday_capability"), Mapping)), None)
+    if selected is None:
+        return None, thursday_capability.guidance("video"), ["structured_capability_evidence_missing"]
+    facts = selected["thursday_capability"]
+    missing = [key for key in ("primary_url", "demo_url", "executable_url") if not facts.get(key)]
+    links = [f"{label}: {facts[key]}" for key, label in (
+        ("primary_url", "Original source"), ("executable_url", "Try the project"), ("demo_url", "Original demo"),
+    ) if facts.get(key)]
+    linked = {str(facts[key]) for key in ("primary_url", "executable_url", "demo_url") if facts.get(key)}
+    links.extend(f"Supporting source ({source['title']}): {source['source']}"
+                 for source in sources if source["id"] in claim_ids and source.get("source")
+                 and str(source["source"]) not in linked)
+    comment = "\n\n".join([
+        f"Credit: {facts['creator']}. " + "\n".join(links),
+        f"How it works, according to the source: {facts['mechanism']}",
+        f"What you need and the reported test conditions: {facts['conditions']}",
+        f"The limit to keep in mind: {facts['limitation']}",
+        f"The supplied evidence labels the result {str(facts['result_provenance']).lower().replace('_', ' ')}. "
+        "This post does not establish that the author ran it.",
+        "A practical test: choose representative tasks with known acceptable outcomes. Compare correctness, "
+        "usefulness, completion time and total cost with your current approach before moving work.",
+    ])
+    plan = "\n\n".join([
+        "## Video production handoff\n\nStatus: PLAN_ONLY. No MP4 has been rendered or playback-checked.",
+        "Proposed production settings from the accepted reference: 1920 × 1080, 30 fps, approximately 78 seconds. "
+        "These timings are an editorial plan, not measured model performance.",
+        "### Asset/source ledger\n" + "\n".join(links),
+        f"### 0–6 seconds: real output\nUse the original demo footage. Source-reported observation: {facts['demo_observation']} "
+        "Obtain the footage and verify reuse permission before rendering; do not fabricate a demo.",
+        f"### 6–15 seconds: reader benefit\nCaption grounded in the evidence: {facts['reader_benefit']}",
+        f"### 15–55 seconds: one diagram\nMove the camera across one coherent diagram explaining: {facts['mechanism']} "
+        "Label the explanatory animation as illustrative; do not imply it is a recorded execution trace.",
+        f"### 55–68 seconds: conditions and limits\n{facts['conditions']}\n{facts['limitation']}",
+        "### 68–78 seconds: practical test and credit\nCompare representative task outcomes, time and total cost. "
+        f"Credit {facts['creator']} and point to the original source/demo in the comment only when those links are present.",
+        "### Production and delivery checks\nCapture actual output; prepare the editable diagram/camera path and captions; "
+        "render using an available video runtime; inspect opening, middle and ending plus full playback, mobile "
+        "legibility, clipping, credit and claim consistency. A deck of static slides does not satisfy this plan. "
+        "Retain source, renderer commands and review frames. Report unavailable footage/runtime as pending.",
+    ])
+    return comment, plan, missing
 
 
 REVIEW_STATUSES = {
@@ -356,6 +408,8 @@ def _public_sources(
                 "private_source": exact_url,
                 "source_quality": item["source_quality"],
                 "body_read": item["body_read"],
+                **({"thursday_capability": item["thursday_capability"]}
+                   if "thursday_capability" in item else {}),
             }
         )
     sources.sort(key=lambda item: str(item["id"]))
@@ -543,6 +597,19 @@ def _export_safe_views(
     for source in sources:
         source_copy = dict(source)
         source_copy["title"] = redact(f"source.{source['id']}.title", source["title"])
+        capability = source.get("thursday_capability")
+        if isinstance(capability, Mapping):
+            clean_capability = {}
+            for key, value in capability.items():
+                if isinstance(value, str):
+                    # Preserve the package's query-addressed URL privacy contract.
+                    clean_capability[key] = (
+                        None if key.endswith("_url") and urlsplit(value).query
+                        else redact(f"source.{source['id']}.thursday_capability.{key}", value)
+                    )
+                else:
+                    clean_capability[key] = value
+            source_copy["thursday_capability"] = clean_capability
         safe_sources.append(source_copy)
 
     safe_proof = dict(public_proof) if public_proof is not None else None
@@ -754,6 +821,41 @@ Attested public sentences:
         "editorial_score": "NOT_EVALUATED",
         "editorial_score_mode": "diagnostic",
     }
+    thursday_notice = ""
+    if thursday_capability.is_thursday(brief=brief):
+        companion, video_plan, missing = _thursday_companions(sources, retained["claim_ids"])
+        if companion is not None and not review_source_ids:
+            source_comment = companion
+            evaluation["source_comment"].update({
+                "status": "GROUNDED_COMPANION_DRAFT_REVIEW_REQUIRED",
+                "comment_sha256": hashlib.sha256(source_comment.encode("utf-8")).hexdigest(),
+                "selected_source_urls": sorted(set(re.findall(r"https://[^\s)>]+", source_comment))),
+            })
+        status = {
+            "full_package": "INCOMPLETE",
+            "first_comment": (
+                "GROUNDED_COMPANION_DRAFT_REVIEW_REQUIRED" if companion is not None and not review_source_ids
+                else "SOURCE_LIST_ONLY_NEEDS_EDITORIAL_COMMENT"
+            ),
+            "video": "NOT_RENDERED",
+            "post_comment_promise_check": "MISSING_INPUTS" if missing or review_source_ids else "LINKS_PRESENT_REVIEW_REQUIRED",
+        }
+        manifest["thursday_package"] = dict(status)
+        evaluation["thursday_package"] = {
+            **status,
+            "comment_requirements": thursday_capability.guidance("comment"),
+            "video_requirements": thursday_capability.guidance("video"),
+            "video_production_plan": video_plan,
+            "missing_inputs": missing,
+        }
+        thursday_notice = (
+            "## Thursday capability package: incomplete\n\n"
+            f"First-comment status: {status['first_comment']}. No finished MP4 has been rendered or checked.\n\n"
+            + thursday_capability.guidance("comment") + "\n\n"
+            + video_plan + "\n\n"
+            + ("Missing inputs: " + ", ".join(missing) + ".\n\n" if missing else "")
+            + "Verify that any project/demo promised in the post is actually linked in the first comment.\n"
+        )
     if recommended_id is not None:
         recommended = next(
             candidate for candidate in candidates if candidate["id"] == recommended_id
@@ -820,6 +922,8 @@ package is blocked and needs a new drafting run rather than approval.
 - Automatic LinkedIn publishing: `DISABLED`
 
 {recommendation}
+
+{thursday_notice}
 
 ## Sources used
 

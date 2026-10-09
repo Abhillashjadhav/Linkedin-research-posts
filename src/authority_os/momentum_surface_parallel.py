@@ -6,11 +6,12 @@ import json
 import os
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from contextvars import copy_context
 from datetime import timedelta
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from . import daily_cli, momentum, workflow
+from . import daily_cli, momentum, workflow, thursday_capability
 from .model_runtime import ModelConfig, invoke_structured
 
 MAX_WORKERS = 7
@@ -81,6 +82,28 @@ SURFACES: tuple[dict[str, object], ...] = (
         "instruction": "Search only primary company/research/standards/government sources and reputable technology/news reporting that show a current GenAI/product conversation or consequence.",
     },
 )
+
+
+def discovery_surfaces() -> tuple[dict[str, object], ...]:
+    """Keep existing coverage, with two explicit builder/artifact lanes on Thursday."""
+    if not daily_cli.thursday_discovery_active():
+        return SURFACES
+    replacements = {
+        "google": {
+            "label": "GitHub trending + releases",
+            "instruction": "Search public GitHub Trending and repository releases/README/demo pages using web search. Prioritise individual developers and small teams. Trending activity nominates a project; verify the actual release or meaningful change date separately. Use platform Primary source for repositories, Google Search only for search results.",
+            "allowed_platforms": ("Primary source", "Google Search"),
+        },
+        "substack": {
+            "label": "Hugging Face models + Spaces",
+            "instruction": "Search public Hugging Face model cards, release notes and working Spaces with visible demos, prioritising individual builders and small teams. Establish what became executable recently; downloads or trending position alone do not prove new capability.",
+            "allowed_platforms": ("Primary source",),
+        },
+        "hacker-news": {
+            "instruction": "Search public Hacker News and Show HN launches for surprising working capabilities. Capture visible points/comments with their observation date; never assume a Show HN mention establishes release date or virality.",
+        },
+    }
+    return tuple({**surface, **replacements.get(str(surface["key"]), {})} for surface in SURFACES)
 
 _TRACE_DIR: Path | None = None
 _TRACE_LOCK = threading.Lock()
@@ -321,6 +344,9 @@ For each signal:
 - acceleration_percent: comparable recent growth percentage only if directly observable, otherwise null.
 
 Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings. Return evidence only; do not use the private authority profile and do not write a post."""
+    if daily_cli.thursday_discovery_active():
+        prompt += "\n" + thursday_capability.guidance("discovery")
+        prompt += "\nSearch this lane within seven days (or the shorter requested window), then make a targeted final 48-hour sweep for a newer release or correction. Report incomplete coverage honestly in caveat."
     validated: dict[str, object] = {
         "status": "UNAVAILABLE",
         "signals": [],
@@ -434,6 +460,9 @@ UNTRUSTED_SURFACE_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}
 END_UNTRUSTED_SURFACE_SIGNALS
 """
+    if daily_cli.thursday_discovery_active():
+        prompt += "\n" + thursday_capability.guidance("discovery")
+        prompt += "\nRetain only working capability leads with inspectable demo/artifact evidence. Exclude incident-only, skill-list, prompt-pack and generic workflow advice clusters. Preserve real release/update timing separately from attention timing in why_now."
     result = invoke_structured(
         config=MODEL,
         role_prompt="You consolidate supplied evidence only. Do not browse, invent, or draft.",
@@ -519,19 +548,20 @@ def _project_candidates(
 
 
 def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, object]]:
-    print(f"Momentum: launching {len(SURFACES)} independent surface scouts in parallel...", flush=True)
-    _trace_event({"event": "surface_scouting_started", "surface_count": len(SURFACES), "as_of": as_of})
+    surfaces = discovery_surfaces()
+    print(f"Momentum: launching {len(surfaces)} independent surface scouts in parallel...", flush=True)
+    _trace_event({"event": "surface_scouting_started", "surface_count": len(surfaces), "as_of": as_of})
     completed: dict[str, dict[str, object]] = {}
     with ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="surface-scout") as executor:
         futures: dict[Future[dict[str, object]], str] = {
-            executor.submit(_run_surface, surface, topic=topic, days=days, as_of=as_of): str(surface["key"])
-            for surface in SURFACES
+            executor.submit(copy_context().run, _run_surface, surface, topic=topic, days=days, as_of=as_of): str(surface["key"])
+            for surface in surfaces
         }
         for future in as_completed(futures):
             key = futures[future]
             completed[key] = future.result()
 
-    ordered = [completed[str(surface["key"])] for surface in SURFACES]
+    ordered = [completed[str(surface["key"])] for surface in surfaces]
     successful = [item for item in ordered if item["status"] == "OBSERVED"]
     signals = [signal for item in successful for signal in item["signals"]]  # type: ignore[index]
     print(

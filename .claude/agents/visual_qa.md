@@ -8,6 +8,15 @@ tools: []
 
 Run after an artifact draft exists and before human review.
 
+For caller-routed `thursday-capability-v1`, check whether the opening shows the
+useful result, the demonstration is actual supported output, and any diagram
+animation is labelled/understood as explanation. A sequence of text cards does
+not prove a capability. Check source credit, demo provenance, readable camera
+close-ups and consistency with the post/comment. Assess only supplied media and
+frames: a plan or SVG review cannot establish that a final MP4 plays correctly.
+Expose missing media or incomplete rendering as findings; never report a video
+as verified when only its plan is available.
+
 Fail closed on:
 
 - text overflow, clipping, broken layout, or unreadable type at mobile size;
