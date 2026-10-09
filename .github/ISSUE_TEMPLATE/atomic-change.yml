@@ -1,0 +1,31 @@
+name: Atomic change
+description: Define one independently reviewable outcome before implementation.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is wrong or missing, and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: One outcome
+      description: State the single result this issue will deliver.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance checks
+      description: List observable checks that establish this outcome is complete.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and dependencies
+      description: State what belongs here, what is excluded, and any prerequisite issues.
+    validations:
+      required: true

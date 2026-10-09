@@ -19,6 +19,9 @@ preferred campaign hierarchy is GPT-5.6 Sol/high for Writer, GPT-5.6 Sol/max
 for Narrative Editor and the first-comment artisanal edit, and GPT-5.6 Sol/ultra
 for Critic and review stages. The Critic is never weaker than the Writer.
 
+Changes follow the [atomic contribution workflow](CONTRIBUTING.md): one issue,
+coherent commits, one focused PR, and a recorded review before merge.
+
 ## See the product before installing
 
 Open the **[synthetic review package preview](examples/review-package-preview.md)**.
