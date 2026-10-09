@@ -51,25 +51,35 @@ def _source_comment_text(source_urls: Sequence[str], review_source_ids: Sequence
 
 def _thursday_companions(
     sources: Sequence[Mapping[str, object]], claim_ids: Sequence[str],
-) -> tuple[str | None, str, list[str]]:
+) -> tuple[str | None, str, list[str], list[str]]:
     """Build a grounded companion and proposed production plan from safe evidence.
 
     This is source-attributed prose, not a claim that the author reproduced a demo.
-    The caller has already redacted query-addressed URLs and metadata text.
+    The caller has already projected every prose field and link for safe export.
     """
     selected = next((source for source in sources if source["id"] in claim_ids
                      and isinstance(source.get("thursday_capability"), Mapping)), None)
     if selected is None:
-        return None, thursday_capability.guidance("video"), ["structured_capability_evidence_missing"]
+        return None, thursday_capability.guidance("video"), ["structured_capability_evidence_missing"], []
     facts = selected["thursday_capability"]
-    missing = [key for key in ("primary_url", "demo_url", "executable_url") if not facts.get(key)]
-    links = [f"{label}: {facts[key]}" for key, label in (
+    usable_urls = {
+        key: public_urls.project_public_url(facts.get(key)).url
+        for key in ("primary_url", "demo_url", "executable_url")
+    }
+    missing = [key for key, value in usable_urls.items() if value is None]
+    missing.extend(f"source_prose_review_required:{key}"
+                   for key in selected.get("companion_review_fields", ()))
+    links = [f"{label}: {usable_urls[key]}" for key, label in (
         ("primary_url", "Original source"), ("executable_url", "Try the project"), ("demo_url", "Original demo"),
-    ) if facts.get(key)]
-    linked = {str(facts[key]) for key in ("primary_url", "executable_url", "demo_url") if facts.get(key)}
-    links.extend(f"Supporting source ({source['title']}): {source['source']}"
-                 for source in sources if source["id"] in claim_ids and source.get("source")
-                 and str(source["source"]) not in linked)
+    ) if usable_urls[key] is not None]
+    linked = {url for url in usable_urls.values() if url is not None}
+    for source in sources:
+        if source["id"] not in claim_ids:
+            continue
+        url = public_urls.project_public_url(source.get("source")).url
+        if url is not None and url not in linked:
+            links.append(f"Supporting source ({source['title']}): {url}")
+            linked.add(url)
     comment = "\n\n".join([
         f"Credit: {facts['creator']}. " + "\n".join(links),
         f"How it works, according to the source: {facts['mechanism']}",
@@ -98,7 +108,7 @@ def _thursday_companions(
         "legibility, clipping, credit and claim consistency. A deck of static slides does not satisfy this plan. "
         "Retain source, renderer commands and review frames. Report unavailable footage/runtime as pending.",
     ])
-    return comment, plan, missing
+    return comment, plan, missing, sorted(linked)
 
 
 REVIEW_STATUSES = {
@@ -163,6 +173,66 @@ def _markdown_literal(value: str) -> str:
     """Render untrusted prose as an indented Markdown literal block."""
 
     return "\n".join(f"    {line}" for line in value.splitlines())
+
+
+_PRIVATE_PROSE_PATH = re.compile(
+    r"(?<![\w./\\-])(?:"
+    r"[A-Za-z]:(?=\S)|\\\\|/(?=\S)|\.{1,2}[\\/]|~[\\/]|"
+    r"(?:[^\s/:\\<>\"']+[\\/])*(?:"
+    r"(?:outputs|private[-_]runs?|\.agents|\.codex|\.aws)[\\/]|"
+    r"private[-_]runs?[-_](?=[^\r\n]*[\\/])|"
+    r"data[\\/]private[\\/]|"
+    r"campaigns[\\/](?:[^\s\\/<>\"']+[\\/])*run[\\/])"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _export_prose(
+    value: str, source_ids_by_url: Mapping[str, str] | None = None,
+    *, preserve_terminal_query_prose: bool = False,
+) -> tuple[str, int, list[str]]:
+    """Project untrusted export prose without retaining private path fragments.
+
+    A local path makes its whole field unsuitable for a public companion. The
+    original field stays in private evidence; only a safe reason and its digest
+    can reach package metadata. Public URL paths and ordinary slash-separated
+    prose do not match the local-path boundary.
+    """
+    # URI paths are screened by the URL policy below; private local paths are
+    # screened here. A dotted relative directory is still a local path, so only
+    # explicit URI candidates are excluded from this original-prose path view.
+    path_view = list(value)
+    for start, end in public_urls.url_text_spans(value):
+        candidate = value[start:end]
+        explicit_uri = re.match(r"[a-z][a-z0-9+.-]*:", candidate, re.IGNORECASE)
+        projection = public_urls.project_public_url(candidate if explicit_uri else f"https://{candidate}")
+        if projection.url is None:
+            marker, count = public_urls.redact_public_urls(candidate, source_ids_by_url)
+            if (
+                preserve_terminal_query_prose
+                and count > 0
+                and projection.reason in {"sensitive-query", "unsupported-query", "invalid-query", "invalid-video-id"}
+                and not value[end:].strip(" \t\n.,;:!)]}")
+            ):
+                # Keep the established terminal candidate-citation display
+                # only when no substantive URI fragment can trail the token.
+                path_view[start:end] = " " * (end - start)
+                continue
+            # A denied explicit or bare URL can contain spaces in a private
+            # path/query; token replacement would expose trailing fragments.
+            # Retain only the policy's safe citation marker for private review.
+            if count == 0:
+                # The prose scanner skips filename-shaped domains. Its unchanged
+                # input is never a safe marker for a query that policy denied.
+                marker = f"[URL withheld: {projection.reason}]"
+            return "[Source prose withheld: unsafe-url] " + marker, max(count, 1), ["unsafe-url"]
+        if explicit_uri:
+            path_view[start:end] = " " * (end - start)
+    if _PRIVATE_PROSE_PATH.search("".join(path_view)):
+        return "[Source prose withheld: local-path]", 1, ["local-path"]
+    exported, count = public_urls.redact_public_urls(value, source_ids_by_url)
+    return exported, count, ["unsafe-url"] if count else []
 
 
 def _project_brief(
@@ -567,16 +637,23 @@ def _export_safe_views(
         str(source["private_source"]): str(source["id"]) for source in sources
     }
     metadata_changes: dict[str, dict[str, object]] = {}
+    privacy_reasons: dict[str, list[str]] = {}
 
     def redact(path: str, value: object) -> str:
         original = str(value)
-        exported, count = workflow.redact_query_urls(original, source_ids_by_url)
+        if path.startswith("source."):
+            exported, count, reasons = _export_prose(original, source_ids_by_url)
+        else:
+            # Strategy and proof retain their established URL-only projection.
+            exported, count = public_urls.redact_public_urls(original, source_ids_by_url)
+            reasons = ["unsafe-url"] if count else []
         if count or exported != original:
             metadata_changes[path] = {
                 "original_sha256": hashlib.sha256(original.encode()).hexdigest(),
                 "exported_sha256": hashlib.sha256(exported.encode()).hexdigest(),
                 "redactions": count,
             }
+            privacy_reasons[path] = reasons
         return exported
 
     safe_brief = dict(brief)
@@ -593,19 +670,26 @@ def _export_safe_views(
     safe_sources: list[dict[str, object]] = []
     for source in sources:
         source_copy = dict(source)
-        source_copy["title"] = redact(f"source.{source['id']}.title", source["title"])
+        title_path = f"source.{source['id']}.title"
+        source_copy["title"] = redact(title_path, source["title"])
+        review_fields = ["title"] if privacy_reasons.get(title_path) else []
         capability = source.get("thursday_capability")
         if isinstance(capability, Mapping):
             clean_capability = {}
             for key, value in capability.items():
                 if isinstance(value, str):
+                    field_path = f"source.{source['id']}.thursday_capability.{key}"
                     clean_capability[key] = (
                         public_urls.project_public_url(value).url if key.endswith("_url")
-                        else redact(f"source.{source['id']}.thursday_capability.{key}", value)
+                        else redact(field_path, value)
                     )
+                    if privacy_reasons.get(field_path):
+                        review_fields.append(key)
                 else:
                     clean_capability[key] = value
             source_copy["thursday_capability"] = clean_capability
+        if review_fields:
+            source_copy["companion_review_fields"] = sorted(review_fields)
         safe_sources.append(source_copy)
 
     safe_proof = dict(public_proof) if public_proof is not None else None
@@ -626,11 +710,11 @@ def _export_safe_views(
         candidate_id = str(candidate["id"])
         original_angle = str(candidate["angle"])
         original_text = str(candidate["text"])
-        exported_angle, angle_count = workflow.redact_query_urls(
-            original_angle, source_ids_by_url
+        exported_angle, angle_count, _angle_reasons = _export_prose(
+            original_angle, source_ids_by_url, preserve_terminal_query_prose=True,
         )
-        exported_text, text_count = workflow.redact_query_urls(
-            original_text, source_ids_by_url
+        exported_text, text_count, _text_reasons = _export_prose(
+            original_text, source_ids_by_url, preserve_terminal_query_prose=True,
         )
         safe_candidates.append({**candidate, "angle": exported_angle, "text": exported_text})
         original_angle_digests[candidate_id] = hashlib.sha256(original_angle.encode()).hexdigest()
@@ -641,8 +725,12 @@ def _export_safe_views(
 
     if metadata_changes:
         evaluation["citation_metadata_export"] = {
-            "status": "QUERY_URLS_REDACTED_FOR_DISPLAY",
+            "status": (
+                "PRIVATE_CONTENT_WITHHELD_FOR_DISPLAY" if any(privacy_reasons.values())
+                else "PUBLIC_URLS_NORMALIZED_FOR_DISPLAY"
+            ),
             "fields": metadata_changes,
+            "privacy_reasons": privacy_reasons,
         }
     changed_candidates = any(original_text_digests[key] != exported_text_digests[key]
                              or original_angle_digests[key] != exported_angle_digests[key]
@@ -824,13 +912,13 @@ Attested public sentences:
     }
     thursday_notice = ""
     if thursday_capability.is_thursday(brief=brief):
-        companion, video_plan, missing = _thursday_companions(sources, retained["claim_ids"])
+        companion, video_plan, missing, companion_urls = _thursday_companions(sources, retained["claim_ids"])
         if companion is not None and not review_source_ids:
             source_comment = companion
             evaluation["source_comment"].update({
                 "status": "GROUNDED_COMPANION_DRAFT_REVIEW_REQUIRED",
                 "comment_sha256": hashlib.sha256(source_comment.encode("utf-8")).hexdigest(),
-                "selected_source_urls": sorted(set(re.findall(r"https://[^\s)>]+", source_comment))),
+                "selected_source_urls": companion_urls,
             })
         status = {
             "full_package": "INCOMPLETE",
@@ -876,7 +964,7 @@ evaluation exist only to exercise the deterministic package contract.
     elif "candidate_export" in evaluation:
         recommendation = f"""## Draft retained for citation review
 
-No copy-ready recommendation is made because inline query-addressed citation
+No copy-ready recommendation is made because private content or unsafe citation
 links were withheld. The grounded draft is retained for private review, with
 its exported text distinguished from the originally scored candidate.
 
@@ -904,7 +992,7 @@ package is blocked and needs a new drafting run rather than approval.
         metadata_export.get("fields") if isinstance(metadata_export, Mapping) else None
     )
     citation_display_notice = (
-        "- Review query links withheld from display fields: "
+        "- Review content withheld from display fields: "
         + ", ".join(f"`{name}`" for name in sorted(metadata_fields))
         + ".\n"
         if isinstance(metadata_fields, Mapping) and metadata_fields

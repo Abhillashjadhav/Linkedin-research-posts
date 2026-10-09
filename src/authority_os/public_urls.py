@@ -182,3 +182,13 @@ def public_url_spans(text: str) -> list[tuple[int, int, str]]:
         if projection.url is not None:
             result.append((match.start(), match.start() + len(raw), projection.url))
     return result
+
+
+def url_text_spans(text: str) -> list[tuple[int, int]]:
+    """Locate URL candidates; this makes no claim that any link is usable.
+
+    Prose privacy checks use these same scanner boundaries to distinguish a
+    literal URI from a local path before applying the public-link projection.
+    """
+    return [(match.start(), match.start() + len(_text_url(match.group(0))[0]))
+            for match in _URL_TEXT.finditer(text)]
