@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Mapping, Sequence
 
-from . import daily_cli, topic_value
+from . import daily_cli, topic_value, thursday_capability
 
 _INSTALLED = False
 _ORIGINAL_ROLE = daily_cli._role
@@ -60,12 +60,18 @@ Individual/small-team launches must not be downgraded merely because they have l
 def _role(name: str) -> str:
     text = _ORIGINAL_ROLE(name)
     if name == "scout":
-        return text + SCOUT_GUIDANCE
+        return text + SCOUT_GUIDANCE + ("\n" + thursday_capability.guidance("discovery") if daily_cli.thursday_discovery_active() else "")
     return text
 
 
 def _topic_role() -> str:
-    return _ORIGINAL_TOPIC_ROLE() + TOPIC_VALUE_GUIDANCE
+    return _ORIGINAL_TOPIC_ROLE() + TOPIC_VALUE_GUIDANCE + _thursday_selection_guidance()
+
+
+def _thursday_selection_guidance() -> str:
+    if not daily_cli.thursday_discovery_active():
+        return ""
+    return "\n" + thursday_capability.guidance("discovery") + "\nTHURSDAY SELECTION: Select only the verified executable capabilities supplied. Preserve the capability, real novelty, simple user benefit, inspectable mechanism and demo proof. Use CAPABILITY_DISCOVERY or ACCELERATED_LEARNING when supported. Prioritise striking but defensible capability over brand size; use observed attention as evidence, never promise virality. Do not turn the topic into incident commentary, generic governance lessons, skill lists or prompt-pack advice. Apply the existing evidence eligibility and relative ranking rules."
 
 
 def _augment_task(task_prompt: str) -> str:
@@ -81,7 +87,7 @@ def _augment_task(task_prompt: str) -> str:
     )
     if old in task_prompt:
         task_prompt = task_prompt.replace(old, new)
-    return task_prompt + TOPIC_VALUE_GUIDANCE
+    return task_prompt + TOPIC_VALUE_GUIDANCE + _thursday_selection_guidance()
 
 
 def invoke_selector(

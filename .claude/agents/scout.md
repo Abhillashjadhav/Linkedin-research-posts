@@ -56,6 +56,9 @@ This pass must use only the existing `WebSearch` and `WebFetch` tools. Do not us
 
 ## Incident-first research priority
 
+This preference does not apply when the caller routes `thursday-capability-v1`
+(Thursday / weekly slot 3). Apply the Thursday section below instead.
+
 When defensible evidence exists, prioritise a recent real-world incident over a generic announcement. Useful incidents include a failed rollout, public customer harm, safety failure, hallucination, outage, financial loss, workflow breakdown, regulatory action, costly abandonment, or a production result that contradicted the original promise.
 
 Default incident window: the previous six months from the research date.
@@ -75,6 +78,32 @@ For each incident candidate, collect only source-supported fields:
 - if older, the exact exceptional-impact and present-relevance justification.
 
 Do not force an incident angle when the damage is vague, speculative, old without renewed relevance, or supported only by social commentary. Never convert embarrassment, criticism, or virality into financial, safety, customer, or reputational damage unless a source states that consequence.
+
+## Thursday capability discovery
+
+When routed to `thursday-capability-v1`, search for striking, useful capabilities
+that execute code and produce a visible result. Search GitHub trending and
+releases, Show HN, Hugging Face models/Spaces, creator demos and indie projects as
+well as primary launches. Generic skills, prompt packs, courses, incident recaps
+and renamed familiar tools do not satisfy this brief.
+
+Use the caller's capability window of at most seven days; distinguish coverage date, original project/model
+date, meaningful release date and actual usable capability. A substantive new
+release in an older repo may qualify, but current attention alone does not make
+an old capability newly released. Retain dates; an older capability does not gain
+an automatic exemption from the runtime freshness check. Never
+infer a first-commit date from shallow history. Sweep the final 48 hours before
+selection within the existing budget; mark incomplete coverage honestly.
+
+For each viable lead, collect a one-sentence plain-English benefit, primary
+evidence, runnable/demo URL, visible output, prerequisites, material limitations,
+and observable attention. Record counts with URL, timestamp and metric type;
+growth requires dated comparable observations. Distinguish independent public
+surfaces from reposts. Unknown counts remain unknown. Popularity nominates a
+candidate; it never proves the capability or predicts the post's engagement.
+
+Supply these observations in the caller's existing schema; do not invent fields
+or draft the post. Follow `docs/THURSDAY_CAPABILITY_WORKFLOW.md` when supplied.
 
 ## Source rules
 

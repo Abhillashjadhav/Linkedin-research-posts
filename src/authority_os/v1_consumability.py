@@ -18,7 +18,7 @@ import re
 from typing import Mapping, Sequence
 
 from . import momentum_surface_parallel as surface
-from . import resonance, workflow
+from . import resonance, workflow, thursday_capability
 
 _INSTALLED = False
 
@@ -154,6 +154,9 @@ UNTRUSTED_SURFACE_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}
 END_UNTRUSTED_SURFACE_SIGNALS
 """
+    if surface.daily_cli.thursday_discovery_active():
+        prompt += "\n" + thursday_capability.guidance("discovery")
+        prompt += "\nRetain only working capability leads with inspectable demo/artifact evidence. Exclude incident-only, skill-list, prompt-pack and generic workflow advice clusters. Preserve release/update timing separately from attention timing in why_now. Never add an unsupported candidate to satisfy the existing coverage floor."
     result = surface.invoke_structured(
         config=surface.MODEL,
         role_prompt=(

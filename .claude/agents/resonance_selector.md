@@ -51,6 +51,14 @@ Do not score differentiation here. Topic Value owns authority fit. Resonance own
 
 ## Packaging contract
 
+In caller-routed `thursday-capability-v1`, package the surprising working output
+and the one-sentence reader benefit first. The reader should understand what is
+now possible before learning the project's name or mechanism. Use the visible
+demo as inspectable proof; preserve its source and limitations. Reserve deeper
+mechanism for the first comment/video. Do not reshape the capability into an
+incident simply because damage seems more dramatic. Keep the same scores,
+output schema and locked topic.
+
 Return exactly two packaging lines.
 
 - **Line 1:** state what changed or the concrete problem in language a smart PM/AI practitioner can understand immediately.

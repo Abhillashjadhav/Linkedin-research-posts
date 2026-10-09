@@ -60,6 +60,20 @@ Score every axis 1–5. Use the intermediate descriptions; do not treat 4 as an 
 
 ## Mandatory consumability tests
 
+For caller-routed `thursday-capability-v1`, select a concrete executable capability
+and use `CAPABILITY_DISCOVERY` when supported. Require a plain one-sentence
+benefit and an inspectable working demo/output in the supplied evidence; compare
+freshness, meaningful new behavior, practical accessibility, useful surprise and
+observed cross-surface attention. Primary proof outranks social excitement. Do
+not require a failure, quantified damage, a famous vendor or an author-owned
+artifact. Do not select a generic skill, prompt pack, course or renamed old tool.
+Preserve missing demo/freshness evidence as findings, never invented proof.
+
+An older repo's current substantive release can be relevant; an old capability's
+current repost is not a new launch. Keep original/release/coverage dates and
+unknown metrics visible. Use the existing scoring axes and caller contract; do
+not introduce the historical /50 rubric or promise viral performance.
+
 Run all of these before passing a situation:
 
 - **Two-sentence PM test:** explain what changed and why a smart product/AI practitioner should care in two plain-English sentences. Do not rely on unexplained acronyms, benchmark names, vendor product names, or specialist infrastructure terms as the reason to care. If the meaning collapses, block it.

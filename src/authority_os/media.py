@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from . import workflow
+from . import thursday_capability, workflow
 from .model_runtime import ModelConfig, invoke_structured
 
 MEDIA_TYPES = ("IMAGE", "CAROUSEL_PDF", "VIDEO", "NONE")
@@ -126,7 +126,7 @@ def validate_plan(raw: Mapping[str, object]) -> dict[str, object]:
     return plan
 
 
-def plan_media(post: str, topic: str, *, invoker=invoke_structured) -> dict[str, object]:
+def plan_media(post: str, topic: str, *, day: str | None = None, invoker=invoke_structured) -> dict[str, object]:
     task = f"""Choose the best supporting media for this already human-approved LinkedIn post.
 
 The post text is locked. Do not rewrite it. Do not browse or add facts. Media should make the approved argument easier to understand, remember, or apply. It must not exist merely for decoration.
@@ -145,6 +145,13 @@ TOPIC
 APPROVED_POST
 {post}
 """
+    if thursday_capability.is_thursday(day=day):
+        task += (
+            "\n" + thursday_capability.guidance("video")
+            + "\nReturn VIDEO with a production storyboard, not static slides. The approved post "
+            "is locked. Mark missing footage/source attribution explicitly in the storyboard; "
+            "do not claim a demo was captured or rendered."
+        )
     raw = invoker(
         config=MODEL,
         role_prompt=(
@@ -157,7 +164,10 @@ APPROVED_POST
         web_search=False,
         stage_label="Approved post media planner",
     )
-    return validate_plan(raw)
+    plan = validate_plan(raw)
+    if thursday_capability.is_thursday(day=day) and plan["media_type"] != "VIDEO":
+        raise workflow.WorkflowError("Thursday capability media requires a demo-video production plan.")
+    return plan
 
 
 def _private_output(path: Path) -> Path:
@@ -274,6 +284,7 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="linkedin-os media", description="Create a private media package only after human post approval.")
     result.add_argument("--post-file", type=Path, required=True)
     result.add_argument("--topic", required=True)
+    result.add_argument("--day", choices=("Monday", "Tuesday", "Wednesday", "Thursday", "Friday"))
     result.add_argument("--output-dir", type=Path)
     result.add_argument("--confirm-approved", action="store_true")
     result.add_argument("--allow-model-egress", action="store_true")
@@ -289,7 +300,7 @@ def command(args: argparse.Namespace) -> int:
     topic = " ".join(str(args.topic).split())
     if not topic:
         raise workflow.WorkflowError("Media planning requires a non-blank topic.")
-    plan = plan_media(post, topic)
+    plan = plan_media(post, topic, day=getattr(args, "day", None))
     output_dir = args.output_dir
     if output_dir is None:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

@@ -144,6 +144,26 @@ exact timestamp; otherwise the command fails closed rather than guessing.
 
 ## Locked high-bar search
 
+For Thursday / weekly slot 3, discovery and drafting use the existing OS's
+**capability-first workflow**: find a useful executable capability with observable
+public attention, verify a real demo, and lead with the reader's benefit. A
+maximum seven-day capability window and final 48-hour sweep keep old launches
+from being presented as new. An older repo needs a substantive current update.
+Campaign routing uses the actual Thursday day label; discovery
+can infer Thursday in Asia/Kolkata when a slot is omitted. Other weekdays and
+strategic goals keep their current behavior.
+
+The review package should contain the post, a source-linked first comment,
+demo/provenance, concise alternatives and the actual asset completion status.
+A plan or SVG is not a completed demo video. See
+[Thursday capability workflow](docs/THURSDAY_CAPABILITY_WORKFLOW.md) for research,
+selection, writing and visual checks. Publication remains manual.
+
+Standalone packages include `post.md` and a metadata-grounded `source-comment.md`
+whose editorial score remains `NOT_EVALUATED`. Their `final-package.md` and
+`evaluation.json` contain the source-linked production plan and keep the full
+Thursday package `INCOMPLETE` pending a rendered, verified video.
+
 A live invocation runs at most four scored iterations. Writing acceptance has one rule:
 
 - effective Critic score of at least **17/25**;
@@ -209,6 +229,8 @@ candidates.md      exactly three candidates with claim IDs
 evaluation.json    critic scores, revision metadata, and gate results
 sources.md         public-safe source metadata
 final-package.md   recommendation or blocked reason plus review checklist
+post.md            retained candidate text
+source-comment.md  source companion with its actual review status
 ```
 
 A recommendation means **ready for human review**. It never means approved, scheduled, or published.

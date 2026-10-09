@@ -12,6 +12,8 @@ import json
 import os
 import re
 import sys
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
@@ -19,6 +21,23 @@ from typing import Callable, Mapping, Sequence
 from . import __main__ as legacy_cli
 from . import storage, workflow
 from .model_runtime import ModelConfig, invoke_structured
+
+
+_THURSDAY_DISCOVERY: ContextVar[bool] = ContextVar("thursday_discovery", default=False)
+
+
+def thursday_discovery_active() -> bool:
+    """Read the bounded run route; callers must propagate it into worker threads."""
+    return _THURSDAY_DISCOVERY.get()
+
+
+@contextmanager
+def discovery_route(*, thursday: bool):
+    token = _THURSDAY_DISCOVERY.set(thursday)
+    try:
+        yield
+    finally:
+        _THURSDAY_DISCOVERY.reset(token)
 
 AXES = ("audience_fit", "distinctiveness", "decision_strength", "proof_fit", "simplicity")
 MIN_TOTAL = 23
@@ -182,6 +201,7 @@ def project_signals(items: Sequence[Mapping[str, object]]) -> list[dict[str, obj
             **{key: item[key] for key in (
                 "publication_date_precision", "publication_date_uncertain",
                 "freshness_status", "evidence_warnings",
+                "thursday_capability",
             ) if key in item},
         }
         for index, item in enumerate(items, 1)
@@ -282,6 +302,10 @@ END_UNTRUSTED_SIGNALS
 UNTRUSTED_CARDS
 {json.dumps(list(cards), indent=2, sort_keys=True)}
 END_UNTRUSTED_CARDS"""
+    if thursday_discovery_active():
+        from . import thursday_capability
+        prompt += "\n" + thursday_capability.guidance("review")
+        prompt += "\nFor Thursday, decision strength includes a clear when-to-try/inspect/use choice grounded in the executable capability. Do not reward forcing a capability discovery into a risk/governance lesson or penalise an accurate human reaction opener just because it lacks a number. Preserve the existing five scoring axes."
     result = invoke_structured(
         config=THESIS_CRITIC_MODEL,
         role_prompt="You are a strict authority-thesis critic. Score only.",

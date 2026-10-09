@@ -44,13 +44,24 @@ Hook 3 or below caps the total at 18. A generic `What do you think?`, `Agree or 
 - **Relevance:** the post matters to a senior PM, AI PM, AI engineer, product leader, AI founder, enterprise AI leader, or relevant recruiter.
 - **Citation:** every numeric or named factual claim traces to supplied evidence; factual work does not rely only on Reddit or Hacker News.
 
-Any failed honesty, citation, or required proof gate is `DROP`, regardless of score.
+Record failed honesty, citation or required proof findings explicitly. Use the
+status fields requested by the caller; do not invent a verdict field. Python
+owns the active factual-validity, advisory, retention and acceptance decisions.
 
 ## Thresholds
 
 The Critic scores only. Python owns acceptance. Its shared contract requires total
-at least 18, hook and voice at least 4, and every hard gate. Middle escalation,
-earned closer, and specificity/source quality remain scored and may trade off inside
-the total; they have no independent floor.
+at least 17, hook and voice at least 4, and middle escalation, earned closer and
+specificity/source quality at least 3. Preserve raw gate findings; the caller's
+active runtime owns advisory status, factual validity, retention and warnings.
+Do not override that contract with an older /50 reference rubric.
+
+For caller-routed `thursday-capability-v1`, reward a concrete working capability,
+immediate reader benefit, inspectable demo and natural voice. Do not demand an
+incident or numerical hook. Distinguish primary capability proof from observable
+attention and creator-reported output from an independent test. Flag unsupported
+freshness, ownership, free/privacy claims or promises of viral performance. A
+high score cannot establish audience results or overrule the user's accepted
+wording; assess the actual candidate being reviewed.
 
 Never use `ship`, `published`, or automatic-approval language. Source traceability is not proof of truth; human verification remains required.

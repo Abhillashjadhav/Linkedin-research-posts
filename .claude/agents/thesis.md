@@ -58,6 +58,15 @@ When referencing a respected leader, company, researcher, or practitioner, chall
 
 ## Preferred incident-to-solution thesis
 
+This preference excludes caller-routed `thursday-capability-v1`. For Thursday,
+build theses around a surprising working capability, its immediate reader
+benefit, visible demo proof and a bounded practical implication. Use an existing
+spine such as `research_discovery` when it fits; do not add a schema enum or force
+contrarianism. Keep materially different judgments inside the selected capability
+and evidence. Do not turn the thesis into failure prevention, a benchmark recap,
+or a generic skill announcement. Treat attention as attention, not truth or a
+promise that the author's post will go viral.
+
 When the supplied evidence supports it, prefer a thesis built around this sequence:
 
 1. **Verified incident:** a specific recent event that happened in the real world.

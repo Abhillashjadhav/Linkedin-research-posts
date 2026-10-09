@@ -13,9 +13,11 @@ import sys
 import time
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, wait
+from contextvars import copy_context
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
+from zoneinfo import ZoneInfo
 
 from . import daily_cli as base
 from . import (
@@ -29,6 +31,7 @@ from . import (
     topic_value,
     v1_completion,
     workflow,
+    thursday_capability,
 )
 from .spine_feedback import CONTENT_SPINES
 from .model_runtime import ModelTimeoutError
@@ -91,6 +94,102 @@ OBSERVABILITY_CONTRACT = "decision-trace-v1"
 OBSERVABILITY_STATUS = frozenset(
     {"PASS", "FAIL", "BLOCKED", "NOT_EVALUATED", "RUNNING", "REJECTED", "UNAVAILABLE", "COMPLETED_WITH_WARNINGS"}
 )
+
+THURSDAY_CAPSULE = thursday_capability.CAPSULE_MARKER
+
+
+def discovery_is_thursday(*, as_of: str, week_slot: int | None) -> bool:
+    """Explicit weekly slots win; an unbound run follows the author's local day."""
+    if week_slot is not None:
+        return thursday_capability.is_thursday(week_slot=week_slot)
+    day = workflow.parse_published_at(as_of).astimezone(ZoneInfo("Asia/Kolkata")).strftime("%A")
+    return thursday_capability.is_thursday(day=day)
+
+
+def _thursday_metadata_schema() -> dict[str, object]:
+    return thursday_capability.evidence_schema()
+
+
+def _capability_metadata(item: Mapping[str, object]) -> Mapping[str, object] | None:
+    value = item.get("thursday_capability")
+    if isinstance(value, Mapping):
+        return value
+    return thursday_capability.extract_evidence(item.get("body"))
+
+
+def _checked_thursday_capability(item: Mapping[str, object], *, as_of: str, days: int) -> dict[str, object]:
+    """Require inspectable working capability evidence; attention cannot establish novelty."""
+    raw = _capability_metadata(item)
+    try:
+        data = thursday_capability.validate_evidence(raw)
+    except ValueError as exc:
+        raise workflow.WorkflowError(str(exc)) from exc
+    if data["kind"] != "EXECUTABLE_CAPABILITY" or data["change_kind"] not in {"RELEASE", "SUBSTANTIVE_UPDATE"}:
+        raise workflow.WorkflowError("Thursday requires an executable capability release or substantive update, not an incident/resource story.")
+    for key in ("creator", "capability", "reader_benefit", "mechanism", "change_evidence", "limitation", "attention_evidence"):
+        if not isinstance(data[key], str) or not str(data[key]).strip():
+            raise workflow.WorkflowError(f"Thursday evidence needs {key}.")
+    for key in ("primary_url", "executable_url", "demo_url"):
+        if not isinstance(data[key], str) or not str(data[key]).strip():
+            raise workflow.WorkflowError(f"Thursday evidence needs an inspectable {key}.")
+        try:
+            data[key] = workflow.canonicalise_url(str(data[key]))
+        except ValueError as exc:
+            raise workflow.WorkflowError(f"Thursday evidence has an invalid {key}.") from exc
+    if data["primary_url"] != item.get("canonical_url") or item.get("source_quality") != "primary":
+        raise workflow.WorkflowError("Thursday change must be verified in the supplied primary-source body.")
+    end = workflow.parse_published_at(as_of)
+    start = end - timedelta(days=min(days, 7))
+    dates: dict[str, tuple[datetime, datetime, str]] = {}
+    for key in ("original_release_date", "substantive_change_date"):
+        if data[key] is None:
+            continue
+        if not isinstance(data[key], str):
+            raise workflow.WorkflowError("Thursday dates must be explicit source dates or null.")
+        try:
+            earliest, latest, precision = workflow.source_publication_bounds(str(data[key]))
+        except (TypeError, ValueError) as exc:
+            raise workflow.WorkflowError("Thursday change date is invalid.") from exc
+        if precision == "month" or earliest > end:
+            raise workflow.WorkflowError("Thursday requires a real release/update day, never a month-only or future date.")
+        dates[key] = earliest, latest, precision
+    event_key = "original_release_date" if data["change_kind"] == "RELEASE" else "substantive_change_date"
+    if event_key not in dates or dates[event_key][1] < start:
+        raise workflow.WorkflowError("Thursday capability has no verified release or meaningful update in the seven-day window; fresh attention alone is insufficient.")
+    if all(key in dates for key in ("original_release_date", "substantive_change_date")) and dates["substantive_change_date"][1] < dates["original_release_date"][0]:
+        raise workflow.WorkflowError("Thursday update predates the original release.")
+    count = data["attention_count"]
+    if count is not None and (type(count) not in (int, float) or not math.isfinite(count) or count < 0):
+        raise workflow.WorkflowError("Thursday attention count must be observed non-negative interactions or null.")
+    attention_url = data["attention_url"]
+    if attention_url is not None:
+        try:
+            data["attention_url"] = workflow.canonicalise_url(str(attention_url))
+        except ValueError as exc:
+            raise workflow.WorkflowError("Thursday attention URL is invalid.") from exc
+    observed_at = data["attention_observed_at"]
+    if observed_at is not None:
+        try:
+            if workflow.parse_published_at(str(observed_at)) > end:
+                raise ValueError("future attention observation")
+        except (TypeError, ValueError) as exc:
+            raise workflow.WorkflowError("Thursday attention observation time is invalid.") from exc
+    if count is not None and (not attention_url or not observed_at):
+        raise workflow.WorkflowError("Thursday numeric attention needs its public URL and observation time; otherwise use null.")
+    return data
+
+
+def select_thursday_evidence(items: Sequence[Mapping[str, object]], *, as_of: str, days: int) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
+    selected: list[dict[str, object]] = []
+    excluded: list[dict[str, str]] = []
+    for item in items:
+        try:
+            metadata = _checked_thursday_capability(item, as_of=as_of, days=days)
+        except workflow.WorkflowError as exc:
+            excluded.append({"url": str(item.get("canonical_url", "")), "reason": str(exc)})
+            continue
+        selected.append({**item, "thursday_capability": metadata})
+    return selected, excluded
 
 
 @dataclass(frozen=True, slots=True)
@@ -1505,6 +1604,7 @@ def update_candidate_inventory(
             "combined_total": combined,
             "representative_urls": list(candidate.get("representative_urls", [])),
             "status": prior.get("status", "AVAILABLE") if prior else "AVAILABLE",
+            **({"discovery_policy": candidate["discovery_policy"]} if candidate.get("discovery_policy") else {}),
         }
     retained = sorted(
         by_topic.values(),
@@ -1548,6 +1648,11 @@ def select_topic_scope(
     top_five: Sequence[Mapping[str, object]],
     inventory: Sequence[Mapping[str, object]] = (),
 ) -> tuple[list[dict[str, object]], str]:
+    if base.thursday_discovery_active():
+        # Retained incidents from other weekdays must never bypass Thursday's
+        # scoped discovery route by winning the rolling pool's numeric rank.
+        top_five = [item for item in top_five if item.get("discovery_policy") == thursday_capability.POLICY_VERSION]
+        inventory = [item for item in inventory if item.get("discovery_policy") == thursday_capability.POLICY_VERSION]
     pool = {
         " ".join(str(item.get("topic", "")).casefold().split()): dict(item)
         for item in inventory
@@ -1713,6 +1818,9 @@ END_UNTRUSTED_PROFILE
 UNTRUSTED_TOPIC_VALUE_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}
 END_UNTRUSTED_TOPIC_VALUE_SIGNALS{retry}"""
+    if base.thursday_discovery_active():
+        prompt += "\n" + thursday_capability.guidance("writer")
+        prompt += "\nPreserve the selected executable capability and its verified demo/mechanism/benefit from thursday_capability evidence. A useful product_decision may be when to try or inspect this capability; do not force governance or failure commentary. Distinctiveness must come from what is newly possible, not fabricated surprise, severity or claims of popularity."
     result = base.invoke_structured(
         config=base.THESIS_MODEL,
         role_prompt=base._role("thesis"),
@@ -1806,6 +1914,7 @@ def evidence_scope_fingerprint(
             {
                 "topic": " ".join(topic.casefold().split()),
                 "representative_urls": sorted(set(canonical_urls)),
+                **({"discovery_policy": candidate["discovery_policy"]} if candidate.get("discovery_policy") else {}),
             }
         )
     if not scope:
@@ -1845,6 +1954,12 @@ def _validate_body_verified_evidence(
     seen_urls: set[str] = set()
     seen_hashes: set[str] = set()
     for raw, item in zip(raw_items, prepared, strict=True):
+        metadata = _capability_metadata(raw)
+        capsule_metadata = thursday_capability.extract_evidence(raw.get("body"))
+        if capsule_metadata is not None and metadata != capsule_metadata:
+            raise workflow.WorkflowError("Thursday capability metadata differs from its hashed source-body capsule.")
+        if metadata is not None:
+            item["thursday_capability"] = dict(metadata)
         if require_stored_hash:
             original_fetch = raw.get("fetched_at")
             if not isinstance(original_fetch, str) or not original_fetch.strip():
@@ -1855,7 +1970,10 @@ def _validate_body_verified_evidence(
                 raise workflow.WorkflowError("Resumed evidence fetch time is invalid.") from exc
             item["fetched_at"] = original_fetch
         body = item.get("body")
-        if not isinstance(body, str) or not body.strip():
+        source_body = body.rsplit(THURSDAY_CAPSULE, 1)[0] if isinstance(body, str) else body
+        if isinstance(body, str) and body.startswith(THURSDAY_CAPSULE.lstrip("\n")):
+            source_body = ""
+        if not isinstance(source_body, str) or not source_body.strip():
             raise workflow.WorkflowError("Evidence verification requires a non-blank source body.")
         earliest, latest, precision = workflow.source_publication_bounds(
             str(item["published_at"])
@@ -1942,6 +2060,13 @@ For every returned item, copy the supplied lead_id and the exact supplied lead_u
         "enum": sorted({url for values in lead_urls.values() for url in values}),
     }
     item_schema["required"].extend(["lead_id", "lead_url"])
+    if base.thursday_discovery_active():
+        prompt += "\n" + thursday_capability.guidance("discovery")
+        prompt += """\nTHURSDAY CAPABILITY VERIFICATION:
+Return thursday_capability evidence for each source. Verify a primary-source body for a working capability, its executable/repository URL and visible demo URL. Distinguish the original_release_date from a substantive_change_date and select RELEASE or SUBSTANTIVE_UPDATE only with explicit evidence of what changed. A fresh social post, repository traffic or trending listing is not a new release. Inspect the public demo and preserve what is actually shown, the plain-English mechanism, useful reader benefit and honest limitation. Classify incident-only stories, skill lists and prompt packs accurately instead of calling them executable capabilities. Keep missing dates/URLs/counts null; do not guess to pass a gate. Unknown original release date may remain null when a substantive update is verified. Primary_url must be the returned item's primary factual source URL. attention_count is visible interactions excluding views; numeric counts need attention_url and attention_observed_at. Record observation facts without calling a topic viral unless the supplied evidence supports that description. Return the source's real published_at, even when older background; preserve the current release/update date separately. Verify whether the chosen lead has a release or substantive update in the final 48 hours; do not assume the earlier search completed that check or substitute an activity date. Record hardware/version/cost requirements in conditions, describe the inspected demo in demo_observation and use SOURCE_REPORTED unless independent reproduction evidence is actually supplied.
+"""
+        item_schema["properties"]["thursday_capability"] = _thursday_metadata_schema()
+        item_schema["required"].append("thursday_capability")
     result = base.invoke_structured(
         config=base.SCOUT_MODEL,
         role_prompt=base._role("scout"),
@@ -1978,6 +2103,19 @@ For every returned item, copy the supplied lead_id and the exact supplied lead_u
         cleaned = dict(item)
         cleaned.pop("lead_id", None)
         cleaned.pop("lead_url", None)
+        if base.thursday_discovery_active():
+            metadata = cleaned.get("thursday_capability")
+            if not isinstance(metadata, Mapping):
+                raise workflow.WorkflowError("Thursday Evidence Scout omitted capability evidence.")
+            source_body = cleaned.get("body")
+            if not isinstance(source_body, str) or not source_body.strip():
+                raise workflow.WorkflowError("Thursday Evidence Scout requires a non-blank source body before adding its evidence capsule.")
+            # The factual capsule travels through the existing body/hash/ledger
+            # manifest path, so child drafting cannot silently lose demo proof.
+            cleaned["body"] = source_body + THURSDAY_CAPSULE + json.dumps({
+                "policy_version": thursday_capability.POLICY_VERSION,
+                "evidence": dict(metadata),
+            }, sort_keys=True)
         bound.append(cleaned)
         bindings.append((lead_id, canonical_lead_url))
     prepared = _validate_body_verified_evidence(bound, days=days, as_of=as_of)
@@ -2098,6 +2236,14 @@ def _cached_evidence_for_scope(
                 continue
             if len(stored) != len(prepared):
                 continue
+        if base.thursday_discovery_active():
+            # Old source-only records cannot satisfy the new route merely by
+            # matching URLs; reacquire release and demonstration evidence.
+            if any(thursday_capability.extract_evidence(item.get("body")) is None for item in prepared):
+                continue
+            prepared, _excluded = select_thursday_evidence(prepared, as_of=as_of, days=days)
+            if not prepared:
+                continue
         return prepared
     return []
 
@@ -2149,6 +2295,10 @@ def _database_evidence_for_scope(
                 return []
             workflow.parse_published_at(fetched_at)
             item["fetched_at"] = fetched_at
+        if base.thursday_discovery_active():
+            if any(thursday_capability.extract_evidence(item.get("body")) is None for item in prepared):
+                return []
+            prepared, _excluded = select_thursday_evidence(prepared, as_of=as_of, days=days)
         return prepared
     except workflow.WorkflowError:
         return []
@@ -2183,7 +2333,7 @@ def _resolve_parallel_evidence(
 
     print(f"Evidence Scout: {len(batches)} parallel workers; {len(candidates)} ranked topics; shared {EVIDENCE_TIMEOUT_SECONDS}s deadline.", flush=True)
     executor = ThreadPoolExecutor(max_workers=worker_count)
-    futures = [executor.submit(verify, offset, batch) for offset, batch in batches]
+    futures = [executor.submit(copy_context().run, verify, offset, batch) for offset, batch in batches]
     try:
         done, _pending = wait(futures, timeout=max(0, deadline - time.monotonic()))
     finally:
@@ -2368,6 +2518,13 @@ def resolve_signal_evidence(
 
 
 def command(args: argparse.Namespace) -> int:
+    # Context is reset even on errors and propagated explicitly to workers.
+    # Reusing this module in another command cannot leak Thursday into Friday.
+    with base.discovery_route(thursday=False):
+        return _command(args)
+
+
+def _command(args: argparse.Namespace) -> int:
     if not args.allow_web_research:
         raise workflow.WorkflowError("Discovery requires --allow-web-research.")
     if not args.allow_model_egress:
@@ -2401,6 +2558,9 @@ def command(args: argparse.Namespace) -> int:
     if resume is not None and args.as_of is not None and args.as_of != resume.as_of:
         raise workflow.WorkflowError("Resume run must retain its original --as-of value.")
     workflow.parse_published_at(as_of)
+    explicit_slot = getattr(args, "week_slot", None)
+    thursday = discovery_is_thursday(as_of=as_of, week_slot=explicit_slot)
+    base._THURSDAY_DISCOVERY.set(thursday)
 
     folder = base._under_private(
         args.output_dir
@@ -2437,6 +2597,8 @@ def command(args: argparse.Namespace) -> int:
     reuse_conversation = resume is not None and (legacy_resume or "conversation_discovery" in resume.completed_stages)
     reuse_admission = resume is not None and (legacy_resume or "topic_admission" in resume.completed_stages)
     authority_warning = ""
+    if thursday and legacy_resume:
+        raise workflow.WorkflowError("Thursday cannot reuse a pre-policy legacy discovery checkpoint; start a fresh Thursday capability run.")
 
     try:
         if reuse_conversation:
@@ -2528,6 +2690,8 @@ def command(args: argparse.Namespace) -> int:
         ),
     )
     if not reuse_admission:
+        if thursday:
+            top_five = [{**item, "discovery_policy": thursday_capability.POLICY_VERSION} for item in top_five]
         inventory_path, inventory = update_candidate_inventory(
             top_five,
             as_of=as_of,
@@ -2678,6 +2842,17 @@ def command(args: argparse.Namespace) -> int:
             },
         )
         items = list(evidence_resolution.items)
+        if thursday:
+            items, excluded = select_thursday_evidence(items, as_of=as_of, days=args.days)
+            base.write_private_json(folder / "thursday-capability-selection.json", {
+                "policy_version": thursday_capability.POLICY_VERSION,
+                "as_of": as_of,
+                "selected": [{"url": item["canonical_url"], "evidence": item["thursday_capability"]} for item in items],
+                "excluded": excluded,
+                "publishing_status": "DISABLED",
+            })
+            if not items:
+                raise workflow.WorkflowError("No Thursday capability has a verified recent release/update, executable artifact and inspectable demo. Retained research for review; no incident/resource fallback was drafted.")
         raw_signals = base.project_signals(items)
         evidence_snapshot = base.write_private_json(
             folder / EVIDENCE_CACHE_NAME,
@@ -2700,14 +2875,11 @@ def command(args: argparse.Namespace) -> int:
             db, items, evidence_origin="private-import"
         )
     except STAGE_EXCEPTIONS as exc:
-        evidence_attempt_path = base.write_private_json(
-            folder / "evidence-attempts.json",
-            {
-                "schema_version": 1,
-                "created_at": as_of,
-                "attempts": evidence_attempts,
-            },
-        )
+        evidence_attempt_path = folder / "evidence-attempts.json"
+        if not evidence_attempt_path.exists():
+            base.write_private_json(evidence_attempt_path, {
+                "schema_version": 1, "created_at": as_of, "attempts": evidence_attempts,
+            })
         mark_run_stage(
             run_dashboard,
             "evidence_verification",
@@ -2936,6 +3108,8 @@ def command(args: argparse.Namespace) -> int:
         strategy_rel = strategy.relative_to(workflow.REPO_ROOT).as_posix()
         evidence_rel = evidence_manifest.relative_to(workflow.REPO_ROOT).as_posix()
         week_slot = getattr(args, "week_slot", None)
+        if thursday and week_slot is None:
+            week_slot = 3
         slot_arg = f" --week-slot {week_slot}" if week_slot is not None else ""
         draft = (
             f"./bin/linkedin-os draft --topic {json.dumps(str(card['topic']))} "

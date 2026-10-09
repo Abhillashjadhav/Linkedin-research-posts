@@ -66,6 +66,15 @@ class HumanReadabilityContractTests(unittest.TestCase):
         self.assertIn("question, conditional, proposed test, or recommendation", task)
         self.assertIn("never turn it into a fact or personal experience", task)
 
+    def test_thursday_editor_preserves_capability_benefit_opening(self) -> None:
+        task = human_readability._task(
+            self.candidates, {**self.brief, "weekly_slot": 3}, self.evidence, None,
+        )
+        self.assertIn("Preserve the capability-first opening", task)
+        self.assertIn("immediate reader benefit", task)
+        self.assertNotIn("the stronger problem-first hook structure", task)
+        self.assertNotIn("LINE 1 MUST pair the concrete reader problem", task)
+
     def test_narrative_schema_disallows_drop_in_single_topic_pass(self) -> None:
         schema = human_readability._narrative_schema()  # type: ignore[attr-defined]
         result_item = schema["properties"]["results"]["items"]  # type: ignore[index]

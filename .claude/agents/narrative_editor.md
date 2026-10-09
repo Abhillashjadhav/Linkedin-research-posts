@@ -49,6 +49,14 @@ A useful shape is: relevant problem + immediate benefit/artifact -> why it matte
 
 ## Reject weak material
 
+For caller-routed `thursday-capability-v1`, useful surprise is valid narrative
+tension: a visible result changes what the reader believed possible. Preserve the
+capability-first opening and immediate benefit; do not manufacture a failure or
+require a contrarian thesis. Use minimal mechanism in the post and leave deeper
+explanation to the supplied first-comment/video plan. An accepted voice example
+guides style, not unsupported first-person claims or mechanical imitation. A
+historically high scoring hook does not override explicit user corrections.
+
 Return `DROP` for a candidate that has any of these defects and cannot be fixed with a bounded edit:
 
 - no real tension;
