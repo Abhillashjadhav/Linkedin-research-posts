@@ -262,7 +262,7 @@ def _verify_frozen_citations(
         )
         original_title = str(item["title"])
         title, count = workflow.redact_query_urls(original_title, source_ids_by_url)
-        if count:
+        if count or title != original_title:
             expected_title_changes[f"source.{item['id']}.title"] = {
                 "original_sha256": hashlib.sha256(original_title.encode()).hexdigest(),
                 "exported_sha256": hashlib.sha256(title.encode()).hexdigest(),

@@ -12,9 +12,7 @@ import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
-from urllib.parse import urlsplit
-
-from . import acceptance_policy, thursday_capability, workflow
+from . import acceptance_policy, public_urls, thursday_capability, workflow
 
 try:
     import fcntl
@@ -383,8 +381,7 @@ def _public_sources(
     evidence: Sequence[Mapping[str, object]],
     proof: workflow.LoadedProof | None,
 ) -> tuple[list[dict[str, object]], dict[str, object] | None]:
-    # The Writer receives query-free URLs. Packaging instead starts from the
-    # local-only exact identities, then admits only shareable citation links.
+    # Private evidence identities remain intact; public links use one projection.
     projected = workflow._gate_evidence_projection(evidence)
     sources: list[dict[str, object]] = []
     for item in projected:
@@ -394,7 +391,7 @@ def _public_sources(
                 "Approval package source IDs must be safe machine-readable values."
             )
         exact_url = _safe_text(item["source"], label="source URL", limit=2_048)
-        citation_url = exact_url if not urlsplit(exact_url).query else None
+        citation_url = public_urls.project_public_url(exact_url).url
         sources.append(
             {
                 "id": source_id,
@@ -574,7 +571,7 @@ def _export_safe_views(
     def redact(path: str, value: object) -> str:
         original = str(value)
         exported, count = workflow.redact_query_urls(original, source_ids_by_url)
-        if count:
+        if count or exported != original:
             metadata_changes[path] = {
                 "original_sha256": hashlib.sha256(original.encode()).hexdigest(),
                 "exported_sha256": hashlib.sha256(exported.encode()).hexdigest(),
@@ -602,9 +599,8 @@ def _export_safe_views(
             clean_capability = {}
             for key, value in capability.items():
                 if isinstance(value, str):
-                    # Preserve the package's query-addressed URL privacy contract.
                     clean_capability[key] = (
-                        None if key.endswith("_url") and urlsplit(value).query
+                        public_urls.project_public_url(value).url if key.endswith("_url")
                         else redact(f"source.{source['id']}.thursday_capability.{key}", value)
                     )
                 else:
@@ -648,14 +644,19 @@ def _export_safe_views(
             "status": "QUERY_URLS_REDACTED_FOR_DISPLAY",
             "fields": metadata_changes,
         }
-    if any(redaction_counts.values()):
-        manifest["recommended_candidate_id"] = None
-        evaluation["recommended_candidate_id"] = None
-        if manifest["mode"] == "live":
-            manifest["review_status"] = "BLOCKED"
-            evaluation["review_status"] = "BLOCKED"
+    changed_candidates = any(original_text_digests[key] != exported_text_digests[key]
+                             or original_angle_digests[key] != exported_angle_digests[key]
+                             for key in original_text_digests)
+    if changed_candidates:
+        if any(redaction_counts.values()):
+            manifest["recommended_candidate_id"] = None
+            evaluation["recommended_candidate_id"] = None
+            if manifest["mode"] == "live":
+                manifest["review_status"] = "BLOCKED"
+                evaluation["review_status"] = "BLOCKED"
         evaluation["candidate_export"] = {
-            "status": "QUERY_URLS_REDACTED_FOR_CITATION_REVIEW",
+            "status": ("QUERY_URLS_REDACTED_FOR_CITATION_REVIEW" if any(redaction_counts.values())
+                       else "PUBLIC_URLS_NORMALIZED_FOR_DISPLAY"),
             "original_text_sha256": original_text_digests,
             "exported_text_sha256": exported_text_digests,
             "original_angle_sha256": original_angle_digests,
