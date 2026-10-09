@@ -190,6 +190,7 @@ _PRIVATE_PROSE_PATH = re.compile(
 
 def _export_prose(
     value: str, source_ids_by_url: Mapping[str, str] | None = None,
+    *, preserve_terminal_query_prose: bool = False,
 ) -> tuple[str, int, list[str]]:
     """Project untrusted export prose without retaining private path fragments.
 
@@ -206,12 +207,22 @@ def _export_prose(
         candidate = value[start:end]
         if re.match(r"[a-z][a-z0-9+.-]*:", candidate, re.IGNORECASE):
             projection = public_urls.project_public_url(candidate)
-            if projection.url is None and projection.reason not in {
-                "sensitive-query", "unsupported-query", "invalid-query", "invalid-video-id",
-            }:
-                # A file/local URI can contain spaces; token replacement would
-                # expose its trailing private filename or directory fragments.
-                return "[Source prose withheld: unsafe-url]", 1, ["unsafe-url"]
+            if projection.url is None:
+                if (
+                    preserve_terminal_query_prose
+                    and projection.reason in {"sensitive-query", "unsupported-query", "invalid-query", "invalid-video-id"}
+                    and not value[end:].strip(" \t\n.,;:!)]}")
+                ):
+                    # Keep the established terminal candidate-citation display
+                    # only when no substantive URI fragment can trail the token.
+                    path_view[start:end] = " " * (end - start)
+                    continue
+                # Any denied URI can contain spaces in a private path/query;
+                # token replacement would expose its trailing fragments.
+                # Retain only the shared policy's safe citation marker so the
+                # private source identity can still be resolved by a reviewer.
+                marker, count = public_urls.redact_public_urls(candidate, source_ids_by_url)
+                return "[Source prose withheld: unsafe-url] " + marker, max(count, 1), ["unsafe-url"]
             path_view[start:end] = " " * (end - start)
     if _PRIVATE_PROSE_PATH.search("".join(path_view)):
         return "[Source prose withheld: local-path]", 1, ["local-path"]
@@ -695,10 +706,10 @@ def _export_safe_views(
         original_angle = str(candidate["angle"])
         original_text = str(candidate["text"])
         exported_angle, angle_count, _angle_reasons = _export_prose(
-            original_angle, source_ids_by_url
+            original_angle, source_ids_by_url, preserve_terminal_query_prose=True,
         )
         exported_text, text_count, _text_reasons = _export_prose(
-            original_text, source_ids_by_url
+            original_text, source_ids_by_url, preserve_terminal_query_prose=True,
         )
         safe_candidates.append({**candidate, "angle": exported_angle, "text": exported_text})
         original_angle_digests[candidate_id] = hashlib.sha256(original_angle.encode()).hexdigest()
