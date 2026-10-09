@@ -208,8 +208,10 @@ def _export_prose(
         explicit_uri = re.match(r"[a-z][a-z0-9+.-]*:", candidate, re.IGNORECASE)
         projection = public_urls.project_public_url(candidate if explicit_uri else f"https://{candidate}")
         if projection.url is None:
+            marker, count = public_urls.redact_public_urls(candidate, source_ids_by_url)
             if (
                 preserve_terminal_query_prose
+                and count > 0
                 and projection.reason in {"sensitive-query", "unsupported-query", "invalid-query", "invalid-video-id"}
                 and not value[end:].strip(" \t\n.,;:!)]}")
             ):
@@ -220,7 +222,10 @@ def _export_prose(
             # A denied explicit or bare URL can contain spaces in a private
             # path/query; token replacement would expose trailing fragments.
             # Retain only the policy's safe citation marker for private review.
-            marker, count = public_urls.redact_public_urls(candidate, source_ids_by_url)
+            if count == 0:
+                # The prose scanner skips filename-shaped domains. Its unchanged
+                # input is never a safe marker for a query that policy denied.
+                marker = f"[URL withheld: {projection.reason}]"
             return "[Source prose withheld: unsafe-url] " + marker, max(count, 1), ["unsafe-url"]
         if explicit_uri:
             path_view[start:end] = " " * (end - start)

@@ -168,6 +168,9 @@ class CompanionExportPrivacyTests(unittest.TestCase):
             "localhost/First Last/private-prose-sentinel/demo.mp4",
             "192.168.1.10/First Last/private-prose-sentinel/demo.mp4",
             "builder.local/First Last/private-prose-sentinel/demo.mp4",
+            "trace.json?token=private-prose-sentinel",
+            "README.md?unknown=private-prose-sentinel",
+            "source.py?signature=private-prose-sentinel",
         ):
             with self.subTest(url=url):
                 context = self.context()
@@ -258,6 +261,9 @@ class CompanionExportPrivacyTests(unittest.TestCase):
             "localhost/First Last/private-prose-sentinel/demo.mp4",
             "192.168.1.10/First Last/private-prose-sentinel/demo.mp4",
             "builder.local/First Last/private-prose-sentinel/demo.mp4",
+            "trace.json?token=private-prose-sentinel",
+            "README.md?unknown=private-prose-sentinel",
+            "source.py?signature=private-prose-sentinel",
         ):
             with self.subTest(url=url):
                 context = self.context()
