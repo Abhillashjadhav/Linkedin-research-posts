@@ -44,9 +44,15 @@ The profile contains:
   --allow-model-egress
 ```
 
-In the default Monday, Wednesday, Thursday, Friday publishing cadence, Thursday
-is weekly slot 3. This discovery path produces authority posts, so it accepts
-the two authority slots only: 2 and 3.
+In the Monday, Wednesday, Thursday, Friday cadence, `--week-slot 1` routes the
+printed command and optional generated text draft to Monday Reach; slots 2 and
+3 route to Authority, with Thursday at slot 3. Without an explicit slot, the
+draft goal remains Authority. The author's profile `authority_goal` still
+informs Topic Value selection; Reach here is the downstream strategic draft
+goal. Run discovery at its actual research time, not with a future Monday
+`--as-of` merely to schedule a post. Resource fit and source links, and any
+Monday diagram, require separate review. See the current [discovery route and
+limits](../README.md#locked-high-bar-search).
 
 The public-web Scout runs through Codex with live native web search as its only enabled model tool. It cannot use shell, browser automation, apps, plugins, subagents, local files, repository-writing tools, private data, credentials, or authenticated services. Public search-index snippets from X/Twitter or LinkedIn may contribute momentum evidence only when visible without authentication. The private authority profile reaches only zero-web Codex scoring/thesis stages after explicit model-egress consent.
 
@@ -68,7 +74,12 @@ If engagement, acceleration, or another basis cannot be verified, the axis is `U
 
 The output is explicitly labelled **observed cross-platform conversation momentum**. It is not an exact X/Twitter post count, engagement ranking, or claim that a topic is “#1 hottest”. Exact X ranking would require direct quantitative X data, which this free public-web workflow does not use.
 
-The current authority-discovery floor is **14/25**. The code also locks a **20/25** reach/topical floor for a future reach-specific route. At least three topics must clear the active floor before thesis generation proceeds. A low-momentum topic cannot be promoted above a higher-momentum topic merely because it has stronger proof fit.
+The legacy momentum scorer records **14/25** for Authority and **20/25** for a
+separate reach/topical admission policy. These are diagnostics in current daily
+discovery, which ranks grounded novel Topic Value candidates without a momentum
+score cutoff. Monday Reach changes text draft routing; it does not turn on a
+separate reach-only discovery admission policy. See the current [selection
+rules](../README.md#run-v1-discovery-through-a-review-ready-post).
 
 The top five are printed and saved before thesis generation with:
 

@@ -1845,6 +1845,8 @@ def generate_cards(
     profile: Mapping[str, object],
     signals: Sequence[Mapping[str, object]],
     feedback: Mapping[str, object] | None,
+    *,
+    week_slot: int | None = None,
 ) -> list[dict[str, object]]:
     retry = (
         "\nUNTRUSTED_PREVIOUS_SCORES\n"
@@ -1853,13 +1855,16 @@ def generate_cards(
         if feedback
         else ""
     )
-    prompt = f"""Create exactly three one-idea authority thesis cards from the Topic-Value-selected signals. Each supplied signal may contain topic_value annotations naming the selected situation, reader-value route, gravity, reader payoff, and the authority contribution available to this author. Preserve that selected reader value; do not replace it with a generic AI-news thesis. Turn the situation into original product judgment, name a concrete reader problem, state what a team should do differently, set proof_id to NOT_REQUIRED; author proof is not a prerequisite. Ground judgments in public signals and never invent personal experience, and include a non-technical summary of no more than 25 words. Prefer the broadest audience-relevant formulation that preserves the evidence: omit incidental precision or map an instance to its true parent category, but never add severity, prevalence, causality, scope, materiality, or certainty. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. The spine is advisory only; do not force a template or choose by weekday. The topic field must express the underlying evidence-supported atomic idea in a concise audience-relevant phrase. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
+    thesis_goal = "reach" if week_slot == 1 else "authority"
+    prompt = f"""Create exactly three one-idea {thesis_goal} thesis cards from the Topic-Value-selected signals. Each supplied signal may contain topic_value annotations naming the selected situation, reader-value route, gravity, reader payoff, and the authority contribution available to this author. Preserve that selected reader value; do not replace it with a generic AI-news thesis. Turn the situation into original product judgment, name a concrete reader problem, state what a team should do differently, set proof_id to NOT_REQUIRED; author proof is not a prerequisite. Ground judgments in public signals and never invent personal experience, and include a non-technical summary of no more than 25 words. Prefer the broadest audience-relevant formulation that preserves the evidence: omit incidental precision or map an instance to its true parent category, but never add severity, prevalence, causality, scope, materiality, or certainty. For each card, include conversation_surface: one concise statement naming the exact assumption, trade-off, counterexample, implementation experience, or unresolved evidence a credible practitioner could challenge or extend. Also include recommended_spine using exactly one of {', '.join(CONTENT_SPINES)}, plus spine_fit_reason explaining why the evidence and conversation surface fit that spine. The spine is advisory only; do not force a template or choose by weekday. The topic field must express the underlying evidence-supported atomic idea in a concise audience-relevant phrase. Do not draft a post or browse. Avoid recent_theses and avoid_topics. Use thesis-1 through thesis-3 exactly once.
 UNTRUSTED_PROFILE
 {json.dumps({key: value for key, value in profile.items() if key != 'proof_inventory'}, indent=2, sort_keys=True)}
 END_UNTRUSTED_PROFILE
 UNTRUSTED_TOPIC_VALUE_SIGNALS
 {json.dumps(list(signals), indent=2, sort_keys=True)}
 END_UNTRUSTED_TOPIC_VALUE_SIGNALS{retry}"""
+    if week_slot == 1:
+        prompt += "\nMONDAY REACH: Favor a clear, useful takeaway for the target reader: what the evidence makes possible, which decision it changes, or one step the reader can apply. Make the payoff understandable in a short text post without requiring a click. Keep the narrative spine advisory and choose it from the actual evidence, not a weekday template. Do not claim the author built, used, measured, or experienced a system unless the supplied evidence establishes it; do not invent runtime performance or reader outcomes."
     if base.thursday_discovery_active():
         prompt += "\n" + thursday_capability.guidance("writer")
         prompt += "\nPreserve the selected executable capability and its verified demo/mechanism/benefit from thursday_capability evidence. A useful product_decision may be when to try or inspect this capability; do not force governance or failure commentary. Distinctiveness must come from what is newly possible, not fabricated surprise, severity or claims of popularity."
@@ -1880,10 +1885,11 @@ def search_theses(
     signals: Sequence[Mapping[str, object]],
     *,
     trace_path: Path | None = None,
+    week_slot: int | None = None,
 ) -> list[dict[str, object]]:
     """Rank one valid thesis batch; scores select a winner and never trigger retries."""
 
-    cards = generate_cards(profile, signals, None)
+    cards = generate_cards(profile, signals, None, week_slot=week_slot)
     scores = {
         str(score["thesis_id"]): score
         for score in base.score_cards(cards, profile, signals)
@@ -2605,6 +2611,7 @@ def _command(args: argparse.Namespace) -> int:
         raise workflow.WorkflowError("Resume run must retain its original --as-of value.")
     workflow.parse_published_at(as_of)
     explicit_slot = getattr(args, "week_slot", None)
+    strategic_goal = workflow.resolve_strategic_goal(week_slot=explicit_slot)
     thursday = discovery_is_thursday(as_of=as_of, week_slot=explicit_slot)
     base._THURSDAY_DISCOVERY.set(thursday)
 
@@ -2620,9 +2627,11 @@ def _command(args: argparse.Namespace) -> int:
     run_dashboard = new_run_dashboard(run_id)
     run_dashboard["requested_reasoning"] = getattr(args, "reasoning", None)
     run_dashboard["requested_model"] = getattr(args, "model", None)
+    run_dashboard["strategic_goal"] = strategic_goal
     input_fingerprint = _run_input_fingerprint(args, profile, as_of)
     base.write_private_json(folder / "run-input.json", {
         "schema_version": 1, "run_id": run_id, "as_of": as_of,
+        "strategic_goal": strategic_goal, "weekly_slot": explicit_slot,
         "requested_reasoning": getattr(args, "reasoning", None),
         "requested_model": getattr(args, "model", None),
         "input_fingerprint": input_fingerprint,
@@ -3085,6 +3094,7 @@ def _command(args: argparse.Namespace) -> int:
                 profile,
                 signals,
                 trace_path=thesis_trace_path,
+                week_slot=explicit_slot,
             )
     except STAGE_EXCEPTIONS as exc:
         record_thesis_decisions(run_dashboard, thesis_trace_path)
@@ -3126,6 +3136,8 @@ def _command(args: argparse.Namespace) -> int:
         {
             "schema_version": 1,
             "created_at": as_of,
+            "strategic_goal": strategic_goal,
+            "weekly_slot": explicit_slot,
             "topic": args.topic,
             "days": args.days,
             "momentum_label": momentum.MOMENTUM_LABEL,
@@ -3163,7 +3175,7 @@ def _command(args: argparse.Namespace) -> int:
         slot_arg = f" --week-slot {week_slot}" if week_slot is not None else ""
         draft = (
             f"./bin/linkedin-os draft --topic {json.dumps(str(card['topic']))} "
-            f"--goal authority --format text{slot_arg} "
+            f"--goal {strategic_goal} --format text{slot_arg} "
             f"--strategy-input {json.dumps(strategy_rel)} "
             f"--evidence-manifest {json.dumps(evidence_rel)} "
             f"--db {json.dumps(db_rel)} --allow-model-egress --package"
@@ -3174,7 +3186,7 @@ def _command(args: argparse.Namespace) -> int:
             "--topic",
             str(card["topic"]),
             "--goal",
-            "authority",
+            strategic_goal,
             "--format",
             "text",
         ]
@@ -3348,8 +3360,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--week-slot",
         type=int,
-        choices=(2, 3),
-        help="Bind the generated authority post to weekly slot 2 or 3; Thursday is slot 3.",
+        choices=(1, 2, 3),
+        help="Bind the text draft to slot 1 (Monday Reach), 2 (Authority), or 3 (Thursday Authority).",
     )
     result.add_argument(
         "--generate-post",
