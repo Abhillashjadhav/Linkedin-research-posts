@@ -146,10 +146,10 @@ class CitationFidelityTests(unittest.TestCase):
                 self.assertIn("citation URL for source-1 requires review", documents[name])
             self.assertIn("Reliability compounds", documents["post.md"])
             evaluation = json.loads(documents["evaluation.json"])
-            self.assertIn("authority-1", evaluation["eligible_candidate_ids"])
+            self.assertNotIn("authority-1", evaluation["eligible_candidate_ids"])
             self.assertEqual(
                 evaluation["gate_results"][0]["gates"]["citation"]["status"],
-                "PASS",
+                "FAIL",
             )
             export = evaluation["candidate_export"]
             self.assertEqual(export["status"], "QUERY_URLS_REDACTED_FOR_CITATION_REVIEW")

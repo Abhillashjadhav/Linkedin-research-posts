@@ -961,7 +961,8 @@ class WriterPromptAndInvocationTests(unittest.TestCase):
             evidence=evidence,
             voice_guidance=self.voice,
         )
-        self.assertIn("https://standards.example/reliability", prompt)
+        self.assertIn("[source URL withheld: sensitive-query]", prompt)
+        self.assertNotIn("https://standards.example/reliability", prompt)
         self.assertNotIn(secret, prompt)
         self.assertNotIn("private-signature", prompt)
 

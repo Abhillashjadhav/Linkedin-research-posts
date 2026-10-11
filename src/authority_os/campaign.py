@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 from urllib.parse import urlsplit
 
-from . import acceptance_policy, anti_slop, thursday_capability, workflow
+from . import acceptance_policy, anti_slop, public_urls, thursday_capability, workflow
 from .model_runtime import ModelConfig, invoke_structured
 
 
@@ -679,23 +679,22 @@ def _comment_evidence_gates(
     text = comment.get("text")
     if not isinstance(text, str) or not text.strip():
         raise workflow.WorkflowError("First comment text must not be blank.")
-    allowed_urls = {str(item["source"]) for item in evidence}
-    for item in evidence:
+    def evidence_urls(item: Mapping[str, object]) -> set[str]:
+        raw_urls = [item["source"]]
         capsule = item.get("thursday_capability")
         if isinstance(capsule, Mapping):
-            allowed_urls.update(str(capsule[key]) for key in ("primary_url", "executable_url", "demo_url") if capsule.get(key))
-    found_urls = {
-        match.rstrip(".,;:!?]}")
-        for match in re.findall(r"https://[^\s)>]+", text)
-    }
-    urls_supported = bool(found_urls) and found_urls <= allowed_urls
+            raw_urls.extend(capsule[key] for key in ("primary_url", "executable_url", "demo_url") if capsule.get(key))
+        return {url for raw in raw_urls if (url := public_urls.project_public_url(raw).url) is not None}
+
+    allowed_urls = set().union(*(evidence_urls(item) for item in evidence))
+    found_urls = set(public_urls.extract_public_urls(text))
+    _safe_text, withheld = public_urls.redact_public_urls(text)
+    _references, unsafe_markdown = workflow._candidate_references(text)
+    urls_supported = bool(found_urls) and found_urls <= allowed_urls and not withheld and not unsafe_markdown
     evidence_text = " ".join(
         f"{item['title']} {workflow._evidence_support_text(item)} {item.get('caveats', '')}"
         for item in evidence
-        if str(item["source"]) in found_urls or (
-            isinstance(item.get("thursday_capability"), Mapping)
-            and any(item["thursday_capability"].get(key) in found_urls for key in ("primary_url", "executable_url", "demo_url"))
-        )
+        if evidence_urls(item) & found_urls
     )
     numbers_supported = _numbers(text) <= (_numbers(evidence_text) | _numbers(post_text))
     result = {
@@ -712,9 +711,8 @@ def _comment_evidence_gates(
             r"(?:first\s+comment|comment\s+below)[^.\n]{0,100}(?:demo|video|footage)",
             post_text, re.IGNORECASE,
         ))
-        demo_urls = {str(item["thursday_capability"]["demo_url"]) for item in evidence
-                     if isinstance(item.get("thursday_capability"), Mapping)
-                     and item["thursday_capability"].get("demo_url")}
+        demo_urls = {url for item in evidence if isinstance(item.get("thursday_capability"), Mapping)
+                     if (url := public_urls.project_public_url(item["thursday_capability"].get("demo_url")).url) is not None}
         promise_fulfilled = not promises_demo or bool(found_urls & demo_urls)
         result["promised_demo_link"] = "PASS" if promise_fulfilled else "FAIL"
         result["passes"] = bool(result["passes"]) and promise_fulfilled

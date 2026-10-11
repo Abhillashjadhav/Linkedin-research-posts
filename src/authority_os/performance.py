@@ -14,9 +14,7 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Mapping, Sequence
-from urllib.parse import urlsplit
-
-from . import acceptance_policy, package as approval_package, storage, workflow
+from . import acceptance_policy, package as approval_package, public_urls, storage, workflow
 
 
 MAX_PACKAGE_FILE_BYTES = 1_000_000
@@ -350,8 +348,7 @@ def _load_package_documents(
         try:
             valid_urls = all(
                 isinstance(url, str)
-                and workflow.canonicalise_url(url) == url
-                and not urlsplit(url).query
+                and public_urls.project_public_url(url).url == url
                 for url in urls
             )
         except ValueError:
