@@ -144,6 +144,16 @@ class ArticlePackageTests(unittest.TestCase):
             package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
                                      live_consent=True, invoker=lambda **_: {})
 
+    def test_factual_pass_with_advisory_assertion_is_rejected_before_companion_calls(self) -> None:
+        self._claim_free()
+        review = json.loads((self.root / "review.json").read_text())
+        review["factual"]["findings"] = [{"section_id": "opening", "code": "UNCITED_ASSERTION",
+                                           "message": "An outcome lacks support.", "severity": "advisory"}]
+        _write_json(self.root / "review.json", review)
+        with self.assertRaisesRegex(WorkflowError, "Factual PASS contradicts"):
+            package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                     live_consent=True, invoker=lambda **_: self.fail("companion call"))
+
     def test_claim_free_fixture_stays_ineligible_without_fabricated_id(self) -> None:
         self.article["sections"][0]["claim_ids"] = []
         self._rewrite()
