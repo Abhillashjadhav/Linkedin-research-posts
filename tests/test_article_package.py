@@ -68,8 +68,10 @@ class ArticlePackageTests(unittest.TestCase):
             "status": self.status, "artifact_sha256": digest,
             "narrative": {"artifact_sha256": digest, "verdict": verdict, "findings": []},
             "factual": {"artifact_sha256": digest, "verdict": verdict, "findings": [],
-                        "claim_checks": [{"claim_id": "claim-1", "status": "SUPPORTED",
-                                          "source_ids": ["src-1"], "message": "Source supports text"}]},
+                        "claim_checks": ([{"claim_id": "claim-1", "status": "SUPPORTED",
+                                           "source_ids": ["src-1"], "message": "Source supports text"}]
+                                         if any("claim-1" in section["claim_ids"] for section in self.article["sections"])
+                                         else [])},
             "manual_fact_verification_required": True,
         })
         _write_json(self.root / "manifest.json", {"status": self.status, "artifact_sha256": digest,
@@ -97,6 +99,79 @@ class ArticlePackageTests(unittest.TestCase):
                     "unreviewed_claim_ids": [], "factual_alignment": True, "notes": "Aligned"}
 
         return invoke, calls
+
+    def _claim_free(self) -> None:
+        self.article["sections"][0]["text"] = "What matters to the reader? Consider the question and pause before choosing."
+        self.article["sections"][0]["claim_ids"] = []
+        self.status = "READY_FOR_HUMAN_REVIEW"
+        self._rewrite()
+
+    def test_claim_free_prose_and_companions_require_full_text_alignment(self) -> None:
+        self._claim_free()
+        calls = []
+        aligned = True
+        def invoke(**kwargs):
+            calls.append(kwargs)
+            if kwargs["stage_label"] == "Article companion copy":
+                return {"post": {"text": "What question matters before choosing?", "claim_ids": []},
+                        "first_comment": {"text": "Which part should we examine together?", "claim_ids": []}}
+            context = json.loads(kwargs["task_prompt"])
+            self.assertEqual(context["claim_ids"], [])
+            self.assertIn("every sentence", kwargs["role_prompt"])
+            return {"covered_claim_ids": [], "source_ids": [], "missing_claim_ids": [],
+                    "unreviewed_claim_ids": [], "factual_alignment": aligned,
+                    "notes": "Inspected the entire copy for uncited assertions."}
+        result = package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                          live_consent=True, invoker=invoke)
+        self.assertEqual(result["status"], "READY_FOR_HUMAN_REVIEW")
+        self.assertEqual(result["evaluation"]["copy_reviews"]["post"]["claim_ids"], [])
+        self.assertIn("empty claim map", result["evaluation"]["limitations"][0])
+        self.assertEqual(len(calls), 3)
+        aligned = False
+        result = package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                          live_consent=True, invoker=invoke)
+        self.assertEqual(result["status"], "NEEDS_REVIEW")
+        self.assertFalse(result["evaluation"]["copy_reviews"]["post"]["eligible"])
+
+    def test_claim_free_article_blocking_uncited_finding_cannot_be_packaged_live(self) -> None:
+        self._claim_free()
+        review = json.loads((self.root / "review.json").read_text())
+        review["factual"]["verdict"] = "BLOCKED"
+        review["factual"]["findings"] = [{"section_id": "opening", "code": "UNCITED_ASSERTION",
+                                           "message": "A factual assertion lacks support.", "severity": "blocking"}]
+        _write_json(self.root / "review.json", review)
+        with self.assertRaisesRegex(WorkflowError, "passing narrative/factual"):
+            package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                     live_consent=True, invoker=lambda **_: {})
+
+    def test_claim_free_fixture_stays_ineligible_without_fabricated_id(self) -> None:
+        self.article["sections"][0]["claim_ids"] = []
+        self._rewrite()
+        result = package_reviewed_article(self.root)
+        self.assertEqual(result["status"], "FIXTURE_ONLY")
+        self.assertEqual(result["evaluation"]["copy_reviews"]["post"]["claim_ids"], [])
+        self.assertEqual(result["evaluation"]["copy_reviews"]["post"]["covered_claim_ids"], [])
+        self.assertFalse(result["evaluation"]["copy_reviews"]["post"]["eligible"])
+
+    def test_claim_free_resource_finding_still_has_separate_checked_path(self) -> None:
+        self._claim_free()
+        self.brief["resource"] = {"name": "Original code", "url": "https://example.org/tool",
+                                  "source_ids": ["src-1"], "claim_ids": ["claim-1"]}
+        self._rewrite()
+        def invoke(**kwargs):
+            if kwargs["stage_label"] == "Article companion copy":
+                return {"post": {"text": "One finding: https://example.org/tool", "claim_ids": ["claim-1"]},
+                        "first_comment": {"text": "What question matters?", "claim_ids": []}}
+            context = json.loads(kwargs["task_prompt"])
+            ids = context["claim_ids"]
+            return {"covered_claim_ids": ids, "source_ids": ["src-1"] if ids else [],
+                    "missing_claim_ids": [], "unreviewed_claim_ids": [], "factual_alignment": True,
+                    "notes": "Checked complete source body and companion text."}
+        result = package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                          live_consent=True, invoker=invoke)
+        self.assertEqual(result["status"], "READY_FOR_HUMAN_REVIEW")
+        self.assertEqual(result["evaluation"]["copy_reviews"]["post"]["reviewed_resource_claim_ids"], ["claim-1"])
+        self.assertEqual(result["evaluation"]["copy_reviews"]["first_comment"]["claim_ids"], [])
 
     def test_fixture_never_invokes_model_and_marks_incomplete(self) -> None:
         def forbidden(**_):

@@ -53,6 +53,24 @@ def review(role: str, article_value: dict, brief_value: dict, *, blocked: bool =
 
 
 class ReviewValidationTests(unittest.TestCase):
+    def test_claim_free_article_accepts_empty_coverage_only_with_full_text_pass(self):
+        unclaimed = article()
+        for section in unclaimed["sections"]:
+            section["claim_ids"] = []
+        unclaimed["sections"][0]["text"] = "Consider the question before deciding whether this explanation helps the reader."
+        digest = article_hash(unclaimed, brief())
+        passing = {"artifact_sha256": digest, "verdict": "PASS", "findings": [], "claim_checks": []}
+        self.assertEqual(aw.validate_review(passing, "factual_reviewer", unclaimed, brief()), passing)
+        blocking = deepcopy(passing)
+        blocking["verdict"] = "BLOCKED"
+        blocking["findings"] = [{"section_id": "a", "code": "UNCITED_ASSERTION",
+                                 "message": "The prose claims an unsupported outcome.", "severity": "blocking"}]
+        self.assertEqual(aw.validate_review(blocking, "factual_reviewer", unclaimed, brief()), blocking)
+        contradictory = deepcopy(blocking)
+        contradictory["verdict"] = "PASS"
+        with self.assertRaisesRegex(WorkflowError, "Contradictory"):
+            aw.validate_review(contradictory, "factual_reviewer", unclaimed, brief())
+
     def test_stale_hash_unknown_section_and_missing_claim_coverage_fail_closed(self):
         for mutation in (lambda r: r.update(artifact_sha256="0" * 64),
                          lambda r: r["findings"].append({"section_id": "missing", "code": "X",
