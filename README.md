@@ -53,6 +53,37 @@ make check
 
 The dry run is offline and uses visibly synthetic fixtures. It does not invoke a Writer or Critic model, recommend a candidate for publication, or publish anything.
 
+## Sunday explanatory article (opt in)
+
+The independent Sunday route takes a supplied `sunday-article-v1` brief with
+source bodies, claim IDs, author attestations and a fixed thesis. Configure
+`writer`, `narrative_reviewer`, `factual_reviewer`, and `section_editor` explicitly
+in a JSON object; each assignment needs `runtime: "codex"`, `model`, and
+`reasoning`. The configured Codex models must already be available locally.
+
+```bash
+./bin/linkedin-os article --dry-run
+./bin/linkedin-os article --brief data/private/sunday-brief.json \
+  --models data/private/article-models.json --allow-model-egress \
+  --output outputs/sunday-article-001
+```
+
+The dry run reports `FIXTURE_ONLY` without reading input or calling a model.
+With `--output outputs/...`, it also writes a synthetic, ineligible review
+package for offline integration checks.
+The live route drafts one 1,000–1,150 word article by default, obtains separate
+narrative and factual reviews for its exact hash, and allows at most two rounds
+of edits to blocked sections. Each changed article gets both reviews again.
+Private artifacts include `article.md`, `article.json`, `brief.json`,
+`article-claim-map.json`, `review.json`, `trace.json`, and `manifest.json` under
+the new ignored output folder. An existing folder is never overwritten.
+`READY_FOR_HUMAN_REVIEW` means the structured checks passed; human fact
+verification and publication decisions remain separate. Model review alone
+does not certify source truth. There is no article publishing action.
+Completed stages are written to the run folder. An interrupted or invalid
+stage leaves a blocked trace; there is no cross-run resume for this route yet.
+Use a new output folder for a retry.
+
 ## Run V1 discovery through a review-ready post
 
 ```bash
