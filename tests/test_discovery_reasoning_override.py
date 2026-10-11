@@ -92,6 +92,40 @@ class DiscoveryReasoningTests(unittest.TestCase):
         self.assertEqual({item["reasoning"] for item in result.values()}, {"ultra"})
         self.assertEqual({item["model"] for item in result.values()}, {"gpt-5.6-sol"})
 
+    def test_dashboard_profiles_match_the_actual_tuned_draft_child(self):
+        script = """
+import json
+from authority_os import campaign, resonance, topic_value, v1_runtime_tuning
+v1_runtime_tuning.install()
+models = campaign.StageModels.preferred()
+rows = {name: getattr(models, name).trace() for name in models.__dataclass_fields__}
+rows['draft_topic_value'] = topic_value.ModelConfig('codex', 'gpt-5.6-sol', 'ultra').trace()
+rows['resonance'] = resonance.ModelConfig('codex', 'gpt-5.6-sol', 'ultra').trace()
+print(json.dumps(rows))
+"""
+        default_child = self._probe(script)
+        dashboard = daily_spine_cli.evaluator_versions()["models"]
+        for role, actual in default_child.items():
+            self.assertEqual(dashboard[role], actual, role)
+        self.assertEqual(dashboard["writer"]["reasoning"], "high")
+        self.assertEqual(dashboard["narrative_editor"]["reasoning"], "high")
+        self.assertEqual(dashboard["critic"]["reasoning"], "max")
+        self.assertEqual(dashboard["topic_value"]["reasoning"], "ultra")
+        self.assertEqual(dashboard["draft_topic_value"]["reasoning"], "max")
+        self.assertEqual(dashboard["resonance"]["reasoning"], "max")
+        with model_runtime.discovery_reasoning_override("ultra"):
+            selected = daily_spine_cli.evaluator_versions()["models"]
+            self.assertEqual({selected[role]["reasoning"] for role in (*default_child, "topic_value")}, {"ultra"})
+        root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(root / "src")
+        daily_spine_cli.set_drafting_child_reasoning(env, "ultra")
+        child = subprocess.run([sys.executable, "-c", script], cwd=root, env=env,
+                               capture_output=True, text=True, check=True)
+        ultra_child = json.loads(child.stdout)
+        for role, actual in ultra_child.items():
+            self.assertEqual(selected[role], actual, role)
+
     def test_provider_failure_has_no_downgrade_retry_and_scope_restores(self):
         config = model_runtime.ModelConfig("codex", "gpt-5.6-sol", "high")
         commands = []

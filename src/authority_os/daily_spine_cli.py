@@ -696,9 +696,13 @@ def new_run_dashboard(run_id: str = "") -> dict[str, object]:
 
 def evaluator_versions() -> dict[str, object]:
     from . import momentum as authority_momentum
-    from . import momentum_surface_parallel, surface_scout_runtime_tuning
+    from . import momentum_surface_parallel, surface_scout_runtime_tuning, v1_runtime_tuning
 
-    models = campaign.StageModels.preferred()
+    # The generated post starts via bin/linkedin-os draft, which installs this
+    # single-topic profile in its own process. Read the same pure tuning helpers
+    # here without installing child-only patches in the discovery process.
+    models = v1_runtime_tuning._preferred_fast_single_topic(campaign.StageModels)
+    selection = v1_runtime_tuning._selection_model_config("codex", base.DISCOVERY_MODEL, "ultra")
     model_rows = {
         name: getattr(models, name).trace()
         for name in models.__dataclass_fields__
@@ -711,7 +715,8 @@ def evaluator_versions() -> dict[str, object]:
         "thesis": base.THESIS_MODEL.trace(),
         "thesis_critic": base.THESIS_CRITIC_MODEL.trace(),
         "topic_value": model_runtime.ModelConfig("codex", base.DISCOVERY_MODEL, "ultra").trace(),
-        "resonance": model_runtime.ModelConfig("codex", base.DISCOVERY_MODEL, "ultra").trace(),
+        "draft_topic_value": selection.trace(),
+        "resonance": selection.trace(),
     })
     rubrics: dict[str, str] = {}
     for name in ("critic-rubric-v2.json", "eval-v1.json", "eval-v1-calibration.json"):
