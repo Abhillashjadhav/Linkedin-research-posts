@@ -118,8 +118,10 @@ class ArticlePackageTests(unittest.TestCase):
     def test_cli_fixture_does_not_need_model_config(self) -> None:
         output = io.StringIO()
         with redirect_stdout(output):
-            self.assertEqual(main(["--run", str(self.root)]), 0)
+            self.assertEqual(main(["--run", str(self.root), "--require-asset", "inline:opening"]), 0)
         self.assertEqual(json.loads(output.getvalue())["status"], "FIXTURE_ONLY")
+        self.assertEqual(json.loads(output.getvalue())["missing_required_assets"],
+                         ["cover", "inline:opening"])
 
     def test_runtime_fixture_artifacts_package_without_model(self) -> None:
         run = self.root / "runtime-fixture"
@@ -285,6 +287,83 @@ class ArticlePackageTests(unittest.TestCase):
             package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
                                      live_consent=True, invoker=invented_license)
 
+    def test_companion_only_resource_license_claim_gets_its_own_factual_review(self) -> None:
+        self.brief["sources"][0]["content"] = "The project repository states its license is MIT."
+        self.brief["claims"].append({"id": "resource-license", "text": "The project uses the MIT license",
+                                     "kind": "finding", "source_ids": ["src-1"]})
+        self.brief["resource"] = {"name": "Original project", "url": "https://example.org/project",
+                                  "source_ids": ["src-1"], "claim_ids": ["resource-license"],
+                                  "license": "MIT"}
+        self.status = "READY_FOR_HUMAN_REVIEW"
+        self._rewrite()
+        calls = []
+        def invoke(**kwargs):
+            calls.append(kwargs)
+            context = json.loads(kwargs["task_prompt"])
+            if kwargs["stage_label"] == "Article companion copy":
+                self.assertEqual(context["resource_companion_claim_ids"], ["resource-license"])
+                return {"post": {"text": "Original project: https://example.org/project uses the MIT license",
+                                 "claim_ids": ["resource-license"]},
+                        "first_comment": {"text": "The original finding is grounded.",
+                                          "claim_ids": ["claim-1"]}}
+            self.assertIn("The project repository states its license is MIT.",
+                          context["sources"][0]["content"])
+            self.assertIn("author_attestations", context)
+            ids = context["claim_ids"]
+            return {"covered_claim_ids": ids, "source_ids": ["src-1"],
+                    "missing_claim_ids": [], "unreviewed_claim_ids": [],
+                    "factual_alignment": True, "notes": "Checked supplied source content"}
+        cover = self.root / "cover.png"
+        cover.write_bytes(b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR"
+                          + struct.pack(">II", 1920, 1080) + b"\x08\x02\0\0\0")
+        result = package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                          live_consent=True, invoker=invoke, assets={"cover": cover})
+        self.assertEqual(result["status"], "READY_FOR_HUMAN_REVIEW")
+        self.assertEqual(result["full_package_status"], "COMPLETE_FOR_HUMAN_REVIEW")
+        post_review = result["evaluation"]["copy_reviews"]["post"]
+        self.assertEqual(post_review["companion_only_resource_claim_ids"], ["resource-license"])
+        self.assertEqual(post_review["reviewed_resource_claim_ids"], ["resource-license"])
+        self.assertEqual(post_review["resource_claim_review_status"], "REVIEWED")
+        self.assertNotIn("Original project", (self.root / "package/article.md").read_text())
+        self.assertIn("resource-license: src-1", (self.root / "package/sources.md").read_text())
+        self.assertEqual(len(calls), 3)
+
+    def test_companion_only_resource_claim_missing_coverage_blocks(self) -> None:
+        self.brief["claims"].append({"id": "resource-license", "text": "MIT license",
+                                     "kind": "finding", "source_ids": ["src-1"]})
+        self.brief["resource"] = {"name": "Original project", "url": "https://example.org/project",
+                                  "source_ids": ["src-1"], "claim_ids": ["resource-license"]}
+        invoke, _ = self._live()
+        def omit_resource_coverage(**kwargs):
+            if kwargs["stage_label"] == "Article companion copy":
+                return {"post": {"text": "Resource: https://example.org/project",
+                                 "claim_ids": ["resource-license"]},
+                        "first_comment": {"text": "Original finding", "claim_ids": ["claim-1"]}}
+            return {"covered_claim_ids": ["claim-1"], "source_ids": ["src-1"],
+                    "missing_claim_ids": [], "unreviewed_claim_ids": [],
+                    "factual_alignment": True, "notes": "Resource not checked"}
+        result = package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                          live_consent=True, invoker=omit_resource_coverage)
+        self.assertEqual(result["status"], "NEEDS_REVIEW")
+        self.assertEqual(result["evaluation"]["copy_reviews"]["post"]["resource_claim_review_status"],
+                         "NEEDS_REVIEW")
+
+    def test_cover_required_even_when_inline_asset_is_present(self) -> None:
+        invoke, _ = self._live()
+        inline = self.root / "inline.png"
+        inline.write_bytes(b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR"
+                           + struct.pack(">II", 1200, 900) + b"\x08\x02\0\0\0")
+        result = package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                          live_consent=True, invoker=invoke,
+                                          assets={"inline:opening": inline})
+        self.assertEqual(result["status"], "READY_FOR_HUMAN_REVIEW")
+        self.assertEqual(result["full_package_status"], "INCOMPLETE")
+        self.assertEqual(result["evaluation"]["missing_required_assets"], ["cover"])
+        with self.assertRaisesRegex(WorkflowError, "Required asset placement"):
+            package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                     live_consent=True, invoker=invoke,
+                                     required_asset_placements=["inline:missing"])
+
     def test_asset_dimensions_and_mapping(self) -> None:
         image = self.root / "cover.png"
         image.write_bytes(b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR"
@@ -295,6 +374,8 @@ class ArticlePackageTests(unittest.TestCase):
             package_reviewed_article(self.root, assets={"inline:missing": image})
         result = package_reviewed_article(self.root, assets={"cover": image})
         self.assertEqual(result["manifest"]["asset_placements"], {"cover": "cover.png"})
+        self.assertIn("cover", result["evaluation"]["provided_assets"])
+        self.assertNotIn("rendered_assets", result["evaluation"])
         self.assertEqual((self.root / "package/cover.png").read_bytes(), image.read_bytes())
         self.assertNotIn("data:image/png", (self.root / "package/article.html").read_text())
         package_reviewed_article(self.root)

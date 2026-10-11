@@ -15,7 +15,7 @@ import struct
 import tempfile
 import argparse
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Sequence
 from urllib.parse import urlsplit
 
 from . import article_contract, article_workflow
@@ -218,11 +218,13 @@ def package_reviewed_article(
     live_consent: bool = False,
     assets: Mapping[str, str | Path] | None = None,
     article_url: str | None = None,
+    required_asset_placements: Sequence[str] = ("cover",),
 ) -> dict[str, object]:
     """Create private copyable files; return evaluation, manifest and output paths.
 
-    ``assets`` keys are ``cover`` or ``inline:<section-id>``. The fixture path
-    never calls a model. Live generation requires both consent and a model config.
+    ``assets`` keys are ``cover`` or ``inline:<section-id>``. A cover is always
+    required for full-package completion; callers may require inline placements.
+    The fixture path never calls a model. Live generation requires consent/config.
     """
     root = Path(run_dir)
     private_root = (Path(__file__).resolve().parents[2] / "outputs").resolve()
@@ -308,14 +310,25 @@ def package_reviewed_article(
                            "source_ids": resource["source_ids"],
                            "claim_ids": resource.get("claim_ids", []),
                            "license": resource.get("license")}
-        if set(resource_ledger["claim_ids"]) - article_claim_ids:
-            raise WorkflowError("Verified resource claim IDs must be used in the reviewed article.")
         claim_kinds = {claim["id"]: claim["kind"] for claim in brief["claims"]}
         resource_ledger["eligible_claim_ids"] = sorted(
             cid for cid in resource_ledger["claim_ids"]
             if claim_kinds[cid] == "finding"
             and set(claim_by_id[cid]) & set(resource_ledger["source_ids"])
         )
+    resource_only_claim_ids = (set(resource_ledger["eligible_claim_ids"]) - article_claim_ids
+                               if resource_ledger is not None else set())
+    allowed_companion_claim_ids = article_claim_ids | resource_only_claim_ids
+    if (not isinstance(required_asset_placements, Sequence)
+            or isinstance(required_asset_placements, (str, bytes))):
+        raise WorkflowError("Required asset placements must be a sequence.")
+    required_assets = {"cover"}
+    for placement in required_asset_placements:
+        if (not isinstance(placement, str) or
+                (placement != "cover" and
+                 (not placement.startswith("inline:") or placement[7:] not in section_ids))):
+            raise WorkflowError("Required asset placement must name cover or an existing section.")
+        required_assets.add(placement)
     asset_files = assets or {}
     if not isinstance(asset_files, Mapping):
         raise WorkflowError("Assets must map placements to local files.")
@@ -336,10 +349,13 @@ def package_reviewed_article(
             "first_comment": {"text": "[SYNTHETIC FIXTURE — NOT FOR PUBLICATION] Sources are listed in sources.md.", "claim_ids": [first_claim]},
         }
     else:
-        context = {"article": article, "claims": claims, "sources": source_by_id,
+        context = {"article": article, "article_claim_ids": sorted(article_claim_ids),
+                   "resource_companion_claim_ids": sorted(resource_only_claim_ids),
+                   "claims": claims, "sources": sources,
+                   "author_attestations": brief["author"]["attestations"],
                    "resource": resource_ledger, "article_url": article_url}
         copy = _object(invoker(
-            config=model_config, role_prompt="Write a concise LinkedIn post and first source comment strictly from the reviewed article. Preserve meaning and attach IDs for every factual claim. Use the supplied resource URL only when its eligible linked finding claim is cited. Never invent an article URL, license, proof, or source.",
+            config=model_config, role_prompt="Write a concise LinkedIn post and first source comment from the reviewed article. A supplied resource finding may be introduced in companion copy when supported by source content even if absent from the article. Attach IDs for every factual claim. Use the resource URL only when its eligible linked finding claim is cited. Never invent an article URL, license, proof, or source.",
             task_prompt=json.dumps(context, ensure_ascii=False, sort_keys=True),
             schema=COPY_SCHEMA, web_search=False, stage_label="Article companion copy",
         ), "model copy")
@@ -348,8 +364,8 @@ def package_reviewed_article(
         item = _object(copy.get(name), name)
         body = _string(item.get("text"), name + " text", max_length=20_000)
         ids = _ids(item.get("claim_ids"), name + " claim IDs")
-        if not ids or set(ids) - article_claim_ids:
-            raise WorkflowError(f"{name} contains unsupported or missing article claim IDs.")
+        if not ids or set(ids) - allowed_companion_claim_ids:
+            raise WorkflowError(f"{name} contains unsupported or missing companion claim IDs.")
         source_ids = sorted({sid for cid in ids for sid in claim_by_id[cid]})
         permitted_urls = {source_by_id[sid]["url"] for sid in source_ids}
         if article_url is not None:
@@ -372,9 +388,12 @@ def package_reviewed_article(
         else:
             judgment = _object(invoker(
                 config=model_config,
-                role_prompt="Independently assess factual alignment of this derived copy with the reviewed article and cited claim/source ledger. Report missing or unreviewed claims; do not infer truth from URLs or IDs. Return strict JSON.",
+                role_prompt="Independently assess factual alignment of this copy against the reviewed article, FULL supplied source content and author attestations. Companion-only resource findings are new to this copy: verify them independently against source content; do not inherit the article PASS or infer truth from IDs/URLs. Check license assertions against supplied evidence. Report missing or unreviewed claims. Return strict JSON.",
                 task_prompt=json.dumps({"output": name, "text": body, "claim_ids": ids,
-                                        "article": article, "claims": claims, "sources": source_by_id,
+                                        "article": article, "article_claim_ids": sorted(article_claim_ids),
+                                        "resource_companion_claim_ids": sorted(resource_only_claim_ids),
+                                        "claims": claims, "sources": sources,
+                                        "author_attestations": brief["author"]["attestations"],
                                         "resource": resource_ledger},
                                        ensure_ascii=False, sort_keys=True),
                 schema=REVIEW_SCHEMA, web_search=False,
@@ -384,12 +403,16 @@ def package_reviewed_article(
         cited = _ids(judgment.get("source_ids"), name + " review sources")
         missing = _ids(judgment.get("missing_claim_ids"), name + " missing claims")
         unreviewed = _ids(judgment.get("unreviewed_claim_ids"), name + " unreviewed claims")
-        if (set(covered) - article_claim_ids or set(cited) - source_by_id.keys()
-                or set(missing) - article_claim_ids or type(judgment.get("factual_alignment")) is not bool
+        if (set(covered) - allowed_companion_claim_ids or set(cited) - source_by_id.keys()
+                or set(missing) - allowed_companion_claim_ids or type(judgment.get("factual_alignment")) is not bool
                 or not isinstance(judgment.get("notes"), str)):
             raise WorkflowError(f"{name} factual review is malformed.")
+        used_resource_claims = sorted(set(ids) & resource_only_claim_ids)
+        reviewed_resource_claims = sorted(set(covered) & set(used_resource_claims))
         copy_review[name] = {"text_sha256": body_hash, "article_sha256": article_hash,
                              "claim_ids": ids, "source_ids": source_ids,
+                             "companion_only_resource_claim_ids": used_resource_claims,
+                             "reviewed_resource_claim_ids": reviewed_resource_claims,
                              "covered_claim_ids": covered, "review_source_ids": cited,
                              "missing_claim_ids": missing, "unreviewed_claim_ids": unreviewed,
                              "factual_alignment": judgment["factual_alignment"],
@@ -397,10 +420,14 @@ def package_reviewed_article(
                              "eligible": not fixture and set(covered) == set(ids)
                              and set(cited) == set(source_ids) and not missing and not unreviewed
                              and judgment["factual_alignment"] is True}
+        copy_review[name]["resource_claim_review_status"] = (
+            "REVIEWED" if used_resource_claims and copy_review[name]["eligible"] else
+            "NEEDS_REVIEW" if used_resource_claims else "NOT_USED")
         item["text"] = body
     status = "FIXTURE_ONLY" if fixture else ("READY_FOR_HUMAN_REVIEW" if all(
         row["eligible"] for row in copy_review.values()) else "NEEDS_REVIEW")
-    package_status = "INCOMPLETE" if not image_data else (
+    missing_assets = sorted(required_assets - image_data.keys())
+    package_status = "INCOMPLETE" if not image_data or missing_assets else (
         "COMPLETE_FOR_HUMAN_REVIEW" if status == "READY_FOR_HUMAN_REVIEW" else status)
     article_md = f"# {title}\n\n{brief['author']['byline']}\n\n" + "\n\n".join(
         f"## {heading}\n\n{text}" for _, heading, text, _ in validated_sections) + "\n"
@@ -408,7 +435,8 @@ def package_reviewed_article(
     for sid, source in sorted(source_by_id.items()):
         source_lines.append(f"- {sid} — {source['title']}: {source['url']}")
     source_lines += ["", "## Claim mapping", ""]
-    for cid in sorted(article_claim_ids):
+    used_companion_claim_ids = {cid for row in copy_review.values() for cid in row["claim_ids"]}
+    for cid in sorted(article_claim_ids | used_companion_claim_ids):
         source_lines.append(f"- {cid}: {', '.join(claim_by_id[cid])}")
     if resource_ledger is not None:
         source_lines.extend(["", "## Supplied resource", "",
@@ -437,7 +465,9 @@ def package_reviewed_article(
                   "article_sha256": article_hash, "copy_reviews": copy_review,
                   "resource": resource_ledger,
                   "asset_plan": {"cover": "1920x1080", "inline": "1200x900 per section"},
-                  "rendered_assets": {key: {"sha256": _hash(raw), "mime": mime}
+                  "required_asset_placements": sorted(required_assets),
+                  "missing_required_assets": missing_assets,
+                  "provided_assets": {key: {"sha256": _hash(raw), "mime": mime}
                                       for key, (raw, mime) in image_data.items()},
                   "limitations": ["Source mapping is not semantic truth verification.",
                                   "Embedded image data URLs may not survive every clipboard/editor paste."]}
@@ -454,6 +484,7 @@ def package_reviewed_article(
         asset_names[key] = filename
     payloads["final-package.md"] = (f"# Article delivery — {title}\n\nArticle review: {status}. "
                                  f"Full package: {package_status}. Human review still required.\n\n"
+                                 f"Missing required assets: {', '.join(missing_assets) if missing_assets else 'none'}.\n\n"
                                  "Files: article.md, post.md, source-comment.md, sources.md, article.html, "
                                  "evaluation.json, manifest.json.\n\n"
                                  "The cover is a separate upload; inline assets are embedded in article.html. "
@@ -466,6 +497,8 @@ def package_reviewed_article(
                                  "article-claim-map.json": claim_map_file_hash},
                 "files_sha256": {name: _hash(content) for name, content in payloads.items()},
                 "article_url": article_url, "human_approved": False,
+                "required_asset_placements": sorted(required_assets),
+                "missing_required_assets": missing_assets,
                 "asset_placements": asset_names}
     payloads["manifest.json"] = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
     destination = Path(output_dir) if output_dir is not None else root / "package"
@@ -520,6 +553,7 @@ def package_reviewed_article(
     for old in stale_assets:
         old.unlink(missing_ok=True)
     return {"status": status, "full_package_status": package_status,
+            "missing_required_assets": missing_assets,
             "output_dir": str(destination), "manifest": manifest, "evaluation": evaluation,
             "files": {name: str(destination / name) for name in payloads}}
 
@@ -532,6 +566,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model-config", type=Path)
     parser.add_argument("--allow-model-egress", action="store_true")
     parser.add_argument("--assets", type=Path, help="JSON file mapping cover/inline:<section-id> to local images")
+    parser.add_argument("--require-asset", action="append", default=[],
+                        help="Additional required asset placement; cover is always required")
     parser.add_argument("--article-url")
     args = parser.parse_args(argv)
     config = None
@@ -543,8 +579,10 @@ def main(argv: list[str] | None = None) -> int:
         assets = _object(json.loads(args.assets.read_text(encoding="utf-8")), "assets")
     result = package_reviewed_article(args.run, output_dir=args.output, model_config=config,
                                       live_consent=args.allow_model_egress, assets=assets,
-                                      article_url=args.article_url)
+                                      article_url=args.article_url,
+                                      required_asset_placements=("cover", *args.require_asset))
     print(json.dumps({"status": result["status"], "full_package_status": result["full_package_status"],
+                      "missing_required_assets": result["missing_required_assets"],
                       "output_dir": result["output_dir"]}, sort_keys=True))
     return 0
 

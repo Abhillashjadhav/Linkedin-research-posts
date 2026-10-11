@@ -1,7 +1,8 @@
 # Reviewed article delivery package
 
 `package_reviewed_article(run_dir, *, output_dir=None, model_config=None,
-invoker=invoke_structured, live_consent=False, assets=None, article_url=None)`
+invoker=invoke_structured, live_consent=False, assets=None, article_url=None,
+required_asset_placements=("cover",))`
 creates a private `run_dir/package/` by default. Both the run and any custom
 package destination must stay inside the repository's ignored `outputs/`
 tree; the destination must be a child of the supplied run. The run directory must contain
@@ -14,7 +15,9 @@ An explicit repository call to action in the reviewed article also blocks
 packaging; the optional supplied resource remains an attributed source entry.
 
 The CLI entry point accepts `article-package --run <private-run>` and optional
-`--output`, `--assets <JSON-mapping-path>`, `--article-url <HTTPS-URL>`, and
+`--output`, `--assets <JSON-mapping-path>`, `--article-url <HTTPS-URL>`,
+and repeatable `--require-asset inline:<section-id>` (the cover is always
+required for a complete package), and
 for live runs `--model-config <JSON-path> --allow-model-egress`. The model
 config JSON contains `runtime`, `model`, and `reasoning` for the companion
 stages. Fixture runs need no model configuration.
@@ -31,9 +34,13 @@ post and first-comment text with claim IDs and independently reviews each
 derived text for claim coverage and source references. Any new or unreviewed
 claim, missing coverage, or failed alignment blocks copy review eligibility.
 The optional supplied resource enters both copy and review context. Its URL
-may appear only with a cited finding linked to its supplied sources. Its
-license is listed only when supplied in the validated brief; an invented
-license alongside its URL is rejected.
+may appear only with a cited finding linked to its supplied sources. A
+resource finding may be cited in companion copy even when the article itself
+does not use that claim. The companion's separate factual review receives
+full supplied source content and author attestations and must cover that
+resource claim; the article's earlier PASS does not clear it. Its license is
+listed only when supplied in the validated brief; an invented license
+alongside its URL is rejected.
 The generated evaluation binds each copy review to its exact text and article
 hash. Neither path approves or publishes content.
 
@@ -53,8 +60,10 @@ PNG/JPEG, or `inline:<section-id>` to a 1200 × 900 PNG/JPEG. Image headers
 and dimensions are checked. Provided image bytes are copied into the package.
 Inline images are also embedded as data URLs in HTML at their section; the
 cover stays separate from the article body for platform upload. The
-evaluation distinguishes an asset plan from provided image bytes and marks
-the full package `INCOMPLETE` when there are no assets. Image placement does
+evaluation distinguishes an asset plan from `provided_assets` image bytes and records
+missing required placements. The full package stays `INCOMPLETE` without a
+cover or any additionally required section images, even when the reviewed
+article and companion copy are eligible. Image placement does
 not certify rendering, reuse rights, or clipboard compatibility. Human
 review, actual image rendering, and final platform checks remain outside
 this local packaging operation.
