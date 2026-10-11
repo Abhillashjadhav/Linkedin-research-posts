@@ -27,6 +27,11 @@ if [ "${1:-}" = "media" ]; then
   PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.media "$@"
 fi
 
+if [ "${1:-}" = "article" ]; then
+  shift
+  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.article_cli "$@"
+fi
+
 if [ "${1:-}" = "export-monitoring" ]; then
   shift
   PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.monitoring_export "$@"

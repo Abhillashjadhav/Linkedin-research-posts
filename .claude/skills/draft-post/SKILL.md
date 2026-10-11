@@ -7,6 +7,19 @@ description: Prepare evidence-grounded LinkedIn drafts through bounded research,
 
 Use only `./bin/linkedin-os`. Do not bypass its validation or invoke the role prompts directly.
 
+## Sunday explanatory article
+
+When the request is specifically for the long-form Sunday article, route to
+`./bin/linkedin-os article` with a user-supplied `sunday-article-v1` JSON brief
+and four explicitly configured Codex roles. Supply `--brief`, `--models`,
+`--allow-model-egress`, and a new ignored `--output outputs/...` folder. Use
+`article --dry-run` only to check offline fixture wiring: with `--output`, it
+writes a synthetic, ineligible article package without reading the supplied
+brief or models, calling a model, or granting publishing approval.
+Keep this route independent of weekday posts, Thursday capabilities and
+campaign scoring. Return the actual manifest status and review limitations;
+`READY_FOR_HUMAN_REVIEW` is not author acceptance or factual certification.
+
 ## Thursday inside the existing OS
 
 Use [the Thursday capability workflow](../../../docs/THURSDAY_CAPABILITY_WORKFLOW.md)
