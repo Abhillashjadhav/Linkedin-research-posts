@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -24,7 +25,37 @@ ALLOWED_REASONING = {"low", "medium", "high", "xhigh", "max", "ultra"}
 # Only the discover command sets the scoped override. Its generated drafting
 # child receives this explicit transport; it is never read from user config.
 DISCOVERY_CHILD_REASONING_ENV = "LINKEDIN_OS_DISCOVERY_CHILD_REASONING"
+DISCOVERY_CHILD_MODEL_ENV = "LINKEDIN_OS_DISCOVERY_CHILD_MODEL"
 _REASONING_OVERRIDE: ContextVar[str | None] = ContextVar("discovery_reasoning_override", default=None)
+_MODEL_OVERRIDE: ContextVar[str | None] = ContextVar("discovery_model_override", default=None)
+
+
+def validate_discovery_model(model: str) -> str:
+    """Accept a literal, single Codex model slug for one discover invocation."""
+    if not isinstance(model, str) or re.fullmatch(r"[a-z0-9][a-z0-9._-]*", model) is None:
+        raise WorkflowError("Discovery model must be a nonblank Codex model slug.")
+    return model
+
+
+@contextmanager
+def discovery_model_override(model: str | None):
+    """Confine the requested model to discovery and its copied worker contexts."""
+    if model is not None:
+        validate_discovery_model(model)
+    # Empty string masks an inherited child transport for an ordinary discover run.
+    token = _MODEL_OVERRIDE.set(model or "")
+    try:
+        yield
+    finally:
+        _MODEL_OVERRIDE.reset(token)
+
+
+def _requested_model() -> str | None:
+    scoped = _MODEL_OVERRIDE.get()
+    if scoped is not None:
+        return scoped or None
+    child = os.environ.get(DISCOVERY_CHILD_MODEL_ENV)
+    return validate_discovery_model(child) if child is not None else None
 
 
 @contextmanager
@@ -91,8 +122,11 @@ class ModelConfig:
             raise WorkflowError("Campaign model name must not be blank.")
         if self.reasoning not in ALLOWED_REASONING:
             raise WorkflowError("Campaign reasoning setting is unsupported.")
-        requested = _requested_reasoning()
-        return self if requested is None or requested == self.reasoning else ModelConfig(self.runtime, self.model, requested)
+        requested_reasoning = _requested_reasoning()
+        requested_model = _requested_model()
+        model = requested_model or self.model
+        reasoning = requested_reasoning or self.reasoning
+        return self if model == self.model and reasoning == self.reasoning else ModelConfig(self.runtime, model, reasoning)
 
     def trace(self) -> dict[str, str]:
         return asdict(self.validate())
