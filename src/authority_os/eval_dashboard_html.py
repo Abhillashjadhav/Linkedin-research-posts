@@ -6,6 +6,7 @@ import html
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -27,7 +28,7 @@ def _checks(payload: Mapping[str, object]) -> list[Mapping[str, object]]:
 def _status(value: object) -> str:
     normalized = str(value or "NOT_EVALUATED").upper()
     return normalized if normalized in {
-        "PASS", "FAIL", "BLOCKED", "NOT_EVALUATED", "RUNNING", "REJECTED", "UNAVAILABLE", "COMPLETED_WITH_WARNINGS"
+        "PASS", "FAIL", "BLOCKED", "NOT_EVALUATED", "RUNNING", "REJECTED", "UNAVAILABLE", "COMPLETED_WITH_WARNINGS", "TIME_BUDGET_EXCEEDED"
     } else "BLOCKED"
 
 
@@ -88,13 +89,15 @@ def render_dashboard(
     post_checks = [item for item in eval_checks if item.get("category") == "post_quality"]
     all_checks = [*run_checks, *eval_checks]
     blockers = [
-        item for item in all_checks if _status(item.get("status")) in {"FAIL", "BLOCKED"}
+        item for item in all_checks if _status(item.get("status")) in {"FAIL", "BLOCKED", "TIME_BUDGET_EXCEEDED"}
         and item.get("mode") not in {"diagnostic", "shadow"}
     ]
     gaps = [item for item in all_checks if _status(item.get("status")) == "NOT_EVALUATED"]
     passed = [item for item in all_checks if _status(item.get("status")) == "PASS"]
     outcome = _status(run_dashboard.get("outcome"))
-    if blockers:
+    if outcome == "TIME_BUDGET_EXCEEDED":
+        pass
+    elif blockers:
         outcome = "FAIL"
     elif outcome == "RUNNING" or (gaps and outcome != "COMPLETED_WITH_WARNINGS"):
         outcome = "INCOMPLETE"
@@ -107,7 +110,7 @@ def render_dashboard(
     )
     first_reason = first.get("reason") if first else "Draft delivered; see scores and advisory findings below."
     run_id = run_dashboard.get("run_id") or eval_dashboard.get("run_id")
-    outcome_css = "pass" if outcome == "PASS" else "fail" if outcome == "FAIL" else "incomplete"
+    outcome_css = "pass" if outcome == "PASS" else "fail" if outcome in {"FAIL", "TIME_BUDGET_EXCEEDED"} else "incomplete"
     run_cards = "".join(_card(item) for item in run_checks) or '<p class="empty">No workflow checks recorded.</p>'
     pipeline_cards = "".join(_card(item) for item in pipeline_checks) or '<p class="empty">No pipeline contracts recorded.</p>'
     post_cards = "".join(_card(item) for item in post_checks) or '<p class="empty">No post-quality contracts recorded.</p>'
@@ -175,6 +178,16 @@ def render_dashboard(
             )
         )
     execution_rows = execution_rows or '<tr><td colspan="2">Execution identity was not recorded. This run predates end-to-end observability.</td></tr>'
+    time_budget = run_dashboard.get("time_budget")
+    if isinstance(time_budget, Mapping):
+        requested = time_budget.get("requested_seconds")
+        execution_rows += (
+            f'<tr><td>Requested time allowance</td><td>{_safe(requested if requested is not None else "default")}</td></tr>'
+            f'<tr><td>Effective time allowance</td><td>{_safe(time_budget.get("effective_seconds"))} seconds</td></tr>'
+            f'<tr><td>Contract default</td><td>{_safe(time_budget.get("default_seconds"))} seconds</td></tr>'
+            f'<tr><td>Full-run SLO</td><td>{_safe(time_budget.get("runtime_slo_seconds"))} seconds</td></tr>'
+            f'<tr><td>Allowance interpretation</td><td>{_safe(time_budget.get("slo_interpretation"))}</td></tr>'
+        )
     raw_run_decisions = run_dashboard.get("decisions")
     run_decisions = (
         [item for item in raw_run_decisions if isinstance(item, Mapping)]
@@ -235,35 +248,62 @@ def write_dashboard(
     folder: Path,
     run_dashboard: Mapping[str, object],
     eval_dashboard: Mapping[str, object],
+    *,
+    replace_existing: bool = False,
 ) -> Path:
     root = workflow.DEFAULT_PRIVATE_DATA.expanduser().resolve()
-    target = (folder / "eval-dashboard.html").expanduser().resolve()
+    requested = (folder / "eval-dashboard.html").expanduser()
+    if requested.is_symlink():
+        raise workflow.WorkflowError("Eval dashboard must not be a symlink.")
+    target = requested.resolve()
     try:
         target.relative_to(root)
     except ValueError:
         raise workflow.WorkflowError("Eval dashboard must stay under data/private.") from None
     target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(target.parent, 0o700)
+    if replace_existing and not target.is_file():
+        raise workflow.WorkflowError("Existing eval dashboard is unavailable for refresh.")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
+    destination = (
+        target.with_name(f".{target.name}.{os.getpid()}.{time.time_ns()}.tmp")
+        if replace_existing else target
+    )
     try:
-        descriptor = os.open(target, flags, 0o600)
+        descriptor = os.open(destination, flags, 0o600)
     except FileExistsError as exc:
-        raise workflow.WorkflowError("Eval dashboard already exists for this run.") from exc
+        raise workflow.WorkflowError("Eval dashboard output already exists.") from exc
     try:
-        payload = render_dashboard(run_dashboard, eval_dashboard).encode("utf-8")
-        offset = 0
-        while offset < len(payload):
-            written = os.write(descriptor, payload[offset:])
-            if written <= 0:
-                raise workflow.WorkflowError("Eval dashboard write did not make progress.")
-            offset += written
-        os.fsync(descriptor)
-        os.fchmod(descriptor, 0o600)
-    finally:
-        os.close(descriptor)
+        try:
+            payload = render_dashboard(run_dashboard, eval_dashboard).encode("utf-8")
+            offset = 0
+            while offset < len(payload):
+                written = os.write(descriptor, payload[offset:])
+                if written <= 0:
+                    raise workflow.WorkflowError("Eval dashboard write did not make progress.")
+                offset += written
+            os.fsync(descriptor)
+            os.fchmod(descriptor, 0o600)
+        finally:
+            os.close(descriptor)
+        if replace_existing:
+            os.replace(destination, target)
+    except BaseException:
+        if replace_existing:
+            destination.unlink(missing_ok=True)
+        raise
     return target
+
+
+def refresh_dashboard(
+    folder: Path,
+    run_dashboard: Mapping[str, object],
+    eval_dashboard: Mapping[str, object],
+) -> Path:
+    """Atomically refresh an already-created private report after a deadline."""
+    return write_dashboard(folder, run_dashboard, eval_dashboard, replace_existing=True)
 
 
 def open_dashboard(path: Path) -> bool:

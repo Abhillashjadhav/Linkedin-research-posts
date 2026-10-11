@@ -3,9 +3,9 @@
 The discovery command fixes the missing front half of the workflow and makes topic momentum auditable before any thesis is written:
 
 ```text
-10 current conversation topics
+at least 3 supported current conversations
 → observed cross-platform momentum ranking
-→ top 5 + separate authority-fit score
+→ ranked topics + separate authority-fit score
 → body-verified source evidence
 → three authority theses
 → strict thesis scoring
@@ -44,6 +44,33 @@ The profile contains:
   --allow-model-egress
 ```
 
+For a fresh full run that needs more time for live research and optional drafting,
+request a larger shared allowance explicitly:
+
+```bash
+./bin/linkedin-os discover \
+  --profile data/private/authority-profile.json \
+  --days 7 \
+  --allow-web-research \
+  --allow-model-egress \
+  --generate-post \
+  --time-budget-seconds 1800
+```
+
+The flag accepts an integer from 1 through 3600. Without it, the approved
+480-second default applies. The selected allowance covers one invocation,
+including an optional drafting child; it is a time limit, not a promise that
+the run will complete in 30 minutes. The contract's separate 480-second
+full-run SLO is unchanged. `run-input.json`, `run-dashboard.json`, and the local
+HTML dashboard record the requested allowance, effective allowance, default,
+and SLO separately. A deadline failure retains completed artifacts and prints
+one resume command carrying the requested allowance. A resumed invocation has
+its own allowance and does not measure a fresh end-to-end run. Changed runtime
+code remains part of the checkpoint identity: a run stopped before this update
+cannot reuse its hash-bound stages with the new implementation, so start a fresh
+run with the command above. Earlier parent Scout calls are not covered by the
+drafting model-call cache.
+
 In the Monday, Wednesday, Thursday, Friday cadence, `--week-slot 1` routes the
 printed command and optional generated text draft to Monday Reach; slots 2 and
 3 route to Authority, with Thursday at slot 3. Without an explicit slot, the
@@ -58,7 +85,10 @@ The public-web Scout runs through Codex with live native web search as its only 
 
 ## Conversation momentum
 
-Before source selection, the Scout returns exactly ten distinct candidate conversations. Each candidate is measured on five axes from public evidence:
+Before source selection, the installed adapter runs independent public-surface
+Scouts in parallel and consolidates their returned signals into at least three
+distinct supported conversations, retaining more when the evidence supports
+them. Each candidate is measured on five axes from public evidence:
 
 1. conversation breadth;
 2. engagement strength;
@@ -107,11 +137,11 @@ The command then:
 
 No weak thesis is silently promoted. Exhaustion returns no thesis set, while the already-persisted momentum package remains available for inspection.
 
-Unavailable surface lanes receive one bounded retry. When no topic clears the
-conversation-momentum floor, discovery may continue through a clearly labelled
-authority-fit fallback only when the topic still has at least four observed
-momentum axes and scores at least 20/25 on authority fit. This does not change
-the 14/25 momentum score or represent the fallback topic as trending.
+When no topic clears the conversation-momentum floor, discovery may continue
+through a clearly labelled authority-fit fallback only when the topic still
+has at least four observed momentum axes and scores at least 20/25 on authority
+fit. This does not change the 14/25 momentum score or represent the fallback
+topic as trending.
 
 Every topic scoring at least 40/50 across observed momentum plus authority fit
 is retained in a rolling seven-day private candidate inventory. Selecting the
