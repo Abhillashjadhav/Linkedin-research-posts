@@ -103,6 +103,51 @@ class ArticleFeedbackTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("unavailable or unsafe", result.stderr)
 
+    def test_public_summary_with_fresh_default_directory_is_empty(self) -> None:
+        self.assertFalse(self.private.exists())
+        script = (
+            "from pathlib import Path\n"
+            "from unittest.mock import patch\n"
+            "from authority_os import article_feedback as feedback\n"
+            "with patch.object(feedback, 'DEFAULT_FEEDBACK_DIR', Path(__import__('sys').argv[1])):\n"
+            "    raise SystemExit(feedback.main(['summary']))\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script, str(self.private)],
+            cwd=workflow.REPO_ROOT,
+            env={**os.environ, "PYTHONPATH": str(workflow.REPO_ROOT / "src")},
+            capture_output=True, text=True, timeout=3,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = json.loads(result.stdout)
+        self.assertEqual(summary["reviewed_runs"], 0)
+        self.assertEqual(summary["accepted_light_edits"], 0)
+        self.assertIsNone(summary["accepted_light_edits_rate"])
+        self.assertIsNone(summary["median_edit_minutes"])
+        self.assertFalse(self.private.exists(), "Summary must not create feedback storage")
+        self.assertEqual(feedback.load_records(self.root / "missing" / "feedback"), [])
+        self.assertFalse((self.root / "missing").exists())
+
+    def test_missing_directory_does_not_hide_unsafe_paths(self) -> None:
+        target = self.root / "target"
+        target.mkdir(mode=0o700)
+        (self.root / "symlink").symlink_to(target, target_is_directory=True)
+        (self.root / "dangling").symlink_to(self.root / "missing", target_is_directory=True)
+        (self.root / "file").write_text("not a directory")
+        os.mkfifo(self.root / "fifo", 0o600)
+        bad_mode = self.root / "bad_mode"
+        bad_mode.mkdir(mode=0o700)
+        os.chmod(bad_mode, 0o755)
+        bad_parent = self.root / "bad_parent"
+        bad_parent.mkdir(mode=0o700)
+        os.chmod(bad_parent, 0o755)
+        for path in (
+            self.root / "symlink", self.root / "dangling", self.root / "file",
+            self.root / "fifo", bad_mode, bad_parent / "missing_feedback",
+        ):
+            with self.subTest(path=path), self.assertRaises(workflow.WorkflowError):
+                feedback.load_records(path)
+
     def test_feedback_directory_symlink_and_record_symlink_are_rejected(self) -> None:
         outside = self.root / "elsewhere"
         outside.mkdir()
