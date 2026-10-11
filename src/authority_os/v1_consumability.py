@@ -132,7 +132,7 @@ def hook_entry_check(post_text: str) -> dict[str, object]:
 
 def _consolidate(signals: Sequence[Mapping[str, object]], *, as_of: str) -> list[dict[str, object]]:
     ids = [str(signal["id"]) for signal in signals]
-    prompt = f"""Cluster these independently discovered public-web signals into at least {surface.MIN_CONVERSATIONS} materially distinct current GenAI/product conversations. Six is a minimum, not a maximum. Retain additional meaningful conversations when supported. Never pad the list, invent evidence, or split the same idea merely to meet the minimum.
+    prompt = f"""Cluster these independently discovered public-web signals into at least {surface.MIN_CONVERSATIONS} materially distinct current GenAI/product conversations. Three is a minimum, not a maximum. Retain additional meaningful conversations when supported. Never pad the list, invent evidence, or split the same idea merely to meet the minimum.
 Do not browse. Do not add facts or signals. Merge only signals that describe the same underlying conversation. Each input signal may be assigned to at most one cluster; unused weak/duplicate signals may be omitted.
 
 Selection goal: preserve conversations that can become useful, widely enterable product content without becoming generic. Rank the clusters using the supplied evidence and these priorities:

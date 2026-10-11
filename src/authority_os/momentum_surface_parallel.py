@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from contextvars import copy_context
@@ -17,14 +18,13 @@ from .model_runtime import ModelConfig, invoke_structured
 MAX_WORKERS = 7
 SURFACE_TIMEOUT = 90
 CONSOLIDATION_TIMEOUT = 60
-MIN_SUCCESSFUL_SURFACES = 4
-MIN_SIGNALS_FOR_CONSOLIDATION = 6
+SURFACE_COVERAGE_WARNING_THRESHOLD = 3
+MIN_SIGNALS_FOR_CONSOLIDATION = 3
 SIGNALS_PER_SURFACE = 5
-MAX_SURFACE_ATTEMPTS = 2
 
 MOMENTUM_AXES = momentum.MOMENTUM_AXES
 MOMENTUM_LABEL = momentum.MOMENTUM_LABEL
-MIN_CONVERSATIONS = 6
+MIN_CONVERSATIONS = 3
 MOMENTUM_TOP_K = momentum.MOMENTUM_TOP_K
 MIN_AUTHORITY_MOMENTUM = momentum.MIN_AUTHORITY_MOMENTUM
 MIN_REACH_MOMENTUM = momentum.MIN_REACH_MOMENTUM
@@ -150,7 +150,10 @@ def _surface_schema(allowed_platforms: Sequence[str]) -> dict[str, object]:
             "platform": {"type": "string", "enum": list(allowed_platforms)},
             "url": {"type": "string"},
             "source": {"type": "string"},
-            "published_at": {"type": "string"},
+            "published_at": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "description": "Source date YYYY-MM-DD, month YYYY-MM, or timestamp with timezone (Z or +HH:MM/-HH:MM); null means exclude this signal.",
+            },
             "freshness_hours": {
                 "anyOf": [{"type": "number", "minimum": 0}, {"type": "null"}]
             },
@@ -243,6 +246,7 @@ def _validate_surface_result(
 
     allowed = {str(value) for value in surface["allowed_platforms"]}  # type: ignore[index]
     prepared: list[dict[str, object]] = []
+    excluded_dates = 0
     seen_urls: set[str] = set()
     for index, item in enumerate(signals, start=1):
         if not isinstance(item, Mapping):
@@ -253,15 +257,12 @@ def _validate_surface_result(
         }
         if set(item) != required:
             raise workflow.WorkflowError("Surface Scout signal has an invalid schema.")
-        for field in ("topic", "why_now", "platform", "source", "published_at"):
+        for field in ("topic", "why_now", "platform", "source"):
             if not isinstance(item[field], str) or not str(item[field]).strip():
                 raise workflow.WorkflowError("Surface Scout text fields must be non-blank.")
         if str(item["platform"]) not in allowed:
             raise workflow.WorkflowError("Surface Scout returned a platform outside its lane.")
         url = momentum._validate_public_url(item["url"])  # type: ignore[attr-defined]
-        if url in seen_urls:
-            continue
-        seen_urls.add(url)
         freshness = item["freshness_hours"]
         if freshness is not None and (
             isinstance(freshness, bool)
@@ -269,20 +270,40 @@ def _validate_surface_result(
             or freshness < 0
         ):
             raise workflow.WorkflowError("Surface Scout freshness must be non-negative or null.")
+        published_at = item["published_at"]
+        if not isinstance(published_at, str) or not published_at.strip():
+            excluded_dates += 1
+            continue
+        published_at = published_at.strip()
+        # Date-only and month-only values denote intervals, never a fabricated
+        # midnight observation. Timestamps must carry an explicit timezone.
         try:
-            earliest, latest, precision = workflow.source_publication_bounds(
-                str(item["published_at"])
-            )
-            if days is not None and as_of is not None:
-                window_end = workflow.parse_published_at(as_of)
-                window_start = window_end - timedelta(days=days)
-                if latest < window_start or earliest > window_end:
-                    raise workflow.WorkflowError(
-                        "Surface Scout signal is outside the requested time window."
-                    )
-        except ValueError as exc:
-            raise workflow.WorkflowError("Surface Scout publication date is invalid.") from exc
-        if precision == "month":
+            if re.fullmatch(r"\d{4}-\d{2}", published_at):
+                earliest, latest, precision = workflow.source_publication_bounds(published_at)
+            elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", published_at):
+                earliest = workflow.parse_published_at(published_at)
+                latest = earliest + timedelta(days=1) - timedelta(microseconds=1)
+                precision = "day"
+            elif re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})",
+                published_at,
+            ):
+                earliest, latest, precision = workflow.source_publication_bounds(published_at)
+            else:
+                raise ValueError("unsupported publication date precision")
+        except (ValueError, OverflowError):
+            excluded_dates += 1
+            continue
+        if days is not None and as_of is not None:
+            window_end = workflow.parse_published_at(as_of)
+            window_start = window_end - timedelta(days=days)
+            if latest < window_start or earliest > window_end:
+                excluded_dates += 1
+                continue
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        if precision != "exact":
             freshness = None
         for metric in ("engagement_units", "acceleration_percent"):
             value = item[metric]
@@ -298,9 +319,9 @@ def _validate_surface_result(
                 "platform": str(item["platform"]).strip(),
                 "url": url,
                 "source": str(item["source"]).strip(),
-                "published_at": str(item["published_at"]).strip(),
+                "published_at": published_at,
                 "publication_date_precision": precision,
-                "publication_date_uncertain": precision == "month",
+                "publication_date_uncertain": precision != "exact",
                 "freshness_hours": None if freshness is None else float(freshness),
                 "engagement_units": item["engagement_units"],
                 "acceleration_percent": item["acceleration_percent"],
@@ -316,7 +337,13 @@ def _validate_surface_result(
         ),
         reverse=True,
     )
-    return {"status": status, "signals": prepared, "caveat": caveat.strip()}
+    if excluded_dates:
+        caveat = f"{caveat.strip()} Excluded {excluded_dates} signal(s) without a supported publication date inside the requested window."
+    return {
+        "status": "NO_SIGNAL" if status == "OBSERVED" and not prepared else status,
+        "signals": prepared,
+        "caveat": caveat.strip(),
+    }
 
 
 def _run_surface(surface: Mapping[str, object], *, topic: str | None, days: int, as_of: str) -> dict[str, object]:
@@ -338,8 +365,8 @@ For each signal:
 - platform: exactly one allowed platform for this lane;
 - url: representative public HTTPS URL;
 - source: public author/community/publisher name;
-- published_at: source timestamp when visible;
-- freshness_hours: age of the newest substantive signal as of {as_of};
+- published_at: a visible source date as YYYY-MM-DD, YYYY-MM, or a timestamp with timezone (Z or numeric offset). If the publication date is unknown, omit the signal; never infer one from a search-result age or fetch time;
+- freshness_hours: age of the newest substantive signal as of {as_of}, or null when only day/month publication precision is known;
 - engagement_units: visible public interactions excluding raw page/video views, or null if unavailable;
 - acceleration_percent: comparable recent growth percentage only if directly observable, otherwise null.
 
@@ -352,39 +379,24 @@ Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings
         "signals": [],
         "caveat": "Surface Scout did not execute.",
     }
-    for attempt in range(1, MAX_SURFACE_ATTEMPTS + 1):
-        try:
-            result = invoke_structured(
-                config=MODEL,
-                role_prompt=daily_cli._role("scout"),
-                task_prompt=prompt,
-                schema=_surface_schema(surface["allowed_platforms"]),  # type: ignore[arg-type,index]
-                timeout=SURFACE_TIMEOUT,
-                web_search=True,
-                stage_label=f"Surface Scout {label}",
-            )
-            validated = _validate_surface_result(
-                result, surface=surface, days=days, as_of=as_of
-            )
-        except workflow.WorkflowError as exc:
-            from . import runtime_budget
-            if isinstance(exc, runtime_budget.GlobalDeadlineExceeded):
-                raise
-            validated = {"status": "UNAVAILABLE", "signals": [], "caveat": str(exc)}
-        if validated["status"] != "UNAVAILABLE" or attempt == MAX_SURFACE_ATTEMPTS:
-            break
-        print(
-            f"Surface Scout [{label}]: unavailable; retrying once.",
-            flush=True,
+    try:
+        result = invoke_structured(
+            config=MODEL,
+            role_prompt=daily_cli._role("scout"),
+            task_prompt=prompt,
+            schema=_surface_schema(surface["allowed_platforms"]),  # type: ignore[arg-type,index]
+            timeout=SURFACE_TIMEOUT,
+            web_search=True,
+            stage_label=f"Surface Scout {label}",
         )
-        _trace_event(
-            {
-                "event": "surface_retry",
-                "surface": key,
-                "label": label,
-                "attempt": attempt + 1,
-            }
+        validated = _validate_surface_result(
+            result, surface=surface, days=days, as_of=as_of
         )
+    except workflow.WorkflowError as exc:
+        from . import runtime_budget
+        if isinstance(exc, runtime_budget.GlobalDeadlineExceeded):
+            raise
+        validated = {"status": "UNAVAILABLE", "signals": [], "caveat": str(exc)}
     payload = {
         "schema_version": 1,
         "surface": key,
@@ -414,7 +426,10 @@ Do not invent engagement, acceleration, timestamps, URLs, or popularity rankings
 
 def _validate_clusters(raw: object, signals: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
     if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)) or not MIN_CONVERSATIONS <= len(raw) <= len(signals):
-        raise workflow.WorkflowError("Surface consolidation requires at least six distinct, evidence-supported conversations; do not pad insufficient evidence.")
+        raise workflow.WorkflowError(
+            f"Surface consolidation requires at least {MIN_CONVERSATIONS} distinct, "
+            "evidence-supported conversations; do not pad insufficient evidence."
+        )
     available = {str(signal["id"]) for signal in signals}
     expected = {f"topic-{index}" for index in range(1, len(raw) + 1)}
     seen_ids: set[str] = set()
@@ -453,7 +468,7 @@ def _validate_clusters(raw: object, signals: Sequence[Mapping[str, object]]) -> 
 
 def _consolidate(signals: Sequence[Mapping[str, object]], *, as_of: str) -> list[dict[str, object]]:
     ids = [str(signal["id"]) for signal in signals]
-    prompt = f"""Cluster these independently discovered public-web signals into at least {MIN_CONVERSATIONS} materially distinct current GenAI/product conversations. Six is a minimum, not a maximum. Retain additional meaningful conversations when supported; never split or invent a topic to meet the minimum.
+    prompt = f"""Cluster these independently discovered public-web signals into at least {MIN_CONVERSATIONS} materially distinct current GenAI/product conversations. Three is a minimum, not a maximum. Retain additional meaningful conversations when supported; never split or invent a topic to meet the minimum.
 Do not browse. Do not add facts or signals. Merge only signals that describe the same underlying conversation. Preserve meaningful product consequences supported by visible engagement or independent discussion. Use consecutive topic-1 through topic-N exactly once. Each input signal may be assigned to at most one cluster; unused weak/duplicate signals may be omitted. Rank the retained clusters strongest-first using only the supplied evidence: cross-surface repetition, visible engagement, observable acceleration, and freshness as of {as_of}. Unknown engagement is not evidence of popularity.
 
 UNTRUSTED_SURFACE_SIGNALS
@@ -539,7 +554,7 @@ def _project_candidates(
                     (
                         f"Newest exactly dated substantive signal is {freshness:g} hour(s) old."
                         if freshness is not None
-                        else "Supplied publication timing is month-only; exact freshness is unknown."
+                        else "Exact freshness of the newest substantive signal is unavailable."
                     ),
                 ),
             }
@@ -580,7 +595,7 @@ def invoke_scout(topic: str | None, days: int, as_of: str) -> list[dict[str, obj
         raise workflow.WorkflowError(
             f"Only {len(signals)} usable public signals were collected; at least {MIN_CONVERSATIONS} distinct supported conversations are required."
         )
-    if len(successful) < MIN_SUCCESSFUL_SURFACES:
+    if len(successful) < SURFACE_COVERAGE_WARNING_THRESHOLD:
         warning = (
             f"Coverage warning: only {len(successful)}/{len(SURFACES)} surface scouts "
             f"produced evidence, but {len(signals)} usable signals cleared the "

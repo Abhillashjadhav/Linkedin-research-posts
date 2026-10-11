@@ -51,29 +51,12 @@ class SurfaceParallelTests(unittest.TestCase):
         self.assertEqual(month["publication_date_precision"], "month")
         self.assertIsNone(month["freshness_hours"])
 
-    def test_unavailable_surface_is_retried_once(self) -> None:
+    def test_timeout_surface_has_one_attempt(self) -> None:
         lane = surface.SURFACES[0]
-        observed = {
-            "status": "OBSERVED",
-            "signals": [
-                {
-                    "topic": "Agent budgets",
-                    "why_now": "A current release exposed a spending control.",
-                    "platform": "Google Search",
-                    "url": "https://example.com/agent-budgets",
-                    "source": "Example",
-                    "published_at": "2026-09-02T00:00:00Z",
-                    "freshness_hours": 1,
-                    "engagement_units": 10,
-                    "acceleration_percent": None,
-                }
-            ],
-            "caveat": "Public evidence only.",
-        }
         with patch.object(surface.daily_cli, "_role", return_value="Scout"), patch.object(
             surface,
             "invoke_structured",
-            side_effect=[workflow.WorkflowError("timed out"), observed],
+            side_effect=workflow.WorkflowError("timed out"),
         ) as invoke:
             result = surface._run_surface(
                 lane,
@@ -81,8 +64,70 @@ class SurfaceParallelTests(unittest.TestCase):
                 days=7,
                 as_of="2026-09-02T00:00:00Z",
             )
-        self.assertEqual(invoke.call_count, 2)
-        self.assertEqual(result["status"], "OBSERVED")
+        self.assertEqual(invoke.call_count, 1)
+        self.assertIn(result["status"], {"UNAVAILABLE", "TIMEOUT"})
+
+    def test_supported_date_precisions_and_window_exclude_undated_signals(self) -> None:
+        lane = surface.SURFACES[0]
+
+        def signal(index: int, date: str | None) -> dict[str, object]:
+            return {
+                "topic": f"Topic {index}", "why_now": "Current product decision.",
+                "platform": "Google Search", "url": f"https://example.com/{index}",
+                "source": f"Source {index}", "published_at": date,
+                "freshness_hours": 1, "engagement_units": None,
+                "acceleration_percent": None,
+            }
+
+        raw = {
+            "status": "OBSERVED",
+            "signals": [
+                signal(1, "2026-09"), signal(2, "2026-09-03"),
+                signal(3, "2026-09-03T14:00:00+02:00"),
+                signal(4, None), signal(5, "2026-08-01T00:00:00Z"),
+            ],
+            "caveat": "Public evidence only.",
+        }
+        validated = surface._validate_surface_result(
+            raw, surface=lane, days=7, as_of="2026-09-04T12:00:00Z"
+        )
+        by_url = {item["url"]: item for item in validated["signals"]}
+        self.assertEqual(set(by_url), {f"https://example.com/{index}" for index in (1, 2, 3)})
+        self.assertEqual(by_url["https://example.com/2"]["publication_date_precision"], "day")
+        self.assertIsNone(by_url["https://example.com/2"]["freshness_hours"])
+        self.assertEqual(by_url["https://example.com/3"]["freshness_hours"], 1)
+        self.assertIn("Excluded 2 signal(s)", validated["caveat"])
+        projected = surface._project_candidates(
+            [{"id": "topic-1", "topic": "Topic 2", "why_now": "Current product decision.",
+              "signal_ids": [by_url["https://example.com/2"]["id"]]}],
+            validated["signals"],
+        )
+        self.assertEqual(projected[0]["freshness"]["status"], "UNKNOWN")
+        self.assertIn("Exact freshness", projected[0]["freshness"]["evidence"])
+
+        raw["signals"] = [signal(4, "unknown"), signal(5, "2026-08-01")]
+        empty = surface._validate_surface_result(
+            raw, surface=lane, days=7, as_of="2026-09-04T12:00:00Z"
+        )
+        self.assertEqual(empty["status"], "NO_SIGNAL")
+        self.assertEqual(empty["signals"], [])
+
+    def test_three_distinct_clusters_are_supported_but_two_or_duplicates_fail(self) -> None:
+        signals = [{"id": f"signal-{index}"} for index in range(1, 4)]
+        clusters = [
+            {"id": f"topic-{index}", "topic": f"Distinct topic {index}",
+             "why_now": "Current public discussion.", "signal_ids": [f"signal-{index}"]}
+            for index in range(1, 4)
+        ]
+        self.assertEqual(len(surface._validate_clusters(clusters, signals)), 3)
+        with self.assertRaisesRegex(workflow.WorkflowError, "at least 3"):
+            surface._validate_clusters(clusters[:2], signals)
+        duplicates = [*clusters[:2], {**clusters[2], "topic": clusters[0]["topic"]}]
+        with self.assertRaisesRegex(workflow.WorkflowError, "materially distinct"):
+            surface._validate_clusters(duplicates, signals)
+        reused = [*clusters[:2], {**clusters[2], "signal_ids": ["signal-1"]}]
+        with self.assertRaisesRegex(workflow.WorkflowError, "cannot belong to multiple"):
+            surface._validate_clusters(reused, signals)
 
     def test_exactly_seven_bounded_surface_lanes_are_defined(self) -> None:
         self.assertEqual(surface.MAX_WORKERS, 7)
@@ -276,6 +321,40 @@ class SurfaceParallelTests(unittest.TestCase):
 
         self.assertEqual(len(consolidate.call_args.args[0]), 12)
         self.assertEqual(result, expected)
+
+    def test_three_signals_from_one_lane_clear_floor_with_coverage_warning(self) -> None:
+        for count in (2, 3):
+            def fake_surface(item: object, **_kwargs: object) -> dict[str, object]:
+                assert isinstance(item, dict)
+                key = str(item["key"])
+                signals = [
+                    {"id": f"google-{index}", "topic": f"Topic {index}",
+                     "why_now": "Now", "platform": "Google Search",
+                     "url": f"https://example.com/{index}", "source": f"Source {index}",
+                     "published_at": "2026-09-03", "freshness_hours": None,
+                     "engagement_units": None, "acceleration_percent": None}
+                    for index in range(1, count + 1)
+                ] if key == "google" else []
+                return {"status": "OBSERVED" if signals else "UNAVAILABLE", "signals": signals}
+
+            with self.subTest(count=count), patch.object(surface, "_run_surface", side_effect=fake_surface) as scout, patch.object(
+                surface, "_consolidate", return_value=[]
+            ) as consolidate, patch.object(surface, "_project_candidates", return_value=[]) as project, patch.object(
+                surface, "_trace_event"
+            ) as trace:
+                if count == 2:
+                    with self.assertRaisesRegex(workflow.WorkflowError, "Only 2 usable public signals"):
+                        surface.invoke_scout(None, 7, "2026-09-04T12:00:00Z")
+                    consolidate.assert_not_called()
+                else:
+                    self.assertEqual(surface.invoke_scout(None, 7, "2026-09-04T12:00:00Z"), [])
+                    self.assertEqual(len(consolidate.call_args.args[0]), 3)
+                    project.assert_called_once()
+                    self.assertIn(
+                        "surface_coverage_warning",
+                        [call.args[0]["event"] for call in trace.call_args_list],
+                    )
+                self.assertEqual(scout.call_count, 7)
 
 
 if __name__ == "__main__":

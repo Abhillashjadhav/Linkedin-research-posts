@@ -63,8 +63,8 @@ coordinator is `quality_optimizer` over the integrated draft command.
 | Boundary | Executable owner | Actual decision |
 |---|---|---|
 | Discovery window | `daily_cli.parser`, `daily_spine_cli.command` | Seven days by default; source dates are checked against the requested window. |
-| Scout availability | `surface_scout_runtime_tuning._run_surface` | 180 seconds per lane, at most two attempts for timeout/unavailability. Missing lanes are reported. |
-| Consolidation | `momentum_surface_parallel.invoke_scout`, `v1_consumability._consolidate` | Require at least six meaningful conversations; more are allowed when supported. Fewer than six is an explicit shortfall, never padded. Fewer than four lanes is a visible warning. Missing engagement stays unknown. |
+| Scout availability | `surface_scout_runtime_tuning._run_surface` | Seven independent lanes launch in parallel, with one retrieval attempt and a 180-second per-call timeout. All launched lanes are awaited; missing lanes are reported, and fewer calls do not guarantee completion within the shared deadline. Sources need a supported publication date inside the window. |
+| Consolidation | `momentum_surface_parallel.invoke_scout`, `v1_consumability._consolidate` | Require at least three dated signals and three distinct evidence-supported conversations; larger pools are allowed. Fewer than three conversations is an explicit shortfall, never padded. Fewer than three observed lanes is a visible warning, not a hard quorum. Missing engagement stays unknown. |
 | Momentum scoring | `momentum.validate_candidates`, `momentum.rank_candidates` | Deterministic observed-axis scores; fewer than four observed axes yields an unknown total. Unknown evidence is not a zero score. |
 | Authority-fit scoring | `momentum.score_authority_fit` | Full pool in batches of at most five; schema cardinality matches each batch; 120-second deadline per call. IDs and scores remain strictly validated. |
 | Authority timeout recovery | `daily_spine_cli.command`, `model_runtime.ModelTimeoutError` | Save `discovery-ranked.json` before scoring. On a deadline only, preserve topics, mark authority unavailable, continue with a visible warning. Other provider/schema errors still stop. |
@@ -87,7 +87,7 @@ as a successful authority evaluation, and it does not manufacture source evidenc
 
 The owner's subsequent simplification is now implemented:
 
-- Consolidation requires at least six conversations and accepts larger supported pools.
+- Consolidation requires at least three conversations and accepts larger supported pools.
   When momentum is incomplete but all authority scores are available, rank on that
   common authority basis and label it; never invent engagement or mix 25- and
   50-point scales. A pool with neither usable score basis still cannot be ranked.

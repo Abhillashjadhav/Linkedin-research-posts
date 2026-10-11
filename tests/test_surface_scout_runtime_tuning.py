@@ -70,37 +70,52 @@ class SurfaceScoutRuntimeTuningTests(unittest.TestCase):
         self.assertEqual(result["status"], "OBSERVED")
         self.assertIsNone(result["signals"][0]["acceleration_percent"])
 
-    def test_active_runtime_retries_timeout_once(self) -> None:
+    def test_active_runtime_does_not_retry_timeout_or_unavailable(self) -> None:
         lane = {
             "key": "reddit",
             "label": "Reddit",
             "allowed_platforms": ("Reddit",),
             "instruction": "Search only public Reddit.",
         }
-        response = {
-            "status": "NO_SIGNAL",
-            "signals": [],
-            "caveat": "No defensible signal was visible.",
-        }
-        with patch.object(
-            surface,
-            "invoke_structured",
-            side_effect=[workflow.WorkflowError("timed out"), response],
-        ) as invoke, patch.object(
-            surface.daily_cli, "_role", return_value="Scout"
-        ), patch.object(
-            surface, "_write_surface_file"
-        ), patch.object(
-            surface, "_trace_event"
+        for response, expected in (
+            (workflow.WorkflowError("timed out"), "TIMEOUT"),
+            ({"status": "UNAVAILABLE", "signals": [], "caveat": "Search unavailable."}, "UNAVAILABLE"),
         ):
-            result = tuning._run_surface(
-                lane,
-                topic=None,
-                days=7,
-                as_of="2026-09-02T00:00:00Z",
-            )
-        self.assertEqual(invoke.call_count, 2)
+            with self.subTest(expected=expected), patch.object(
+                surface, "invoke_structured", side_effect=response if isinstance(response, Exception) else None,
+                return_value=response if isinstance(response, dict) else None,
+            ) as invoke, patch.object(
+                surface.daily_cli, "_role", return_value="Scout"
+            ), patch.object(
+                surface, "_write_surface_file"
+            ), patch.object(
+                surface, "_trace_event"
+            ) as trace:
+                result = tuning._run_surface(
+                    lane, topic=None, days=7, as_of="2026-09-02T00:00:00Z"
+                )
+            self.assertEqual(invoke.call_count, 1)
+            self.assertEqual(result["status"], expected)
+            self.assertNotIn("surface_retry", [call.args[0]["event"] for call in trace.call_args_list])
+
+    def test_active_adapter_excludes_out_of_window_date(self) -> None:
+        lane = surface.SURFACES[1]
+        response = {
+            "status": "OBSERVED", "caveat": "Public evidence only.",
+            "signals": [{
+                "topic": "Old discussion", "why_now": "Old release.",
+                "platform": "Reddit", "url": "https://example.com/old",
+                "source": "Public thread", "published_at": "2026-08-01",
+                "freshness_hours": 1, "engagement_units": 4,
+            }],
+        }
+        with patch.object(surface, "invoke_structured", return_value=response), patch.object(
+            surface.daily_cli, "_role", return_value="Scout"
+        ), patch.object(surface, "_write_surface_file"), patch.object(surface, "_trace_event"):
+            result = tuning._run_surface(lane, topic=None, days=7, as_of="2026-09-04T12:00:00Z")
         self.assertEqual(result["status"], "NO_SIGNAL")
+        self.assertEqual(result["signals"], [])
+        self.assertIn("Excluded 1 signal", result["caveat"])
 
 
 if __name__ == "__main__":
