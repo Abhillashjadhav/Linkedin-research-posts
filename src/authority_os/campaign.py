@@ -47,6 +47,7 @@ VISUAL_CHECKS = (
     "post_to_artifact_claim_alignment",
 )
 ARTIFACT_FORMATS = {"NONE", "DIAGRAM", "CAROUSEL", "EVIDENCE_SCREENSHOT", "VIDEO_PLAN"}
+MAX_VIDEO_PLAN_NARRATIVE_CHARS = 4000
 
 
 def _object_schema(properties: Mapping[str, object], required: Sequence[str]) -> dict[str, object]:
@@ -841,6 +842,9 @@ def _invoke_artifact_editor(
             raise workflow.WorkflowError("Artifact panel copy must not be blank.")
         if len(heading) > 54 or len(body) > 180:
             raise workflow.WorkflowError("Artifact panel copy exceeds the render-safe limit.")
+        if artifact_format == "VIDEO_PLAN":
+            heading = _checked_video_plan_text(heading, label="shot heading", limit=54)
+            body = _checked_video_plan_text(body, label="shot body", limit=180)
         if not isinstance(claim_ids, list) or not set(claim_ids) <= post_ids:
             raise workflow.WorkflowError("Artifact panels cannot introduce claim IDs.")
         safe_panels.append(
@@ -850,11 +854,33 @@ def _invoke_artifact_editor(
         "format": artifact_format,
         "rationale": _bounded_diagnosis(result.get("rationale")),
         "visual_narrative": (
-            str(result.get("visual_narrative", "")).strip()[:4000]
+            _checked_video_plan_text(result.get("visual_narrative"), label="narrative")
             if artifact_format == "VIDEO_PLAN" else _bounded_diagnosis(result.get("visual_narrative"))
         ),
         "panels": safe_panels,
     }
+
+
+def _checked_video_plan_text(
+    value: object, *, label: str, limit: int = MAX_VIDEO_PLAN_NARRATIVE_CHARS,
+) -> str:
+    """Check the entire model field before bounding its display text."""
+
+    if not isinstance(value, str):
+        raise workflow.WorkflowError(f"Video plan {label} must be text.")
+    if workflow._has_unsafe_control_characters(value, allow_newline=True):
+        raise workflow.WorkflowError(f"Video plan {label} contains unsafe control characters.")
+    return value.strip()[:limit]
+
+
+def _video_plan_literal(value: str) -> str:
+    """Indent every line as Markdown code, including blank lines and delimiters.
+
+    The literal block cannot produce headings, links, raw HTML or closing fences.
+    Only coordinator-owned copy may define the handoff's sections and status.
+    """
+
+    return "\n".join(f"    {line}" for line in value.split("\n"))
 
 
 def _wrap_words(text: str, width: int) -> list[str]:
@@ -977,16 +1003,24 @@ def _render_artifact(
     if not isinstance(panels, list):
         raise workflow.WorkflowError("Artifact panels are malformed.")
     if artifact_format == "VIDEO_PLAN":
+        narrative = _checked_video_plan_text(artifact.get("visual_narrative"), label="narrative")
+        shot_copy = [
+            (
+                _checked_video_plan_text(panel["heading"], label="shot heading", limit=54),
+                _checked_video_plan_text(panel["body"], label="shot body", limit=180),
+            )
+            for panel in panels
+        ]
         lines = [
             "# Video production handoff", "", "Status: PLAN_ONLY; finished MP4 not rendered.", "",
-            str(artifact.get("visual_narrative", "")), "",
+            "## Model production notes (unverified)", "", _video_plan_literal(narrative), "",
             thursday_capability.guidance("video"), "", "## Shot specifications", "",
             "Reference production default: 1920 × 1080, 30 fps, about 78 seconds; proposed pacing "
             "0–6 seconds actual output, 6–15 benefit, 15–55 camera over one diagram, 55–68 conditions, "
             "68–78 test and credit. Adapt pacing to the footage; these are not measured model timings.", "",
         ]
-        for index, panel in enumerate(panels, start=1):
-            lines.extend([f"### Shot {index}: {panel['heading']}", str(panel["body"]), ""])
+        for index, (heading, body) in enumerate(shot_copy, start=1):
+            lines.extend([f"### Shot {index}", "", _video_plan_literal(f"{heading}\n\n{body}"), ""])
         lines.extend([
             "## Required before delivery", "",
             "- Obtain source-attributed real demo footage and verify reuse permissions.",
