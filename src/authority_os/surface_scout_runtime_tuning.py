@@ -23,8 +23,13 @@ def _shallow_schema(allowed_platforms: Sequence[str]) -> dict[str, object]:
             "platform": {"type": "string", "enum": list(allowed_platforms)},
             "url": {"type": "string"},
             "source": {"type": "string"},
-            "published_at": {"type": "string"},
-            "freshness_hours": {"type": "number", "minimum": 0},
+            "published_at": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "description": "Source date YYYY-MM-DD, month YYYY-MM, or timestamp with timezone (Z or +HH:MM/-HH:MM); null means exclude this signal.",
+            },
+            "freshness_hours": {
+                "anyOf": [{"type": "number", "minimum": 0}, {"type": "null"}]
+            },
             "engagement_units": {
                 "anyOf": [{"type": "number", "minimum": 0}, {"type": "null"}]
             },
@@ -114,8 +119,8 @@ For each signal return only:
 - platform: exactly one allowed platform for this lane;
 - url: representative public HTTPS URL;
 - source: public author/community/publisher name;
-- published_at: source timestamp when visible;
-- freshness_hours: age of the newest substantive signal as of {as_of};
+- published_at: visible source date as YYYY-MM-DD, YYYY-MM, or a timestamp with timezone (Z or numeric offset); omit the signal if the publication date is unknown. Do not infer it from search-result age or fetch time;
+- freshness_hours: age of the newest substantive signal as of {as_of}, or null when only day/month publication precision is known;
 - engagement_units: visible public interactions excluding raw page/video views, or null if unavailable.
 
 Social engagement may establish momentum only. It does not prove factual claims. Do NOT calculate acceleration. Do NOT perform cross-platform comparison. Do NOT rank against other surfaces. Do not invent timestamps, URLs, engagement, consequences, or popularity rankings. If this lane is unavailable or has no defensible current signal, return that honestly. Return evidence only; do not use the private authority profile and do not draft."""
@@ -125,57 +130,43 @@ Social engagement may establish momentum only. It does not prove factual claims.
     status = "UNAVAILABLE"
     caveat = "Surface Scout did not execute."
     signals: list[dict[str, object]] = []
-    for attempt in range(1, surface_runtime.MAX_SURFACE_ATTEMPTS + 1):
-        try:
-            result = surface_runtime.invoke_structured(
-                config=MODEL,
-                role_prompt=surface_runtime.daily_cli._role("scout"),
-                task_prompt=prompt,
-                schema=_shallow_schema(surface["allowed_platforms"]),  # type: ignore[arg-type,index]
-                timeout=SURFACE_TIMEOUT,
-                web_search=True,
-                stage_label=f"Surface Scout {label}",
-            )
-            raw_signals = result.get("signals")
-            if isinstance(raw_signals, list):
-                result = {
-                    **result,
-                    "signals": [
-                        {**item, "acceleration_percent": None}
-                        if isinstance(item, Mapping)
-                        else item
-                        for item in raw_signals
-                    ],
-                }
-            validated = surface_runtime._validate_surface_result(
-                result,
-                surface=surface,
-            )
-            status = str(validated["status"])
-            caveat = str(validated["caveat"])
-            signals = list(validated["signals"])  # type: ignore[arg-type]
-        except workflow.WorkflowError as exc:
-            from . import runtime_budget
-            if isinstance(exc, runtime_budget.GlobalDeadlineExceeded):
-                raise
-            status = _failure_status(exc)
-            caveat = str(exc)
-            signals = []
-        if (
-            status not in {"TIMEOUT", "UNAVAILABLE"}
-            or attempt == surface_runtime.MAX_SURFACE_ATTEMPTS
-        ):
-            break
-        print(f"Surface Scout [{label}]: {status}; retrying once.", flush=True)
-        surface_runtime._trace_event(
-            {
-                "event": "surface_retry",
-                "surface": key,
-                "label": label,
-                "attempt": attempt + 1,
-                "reason": status,
-            }
+    try:
+        result = surface_runtime.invoke_structured(
+            config=MODEL,
+            role_prompt=surface_runtime.daily_cli._role("scout"),
+            task_prompt=prompt,
+            schema=_shallow_schema(surface["allowed_platforms"]),  # type: ignore[arg-type,index]
+            timeout=SURFACE_TIMEOUT,
+            web_search=True,
+            stage_label=f"Surface Scout {label}",
         )
+        raw_signals = result.get("signals")
+        if isinstance(raw_signals, list):
+            result = {
+                **result,
+                "signals": [
+                    {**item, "acceleration_percent": None}
+                    if isinstance(item, Mapping)
+                    else item
+                    for item in raw_signals
+                ],
+            }
+        validated = surface_runtime._validate_surface_result(
+            result,
+            surface=surface,
+            days=days,
+            as_of=as_of,
+        )
+        status = str(validated["status"])
+        caveat = str(validated["caveat"])
+        signals = list(validated["signals"])  # type: ignore[arg-type]
+    except workflow.WorkflowError as exc:
+        from . import runtime_budget
+        if isinstance(exc, runtime_budget.GlobalDeadlineExceeded):
+            raise
+        status = _failure_status(exc)
+        caveat = str(exc)
+        signals = []
 
     payload = {
         "schema_version": 2,

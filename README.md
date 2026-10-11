@@ -139,10 +139,15 @@ falling back. The shared 480-second discovery deadline remains in force, so more
 reasoning may exhaust it before delivery. Model profiles in the dashboard describe
 configured stages, including optional ones; they do not claim every stage ran.
 
-V1 uses a seven-day lookback by default and retries unavailable Scout surfaces once.
-Discovery requires at least six meaningful conversations, with more allowed when
-supported. Insufficient evidence is reported rather than inventing engagement or
-padding the list. No author proof inventory is required: thesis generation uses
+V1 uses a seven-day lookback by default. Seven independent public-web surface
+scouts run in parallel, each with one retrieval attempt. Discovery needs at least
+three dated public signals to consolidate into at least three distinct, supported
+conversations; more are allowed when the evidence supports them. Fewer than three
+observed lanes produces a coverage warning, not a separate hard stop. The run waits
+for all launched lanes, so fewer model calls do not guarantee completion within
+the shared deadline. Insufficient evidence is reported rather than inventing
+engagement, publication dates, or padded conversations. No author proof inventory
+is required: thesis generation uses
 public evidence and marks the legacy proof reference NOT_REQUIRED. Existing
 profiles remain readable. The retained proof_fit axis measures public-evidence
 grounding, not personal achievements.

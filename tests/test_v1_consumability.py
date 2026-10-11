@@ -9,8 +9,8 @@ from authority_os import workflow
 
 
 class V1ConsumabilityTests(unittest.TestCase):
-    def test_at_least_six_conversations_survive_the_live_mapper(self) -> None:
-        for count in (6, 7, 11):
+    def test_at_least_three_conversations_survive_the_live_mapper(self) -> None:
+        for count in (3, 7, 11):
             with self.subTest(count=count):
                 signals = [{
                     "id": f"s-{i}", "topic": f"Useful product decision {i}",
@@ -28,17 +28,18 @@ class V1ConsumabilityTests(unittest.TestCase):
                 self.assertEqual(len(projected), count)
                 self.assertTrue(all(item["total"] is None for item in projected))
                 schema = invoke.call_args.kwargs["schema"]["properties"]["clusters"]
-                self.assertEqual(schema["minItems"], 6)
+                self.assertEqual(schema["minItems"], 3)
                 self.assertEqual(schema["maxItems"], count)
+                self.assertIn("Three is a minimum", invoke.call_args.kwargs["task_prompt"])
 
-    def test_fewer_than_six_conversations_is_an_explicit_shortfall(self) -> None:
+    def test_fewer_than_three_conversations_is_an_explicit_shortfall(self) -> None:
         signals = [{"id": f"s-{i}"} for i in range(1, 8)]
-        for count in (0, 1, 5):
+        for count in (0, 1, 2):
             clusters = [{"id": f"topic-{i}", "topic": f"Idea {i}",
                          "why_now": "Public discussion", "signal_ids": [f"s-{i}"]}
                         for i in range(1, count + 1)]
             with self.subTest(count=count), patch.object(surface, "invoke_structured", return_value={"clusters": clusters}):
-                with self.assertRaisesRegex(workflow.WorkflowError, "at least six"):
+                with self.assertRaisesRegex(workflow.WorkflowError, "at least 3"):
                     tuning._consolidate(signals, as_of="2026-09-08T01:00:00Z")
 
     def test_plain_consequence_hook_passes(self) -> None:
