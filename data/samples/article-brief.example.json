@@ -1,0 +1,35 @@
+{
+  "contract_version": "sunday-article-v1",
+  "topic_id": "example-review-boundary",
+  "topic": "Making review decisions explainable",
+  "reader": {
+    "audience": "A product team reviewing an AI-assisted decision",
+    "stake": "The reviewer must explain why a recommendation was accepted",
+    "desired_outcome": "Use a repeatable check before signing off a decision"
+  },
+  "thesis": "A useful review asks what the decision rests on and what would change it.",
+  "technical_concept": "Decision boundary",
+  "worked_example": "Walk through a hypothetical support-ticket classification, then change one input and compare the decision.",
+  "author": {
+    "name": "Example Author",
+    "byline": "By Example Author",
+    "attestations": []
+  },
+  "sources": [
+    {
+      "id": "example-context",
+      "url": "https://example.org/",
+      "title": "Illustrative placeholder source",
+      "content": "Schema example only. Replace this illustrative text with source passages actually read before writing a real article."
+    }
+  ],
+  "claims": [
+    {
+      "id": "proposed-check",
+      "text": "Ask a reviewer to record what would change the decision in the hypothetical example.",
+      "kind": "proposal",
+      "source_ids": [],
+      "limitations": "A proposed exercise, not a measured outcome."
+    }
+  ]
+}
