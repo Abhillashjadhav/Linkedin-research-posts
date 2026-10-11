@@ -18,6 +18,7 @@ from .model_runtime import ModelConfig, invoke_structured
 MAX_WORKERS = 7
 SURFACE_TIMEOUT = 90
 CONSOLIDATION_TIMEOUT = 60
+ULTRA_CONSOLIDATION_TIMEOUT = 600
 SURFACE_COVERAGE_WARNING_THRESHOLD = 3
 MIN_SIGNALS_FOR_CONSOLIDATION = 3
 SIGNALS_PER_SURFACE = 5
@@ -37,6 +38,14 @@ attach_authority_fit = momentum.attach_authority_fit
 print_top = momentum.print_top
 
 MODEL = ModelConfig("codex", "gpt-5.6-sol", "high")
+
+
+def consolidation_timeout() -> int:
+    """Give effective Ultra consolidation more time within the shared run deadline."""
+    if MODEL.validate().reasoning == "ultra":
+        return ULTRA_CONSOLIDATION_TIMEOUT
+    return CONSOLIDATION_TIMEOUT
+
 
 SURFACES: tuple[dict[str, object], ...] = (
     {
@@ -483,7 +492,7 @@ END_UNTRUSTED_SURFACE_SIGNALS
         role_prompt="You consolidate supplied evidence only. Do not browse, invent, or draft.",
         task_prompt=prompt,
         schema=_cluster_schema(ids),
-        timeout=CONSOLIDATION_TIMEOUT,
+        timeout=consolidation_timeout(),
         web_search=False,
         stage_label="Surface Scout consolidation",
     )
