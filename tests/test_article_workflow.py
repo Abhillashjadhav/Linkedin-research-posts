@@ -116,7 +116,7 @@ class WorkflowTests(unittest.TestCase):
         def fake(**kw):
             role = kw["stage_label"].split()[-1]
             payload = json.loads(kw["task_prompt"])
-            calls.append((role, payload))
+            calls.append((role, payload, kw["role_prompt"]))
             if role == "writer":
                 return article()
             if role == "section_editor":
@@ -130,8 +130,18 @@ class WorkflowTests(unittest.TestCase):
             result = aw.run(brief(), models(), run)
             self.assertEqual(result["status"], "READY_FOR_HUMAN_REVIEW")
             self.assertEqual(result["review_rounds"], 2)
-            self.assertEqual([r for r, _ in calls], ["writer", "narrative_reviewer", "factual_reviewer",
+            self.assertEqual([r for r, _, _ in calls], ["writer", "narrative_reviewer", "factual_reviewer",
                                                        "section_editor", "narrative_reviewer", "factual_reviewer"])
+            prompts = {role: prompt for role, _, prompt in calls}
+            self.assertIn("reader's professional stake", prompts["writer"])
+            self.assertIn("supplied worked example", prompts["writer"])
+            self.assertIn("author's supplied voice examples", prompts["writer"])
+            self.assertIn("first paragraph should give this reader", prompts["narrative_reviewer"])
+            self.assertIn("subgroup/denominator swaps", prompts["factual_reviewer"])
+            self.assertIn("reader's professional stake", prompts["section_editor"])
+            self.assertIn("first paragraph should give this reader", prompts["section_editor"])
+            self.assertIn("ONLY for blocked section IDs", prompts["section_editor"])
+            self.assertEqual(calls[3][1]["blocked_section_ids"], ["a"])
             self.assertEqual(json.loads((run / "review.json").read_text())["artifact_sha256"], result["artifact_sha256"])
             self.assertEqual(json.loads((run / "manifest.json").read_text())["publishing_status"], "DISABLED")
             self.assertEqual((run / "article.json").stat().st_mode & 0o777, 0o600)

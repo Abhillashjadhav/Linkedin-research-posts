@@ -45,6 +45,32 @@ SCHEMAS = {
                                "edits": {"type": "array", "items": SECTION}},
                               ["artifact_sha256", "edits"]),
 }
+_ROLE_FILES = {
+    "writer": ("article_writer.md",),
+    "narrative_reviewer": ("article_narrative_reviewer.md",),
+    "factual_reviewer": ("article_factual_reviewer.md",),
+    "section_editor": ("article_writer.md", "article_narrative_reviewer.md"),
+}
+
+
+def _role_profile(role: str) -> str:
+    """Load only checked-in Sunday instructions, never paths from a brief."""
+    if role not in _ROLE_FILES:
+        raise WorkflowError("Unknown Sunday article role.")
+    directory = Path(__file__).resolve().parents[2] / ".claude" / "agents"
+    profiles = []
+    for name in _ROLE_FILES[role]:
+        path = directory / name
+        if path.is_symlink() or not path.is_file():
+            raise WorkflowError(f"Sunday article role profile is unavailable: {name}.")
+        try:
+            profile = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise WorkflowError(f"Sunday article role profile cannot be read: {name}.") from exc
+        if not profile.strip() or len(profile) > 20_000:
+            raise WorkflowError(f"Sunday article role profile is invalid: {name}.")
+        profiles.append(profile.strip())
+    return "\n\n".join(profiles)
 
 
 def load_models(raw: object) -> dict[str, ModelConfig]:
@@ -179,7 +205,7 @@ def _call(role: str, models: Mapping[str, ModelConfig], brief: dict, payload: di
         "factual_reviewer": "Independently inspect every used claim against the supplied source content or author attestation, limitations and section prose. Return one claim check per used claim with only its approved source IDs. Unsupported or uncertain claims prevent PASS. Bind to the exact artifact SHA-256. This model review does not certify facts; human verification remains required.",
         "section_editor": "Return replacements ONLY for blocked section IDs, preserving ID and heading and all unrelated sections. Use only brief evidence. Keep topic, thesis and title fixed. Target the reported findings; no whole-article regeneration. Bind edits to the exact artifact SHA-256.",
     }
-    response = invoke_structured(config=models[role], role_prompt=instructions[role],
+    response = invoke_structured(config=models[role], role_prompt=_role_profile(role) + "\n\n" + instructions[role],
                                  task_prompt=json.dumps({"brief": brief, **payload}, sort_keys=True),
                                  schema=SCHEMAS[role], web_search=False, stage_label=f"Sunday article {role}")
     if not isinstance(response, dict):
