@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable, Mapping
 from urllib.parse import urlsplit
 
-from . import article_contract
+from . import article_contract, article_workflow
 from .model_runtime import ModelConfig, invoke_structured
 from .workflow import WorkflowError
 
@@ -133,34 +133,17 @@ def _reviewed_hash(article: dict[str, object], brief: dict[str, object], article
                 or type(manifest.get("review_rounds")) is not int
                 or not 1 <= manifest["review_rounds"] <= 3):
             raise WorkflowError("Live article manifest lacks recorded model reviews.")
-        checks = factual.get("claim_checks")
-        if (review.get("manual_fact_verification_required") is not True
-                or not isinstance(checks, list) or not checks
-                or narrative.get("verdict") != "PASS"
-                or factual.get("verdict") != "PASS"):
+        if review.get("manual_fact_verification_required") is not True:
             raise WorkflowError("Article review lacks a passing narrative/factual judgment.")
-        for nested in (narrative, factual):
-            findings = nested.get("findings")
-            if not isinstance(findings, list) or any(
-                    not isinstance(finding, dict) or finding.get("severity") == "blocking"
-                    for finding in findings):
-                raise WorkflowError("Article review contains malformed or blocking findings.")
-        claim_ids = {cid for section in article["sections"] for cid in section["claim_ids"]}
-        source_map = {claim["id"]: set(claim["source_ids"]) for claim in brief["claims"]}
-        reviewed = set()
-        for item in checks:
-            check = _object(item, "claim check")
-            cid = check.get("claim_id")
-            refs = check.get("source_ids")
-            if (cid not in claim_ids or cid in reviewed or check.get("status") != "SUPPORTED"
-                    or not isinstance(refs, list) or any(not isinstance(sid, str) for sid in refs)
-                    or len(refs) != len(set(refs))
-                    or not set(refs).issubset(source_map[cid])
-                    or not isinstance(check.get("message"), str) or not check["message"].strip()):
-                raise WorkflowError("Article review contains unsupported or malformed claim checks.")
-            reviewed.add(cid)
-        if reviewed != claim_ids:
-            raise WorkflowError("Article review does not cover every article claim.")
+        article_workflow.validate_review(narrative, "narrative_reviewer", article, brief)
+        article_workflow.validate_review(factual, "factual_reviewer", article, brief)
+        if narrative["verdict"] != "PASS" or factual["verdict"] != "PASS":
+            raise WorkflowError("Article review lacks a passing narrative/factual judgment.")
+        claim_by_id = {claim["id"]: claim for claim in brief["claims"]}
+        for check in factual["claim_checks"]:
+            if (claim_by_id[check["claim_id"]]["kind"] == "finding"
+                    and not check["source_ids"]):
+                raise WorkflowError("Article finding review requires a source reference.")
     elif manifest.get("model_config") != {} or manifest.get("review_rounds") != 0:
         raise WorkflowError("Fixture article must have no model invocation history.")
     return statuses[0]  # type: ignore[return-value]
@@ -242,8 +225,12 @@ def package_reviewed_article(
     never calls a model. Live generation requires both consent and a model config.
     """
     root = Path(run_dir)
-    if ".." in root.parts or root.is_symlink() or not root.is_dir():
-        raise WorkflowError("Article run directory must be a real directory.")
+    private_root = (Path(__file__).resolve().parents[2] / "outputs").resolve()
+    if (".." in root.parts or root.is_symlink() or not root.is_dir()
+            or any(parent.is_symlink() for parent in root.parents)
+            or not root.resolve().is_relative_to(private_root)
+            or root.resolve() == private_root):
+        raise WorkflowError("Article run must be a real directory inside the ignored outputs directory.")
     article, article_file_hash = _load(root / "article.json")
     brief, brief_hash = _load(root / "brief.json")
     review, review_hash = _load(root / "review.json")
@@ -309,7 +296,8 @@ def package_reviewed_article(
         article_claim_ids.update(refs)
         validated_sections.append((sid, _string(section.get("heading"), "section heading", max_length=500),
                                    _string(section.get("text"), "section text"), refs))
-    if REPO_CTA.search("\n".join((title, thesis, *(body for _, _, body, _ in validated_sections)))):
+    rendered_article = article_contract.article_text(article, brief)
+    if REPO_CTA.search(rendered_article):
         raise WorkflowError("Reviewed article contains an explicit repository call to action.")
     if not article_claim_ids:
         raise WorkflowError("Article has no sourced claims to package.")
@@ -322,6 +310,12 @@ def package_reviewed_article(
                            "license": resource.get("license")}
         if set(resource_ledger["claim_ids"]) - article_claim_ids:
             raise WorkflowError("Verified resource claim IDs must be used in the reviewed article.")
+        claim_kinds = {claim["id"]: claim["kind"] for claim in brief["claims"]}
+        resource_ledger["eligible_claim_ids"] = sorted(
+            cid for cid in resource_ledger["claim_ids"]
+            if claim_kinds[cid] == "finding"
+            and set(claim_by_id[cid]) & set(resource_ledger["source_ids"])
+        )
     asset_files = assets or {}
     if not isinstance(asset_files, Mapping):
         raise WorkflowError("Assets must map placements to local files.")
@@ -343,9 +337,9 @@ def package_reviewed_article(
         }
     else:
         context = {"article": article, "claims": claims, "sources": source_by_id,
-                   "article_url": article_url}
+                   "resource": resource_ledger, "article_url": article_url}
         copy = _object(invoker(
-            config=model_config, role_prompt="Write a concise LinkedIn post and first source comment strictly from the reviewed article. Preserve meaning and attach IDs for every factual claim. Do not invent an article URL, repo CTA, proof, or source.",
+            config=model_config, role_prompt="Write a concise LinkedIn post and first source comment strictly from the reviewed article. Preserve meaning and attach IDs for every factual claim. Use the supplied resource URL only when its eligible linked finding claim is cited. Never invent an article URL, license, proof, or source.",
             task_prompt=json.dumps(context, ensure_ascii=False, sort_keys=True),
             schema=COPY_SCHEMA, web_search=False, stage_label="Article companion copy",
         ), "model copy")
@@ -360,9 +354,16 @@ def package_reviewed_article(
         permitted_urls = {source_by_id[sid]["url"] for sid in source_ids}
         if article_url is not None:
             permitted_urls.add(article_url)
+        if resource_ledger is not None and set(ids) & set(resource_ledger["eligible_claim_ids"]):
+            permitted_urls.add(resource_ledger["url"])
         for match in re.findall(r"(?:https?://|www\.)[^\s)<>]+", body):
             if match.rstrip(".,") not in permitted_urls:
                 raise WorkflowError(f"{name} contains a URL outside cited sources or the configured article URL.")
+        if (resource_ledger is not None and resource_ledger["url"] in body
+                and resource_ledger["license"] is None
+                and re.search(r"\b(?:licensed under|MIT license|Apache license|GPL license|BSD license|CC[- ]BY license)\b",
+                              body, re.IGNORECASE)):
+            raise WorkflowError(f"{name} mentions a resource license that was not supplied.")
         body_hash = _hash(body.encode("utf-8"))
         if fixture:
             judgment = {"covered_claim_ids": ids, "source_ids": source_ids,
@@ -373,7 +374,8 @@ def package_reviewed_article(
                 config=model_config,
                 role_prompt="Independently assess factual alignment of this derived copy with the reviewed article and cited claim/source ledger. Report missing or unreviewed claims; do not infer truth from URLs or IDs. Return strict JSON.",
                 task_prompt=json.dumps({"output": name, "text": body, "claim_ids": ids,
-                                        "article": article, "claims": claims, "sources": source_by_id},
+                                        "article": article, "claims": claims, "sources": source_by_id,
+                                        "resource": resource_ledger},
                                        ensure_ascii=False, sort_keys=True),
                 schema=REVIEW_SCHEMA, web_search=False,
                 stage_label=f"Article {name} factual review",
@@ -400,7 +402,7 @@ def package_reviewed_article(
         row["eligible"] for row in copy_review.values()) else "NEEDS_REVIEW")
     package_status = "INCOMPLETE" if not image_data else (
         "COMPLETE_FOR_HUMAN_REVIEW" if status == "READY_FOR_HUMAN_REVIEW" else status)
-    article_md = f"# {title}\n\n{brief['author']['byline']}\n\n{thesis}\n\n" + "\n\n".join(
+    article_md = f"# {title}\n\n{brief['author']['byline']}\n\n" + "\n\n".join(
         f"## {heading}\n\n{text}" for _, heading, text, _ in validated_sections) + "\n"
     source_lines = ["# Sources", "", "Source IDs trace claims; links do not independently verify their contents.", ""]
     for sid, source in sorted(source_by_id.items()):
@@ -417,7 +419,7 @@ def package_reviewed_article(
             source_lines.append(f"- Supplied license: {resource_ledger['license']}")
     html_parts = ["<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>",
                   html.escape(title), "</title></head><body><article><h1>", html.escape(title),
-                  "</h1><p>", html.escape(thesis), "</p>"]
+                  "</h1><p class=\"byline\">", html.escape(brief["author"]["byline"]), "</p>"]
     import base64
     # The cover remains outside the article body and is recorded in the ledger.
     for sid, heading, body, _ in validated_sections:
@@ -469,14 +471,15 @@ def package_reviewed_article(
     destination = Path(output_dir) if output_dir is not None else root / "package"
     if (".." in destination.parts or destination.is_symlink()
             or any(parent.is_symlink() for parent in destination.parents)
+            or not destination.resolve().is_relative_to(root.resolve())
             or destination.resolve() == root.resolve()):
-        raise WorkflowError("Package output directory conflicts with run inputs.")
+        raise WorkflowError("Package output directory must be inside the ignored article run.")
     destination.mkdir(parents=True, exist_ok=True)
     if destination.is_symlink() or any((destination / name).is_symlink() for name in payloads):
         raise WorkflowError("Package output cannot replace symbolic links.")
     present = [name for name in payloads if (destination / name).exists()]
     stale_assets: list[Path] = []
-    if present:
+    if present or (destination / "manifest.json").exists():
         old_manifest = destination / "manifest.json"
         if not old_manifest.is_file():
             raise WorkflowError("Package output contains files not owned by the article packager.")
@@ -487,6 +490,18 @@ def package_reviewed_article(
         if previous.get("managed_by") != "authority_os.article_package":
             raise WorkflowError("Package output contains files not owned by the article packager.")
         previous_hashes = _object(previous.get("files_sha256"), "previous file hashes")
+        for name, digest in previous_hashes.items():
+            if (not isinstance(name, str) or not re.fullmatch(
+                    r"(?:article\.md|post\.md|source-comment\.md|sources\.md|article\.html|evaluation\.json|final-package\.md|(?:cover|inline-[A-Za-z0-9_-]+)\.(?:png|jpg))", name)
+                    or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+                raise WorkflowError("Existing package file ledger is malformed.")
+            old = destination / name
+            if old.is_symlink() or not old.is_file() or _hash(old.read_bytes()) != digest:
+                raise WorkflowError("Existing package file changed since its manifest was written.")
+        if not set(OUTPUT_NAMES) - {"manifest.json"} <= previous_hashes.keys():
+            raise WorkflowError("Existing package file ledger is incomplete.")
+        if any(name in present and name not in previous_hashes and name != "manifest.json" for name in present):
+            raise WorkflowError("Package output contains an unowned file.")
         for old in _object(previous.get("asset_placements"), "previous asset placements").values():
             if not isinstance(old, str) or not re.fullmatch(r"(?:cover|inline-[A-Za-z0-9_-]+)\.(?:png|jpg)", old):
                 raise WorkflowError("Existing package asset ledger is malformed.")

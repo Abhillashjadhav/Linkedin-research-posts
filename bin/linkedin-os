@@ -22,6 +22,11 @@ raise SystemExit(daily_discovery_cli.main())
 ' "$@"
 fi
 
+if [ "${1:-}" = "article-package" ]; then
+  shift
+  PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.article_package "$@"
+fi
+
 if [ "${1:-}" = "article-feedback" ]; then
   shift
   PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON" -m authority_os.article_feedback "$@"
@@ -60,6 +65,7 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
     printf '  discover            Run parallel discovery; add --generate-post to continue through drafting.\n'
     printf '  export-monitoring   Export one redacted seven-check dashboard case for a completed run.\n'
     printf '  article-feedback    Record human acceptance and editing effort for a reviewed article.\n'
+    printf '  article-package     Package a reviewed article, companion post, comment and supplied images.\n'
   fi
   exit "$STATUS"
 fi

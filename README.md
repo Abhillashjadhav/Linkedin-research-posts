@@ -84,6 +84,17 @@ Completed stages are written to the run folder. An interrupted or invalid
 stage leaves a blocked trace; there is no cross-run resume for this route yet.
 Use a new output folder for a retry.
 
+After article review, `./bin/linkedin-os article-package --run outputs/sunday-article-001`
+creates delivery files. Live companion copy also needs `--model-config` and
+`--allow-model-egress`; fixture packaging makes no model calls. Optional local
+images are embedded in HTML, with the cover kept separate. Missing images are
+reported in the package status; LinkedIn clipboard compatibility still needs
+a manual check. See [article packaging](docs/ARTICLE_PACKAGE.md).
+
+Use `./bin/linkedin-os article-feedback record` after your own review to record
+acceptance and editing effort. See [human article feedback](docs/ARTICLE_FEEDBACK.md).
+Neither command publishes content or treats a model review as human approval.
+
 ## Run V1 discovery through a review-ready post
 
 ```bash

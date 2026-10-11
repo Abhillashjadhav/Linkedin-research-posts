@@ -2,7 +2,9 @@
 
 `package_reviewed_article(run_dir, *, output_dir=None, model_config=None,
 invoker=invoke_structured, live_consent=False, assets=None, article_url=None)`
-creates a private `run_dir/package/` by default. The run directory must contain
+creates a private `run_dir/package/` by default. Both the run and any custom
+package destination must stay inside the repository's ignored `outputs/`
+tree; the destination must be a child of the supplied run. The run directory must contain
 `article.json`, `brief.json`, `review.json`, `article-claim-map.json`, and
 `manifest.json`. The last three
 must contain the canonical `article_contract.article_hash(article, brief)`
@@ -28,12 +30,20 @@ copy without model calls. Live copy requires `live_consent=True` and a
 post and first-comment text with claim IDs and independently reviews each
 derived text for claim coverage and source references. Any new or unreviewed
 claim, missing coverage, or failed alignment blocks copy review eligibility.
+The optional supplied resource enters both copy and review context. Its URL
+may appear only with a cited finding linked to its supplied sources. Its
+license is listed only when supplied in the validated brief; an invented
+license alongside its URL is rejected.
 The generated evaluation binds each copy review to its exact text and article
 hash. Neither path approves or publishes content.
 
 The output contains `article.md`, `post.md`, `source-comment.md`, `sources.md`,
 escaped `article.html`, `evaluation.json`, `manifest.json`, and
-`final-package.md`. Only those names are atomically replaced on rerun. The
+`final-package.md`. The Markdown and HTML article preserve the reviewed title,
+byline, headings and body; neither inserts a new thesis paragraph. On rerun,
+all existing managed file hashes are checked before any replacement, so a
+human-edited post or article is preserved and packaging stops. Only managed
+names are atomically replaced. The
 manifest records hashes for generated content and source inputs. It leaves
 `article_url` null until the caller explicitly supplies a public HTTPS URL;
 the package does not create a visible draft link or invent one.

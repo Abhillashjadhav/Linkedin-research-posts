@@ -13,6 +13,7 @@ from pathlib import Path
 
 from authority_os.article_package import main, package_reviewed_article
 from authority_os.article_contract import article_hash
+from authority_os import article_workflow
 from authority_os.model_runtime import ModelConfig
 from authority_os.workflow import WorkflowError
 
@@ -25,7 +26,9 @@ def _write_json(path: Path, value: object) -> str:
 
 class ArticlePackageTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
+        private_outputs = Path(__file__).resolve().parents[1] / "outputs"
+        private_outputs.mkdir(exist_ok=True)
+        self.tmp = tempfile.TemporaryDirectory(dir=private_outputs)
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.article = {
@@ -106,6 +109,8 @@ class ArticlePackageTests(unittest.TestCase):
         rendered = (self.root / "package/article.html").read_text()
         self.assertIn("&lt;script&gt;", rendered)
         self.assertIn("&lt;img src=x onerror=alert(1)&gt;", rendered)
+        self.assertIn("class=\"byline\">By Person", rendered)
+        self.assertNotIn(self.article["thesis"], rendered)
         self.assertNotIn("<script>", rendered)
         self.assertNotIn("<img src=x", rendered)
         self.assertIn("a=1&b=2", (self.root / "package/sources.md").read_text())
@@ -115,6 +120,13 @@ class ArticlePackageTests(unittest.TestCase):
         with redirect_stdout(output):
             self.assertEqual(main(["--run", str(self.root)]), 0)
         self.assertEqual(json.loads(output.getvalue())["status"], "FIXTURE_ONLY")
+
+    def test_runtime_fixture_artifacts_package_without_model(self) -> None:
+        run = self.root / "runtime-fixture"
+        article_workflow.fixture(run)
+        result = package_reviewed_article(run, invoker=lambda **_: self.fail("Model called"))
+        self.assertEqual((result["status"], result["full_package_status"]),
+                         ("FIXTURE_ONLY", "INCOMPLETE"))
 
     def test_stale_hash_and_incompatible_status_block(self) -> None:
         self.article["title"] = "mutated"
@@ -169,7 +181,7 @@ class ArticlePackageTests(unittest.TestCase):
         review["factual"]["artifact_sha256"] = article_hash(self.article, self.brief)
         review["factual"]["claim_checks"][0]["source_ids"] = ["unlinked-source"]
         _write_json(self.root / "review.json", review)
-        with self.assertRaisesRegex(WorkflowError, "claim checks"):
+        with self.assertRaisesRegex(WorkflowError, "claim/source mapping"):
             package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
                                      live_consent=True, invoker=invoke)
 
@@ -195,6 +207,83 @@ class ArticlePackageTests(unittest.TestCase):
         with self.assertRaisesRegex(WorkflowError, "not owned"):
             package_reviewed_article(self.root, output_dir=foreign)
         self.assertEqual((foreign / "article.md").read_text(), "Do not replace")
+
+    def test_rerun_preserves_user_edits_and_rejects_tracked_output(self) -> None:
+        package_reviewed_article(self.root)
+        target = self.root / "package/post.md"
+        original_post = target.read_bytes()
+        target.write_text("Human edits", encoding="utf-8")
+        with self.assertRaisesRegex(WorkflowError, "changed"):
+            package_reviewed_article(self.root)
+        self.assertEqual(target.read_text(), "Human edits")
+        target.write_bytes(original_post)
+        article = self.root / "package/article.md"
+        article.write_text("Human article revision", encoding="utf-8")
+        with self.assertRaisesRegex(WorkflowError, "changed"):
+            package_reviewed_article(self.root)
+        self.assertEqual(article.read_text(), "Human article revision")
+        with self.assertRaisesRegex(WorkflowError, "ignored article run"):
+            package_reviewed_article(self.root, output_dir=Path(__file__).resolve().parents[1] / "docs")
+
+    def test_finding_review_requires_nonempty_source_refs(self) -> None:
+        invoke, _ = self._live()
+        review = json.loads((self.root / "review.json").read_text())
+        review["factual"]["claim_checks"][0]["source_ids"] = []
+        _write_json(self.root / "review.json", review)
+        with self.assertRaisesRegex(WorkflowError, "claim/source mapping|requires a source"):
+            package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                     live_consent=True, invoker=invoke)
+
+    def test_resource_url_requires_linked_cited_finding(self) -> None:
+        self.brief["resource"] = {"name": "Original code", "url": "https://example.org/tool",
+                                  "source_ids": ["src-1"], "claim_ids": ["claim-1"]}
+        self.status = "READY_FOR_HUMAN_REVIEW"
+        self._rewrite()
+        calls = []
+        def invoke(**kwargs):
+            calls.append(kwargs)
+            if kwargs["stage_label"] == "Article companion copy":
+                self.assertEqual(kwargs["schema"]["type"], "object")
+                self.assertIn("eligible_claim_ids", kwargs["task_prompt"])
+                return {"post": {"text": "One finding: https://example.org/tool", "claim_ids": ["claim-1"]},
+                        "first_comment": {"text": "Source: https://example.org/source?a=1&b=2",
+                                          "claim_ids": ["claim-1"]}}
+            self.assertIn("resource", kwargs["task_prompt"])
+            return {"covered_claim_ids": ["claim-1"], "source_ids": ["src-1"],
+                    "missing_claim_ids": [], "unreviewed_claim_ids": [],
+                    "factual_alignment": True, "notes": "Aligned"}
+        result = package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                          live_consent=True, invoker=invoke)
+        self.assertEqual(result["status"], "READY_FOR_HUMAN_REVIEW")
+        self.assertEqual(len(calls), 3)
+
+    def test_resource_url_and_license_cannot_be_added_without_support(self) -> None:
+        self.brief["sources"].append({"id": "src-2", "url": "https://example.org/other",
+                                      "title": "Other", "content": "Other finding"})
+        self.brief["claims"].append({"id": "claim-2", "text": "Other finding", "kind": "finding",
+                                     "source_ids": ["src-2"]})
+        self.brief["resource"] = {"name": "Original code", "url": "https://example.org/tool",
+                                  "source_ids": ["src-1"], "claim_ids": ["claim-1"]}
+        self.article["sections"][0]["claim_ids"].append("claim-2")
+        self.status = "READY_FOR_HUMAN_REVIEW"
+        self._rewrite()
+        review = json.loads((self.root / "review.json").read_text())
+        review["factual"]["claim_checks"].append({"claim_id": "claim-2", "status": "SUPPORTED",
+                                                   "source_ids": ["src-2"], "message": "Aligned"})
+        _write_json(self.root / "review.json", review)
+        def unrelated(**_):
+            return {"post": {"text": "Other finding https://example.org/tool", "claim_ids": ["claim-2"]},
+                    "first_comment": {"text": "Other finding", "claim_ids": ["claim-2"]}}
+        with self.assertRaisesRegex(WorkflowError, "outside cited sources"):
+            package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                     live_consent=True, invoker=unrelated)
+        def invented_license(**_):
+            return {"post": {"text": "Original code https://example.org/tool is under MIT license",
+                             "claim_ids": ["claim-1"]},
+                    "first_comment": {"text": "One finding", "claim_ids": ["claim-1"]}}
+        with self.assertRaisesRegex(WorkflowError, "license that was not supplied"):
+            package_reviewed_article(self.root, model_config=ModelConfig("codex", "test", "low"),
+                                     live_consent=True, invoker=invented_license)
 
     def test_asset_dimensions_and_mapping(self) -> None:
         image = self.root / "cover.png"
@@ -226,6 +315,16 @@ class ArticlePackageTests(unittest.TestCase):
 
     def test_article_repository_call_to_action_is_rejected(self) -> None:
         self.article["sections"][0]["text"] += " Check out my GitHub repo."
+        self._rewrite()
+        with self.assertRaisesRegex(WorkflowError, "repository call to action"):
+            package_reviewed_article(self.root)
+        self.article["sections"][0]["text"] = "Body without CTA."
+        self.article["sections"][0]["heading"] = "Visit the GitHub repo"
+        self._rewrite()
+        with self.assertRaisesRegex(WorkflowError, "repository call to action"):
+            package_reviewed_article(self.root)
+        self.article["sections"][0]["heading"] = "Evidence"
+        self.brief["author"]["byline"] = "By Person — check out my GitHub repo"
         self._rewrite()
         with self.assertRaisesRegex(WorkflowError, "repository call to action"):
             package_reviewed_article(self.root)
