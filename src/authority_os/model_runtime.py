@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Mapping
@@ -18,6 +21,35 @@ class ModelTimeoutError(WorkflowError):
 
 
 ALLOWED_REASONING = {"low", "medium", "high", "xhigh", "max", "ultra"}
+# Only the discover command sets the scoped override. Its generated drafting
+# child receives this explicit transport; it is never read from user config.
+DISCOVERY_CHILD_REASONING_ENV = "LINKEDIN_OS_DISCOVERY_CHILD_REASONING"
+_REASONING_OVERRIDE: ContextVar[str | None] = ContextVar("discovery_reasoning_override", default=None)
+
+
+@contextmanager
+def discovery_reasoning_override(reasoning: str | None):
+    """Confine a requested effort to this invocation and copied worker contexts."""
+    if reasoning is not None and reasoning not in ALLOWED_REASONING:
+        raise WorkflowError("Discovery reasoning setting is unsupported.")
+    # Empty string masks an inherited child transport for an ordinary discover run.
+    token = _REASONING_OVERRIDE.set(reasoning or "")
+    try:
+        yield
+    finally:
+        _REASONING_OVERRIDE.reset(token)
+
+
+def _requested_reasoning() -> str | None:
+    scoped = _REASONING_OVERRIDE.get()
+    if scoped is not None:
+        return scoped or None
+    child = os.environ.get(DISCOVERY_CHILD_REASONING_ENV)
+    if child is not None and child not in ALLOWED_REASONING:
+        raise WorkflowError("Discovery child reasoning setting is unsupported.")
+    return child
+
+
 NON_WEB_TOOL_FEATURES = frozenset(
     {
         "apps",
@@ -59,10 +91,11 @@ class ModelConfig:
             raise WorkflowError("Campaign model name must not be blank.")
         if self.reasoning not in ALLOWED_REASONING:
             raise WorkflowError("Campaign reasoning setting is unsupported.")
-        return self
+        requested = _requested_reasoning()
+        return self if requested is None or requested == self.reasoning else ModelConfig(self.runtime, self.model, requested)
 
     def trace(self) -> dict[str, str]:
-        return asdict(self)
+        return asdict(self.validate())
 
 
 def invoke_structured(
