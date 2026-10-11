@@ -165,7 +165,7 @@ END_UNTRUSTED_SURFACE_SIGNALS
         ),
         task_prompt=prompt,
         schema=surface._cluster_schema(ids),  # type: ignore[attr-defined]
-        timeout=surface.CONSOLIDATION_TIMEOUT,
+        timeout=surface.consolidation_timeout(),
         web_search=False,
         stage_label="Surface Scout consolidation",
     )

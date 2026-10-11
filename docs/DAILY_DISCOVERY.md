@@ -71,6 +71,14 @@ cannot reuse its hash-bound stages with the new implementation, so start a fresh
 run with the command above. Earlier parent Scout calls are not covered by the
 drafting model-call cache.
 
+The installed Surface Scout consolidation stage normally has a 150-second
+per-call ceiling. With effective `--reasoning ultra`, that stage can use up to
+600 seconds. The uninstalled base adapter retains its 60-second ordinary
+ceiling. Every model call is still clipped by the remaining shared allowance,
+so selecting a 600-second stage ceiling does not extend a 480- or 1800-second
+total budget or guarantee consolidation will finish. A local stage timeout and
+an exhausted shared deadline remain distinct failure outcomes.
+
 In the Monday, Wednesday, Thursday, Friday cadence, `--week-slot 1` routes the
 printed command and optional generated text draft to Monday Reach; slots 2 and
 3 route to Authority, with Thursday at slot 3. Without an explicit slot, the
