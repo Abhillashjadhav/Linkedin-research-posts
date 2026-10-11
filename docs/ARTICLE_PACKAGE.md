@@ -8,6 +8,8 @@ creates a private `run_dir/package/` by default. The run directory must contain
 must contain the canonical `article_contract.article_hash(article, brief)`
 under `artifact_sha256` and matching `READY_FOR_HUMAN_REVIEW` or `FIXTURE_ONLY`
 statuses. A changed article or inconsistent review blocks packaging.
+An explicit repository call to action in the reviewed article also blocks
+packaging; the optional supplied resource remains an attributed source entry.
 
 The CLI entry point accepts `article-package --run <private-run>` and optional
 `--output`, `--assets <JSON-mapping-path>`, `--article-url <HTTPS-URL>`, and

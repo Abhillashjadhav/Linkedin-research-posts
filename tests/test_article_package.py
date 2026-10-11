@@ -224,6 +224,12 @@ class ArticlePackageTests(unittest.TestCase):
         self.assertIsNone(result["manifest"]["article_url"])
         self.assertNotIn("article URL", (self.root / "package/source-comment.md").read_text())
 
+    def test_article_repository_call_to_action_is_rejected(self) -> None:
+        self.article["sections"][0]["text"] += " Check out my GitHub repo."
+        self._rewrite()
+        with self.assertRaisesRegex(WorkflowError, "repository call to action"):
+            package_reviewed_article(self.root)
+
 
 if __name__ == "__main__":
     unittest.main()

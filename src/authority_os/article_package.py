@@ -46,6 +46,11 @@ REVIEW_SCHEMA: dict[str, object] = {
 }
 OUTPUT_NAMES = ("article.md", "post.md", "source-comment.md", "sources.md",
                 "article.html", "evaluation.json", "manifest.json", "final-package.md")
+REPO_CTA = re.compile(
+    r"\b(?:clone|fork|download|star|check\s+out|visit|grab)\b[^.!?\n]{0,65}"
+    r"\b(?:github|repo(?:sitory)?)\b",
+    re.IGNORECASE,
+)
 
 
 def _object(value: object, label: str) -> dict[str, object]:
@@ -304,6 +309,8 @@ def package_reviewed_article(
         article_claim_ids.update(refs)
         validated_sections.append((sid, _string(section.get("heading"), "section heading", max_length=500),
                                    _string(section.get("text"), "section text"), refs))
+    if REPO_CTA.search("\n".join((title, thesis, *(body for _, _, body, _ in validated_sections)))):
+        raise WorkflowError("Reviewed article contains an explicit repository call to action.")
     if not article_claim_ids:
         raise WorkflowError("Article has no sourced claims to package.")
     resource = brief.get("resource")
