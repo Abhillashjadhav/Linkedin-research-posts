@@ -863,11 +863,19 @@ class SpineCardTests(unittest.TestCase):
         self.assertTrue(parsed.generate_post)
         self.assertEqual(parsed.days, 7)
 
-    def test_thursday_is_exposed_as_authority_week_slot_three(self) -> None:
-        parsed = daily_spine_cli.parser().parse_args(
-            ["--profile", "data/private/authority-profile.json", "--week-slot", "3"]
-        )
-        self.assertEqual(parsed.week_slot, 3)
+    def test_week_slots_expose_monday_reach_and_thursday_authority(self) -> None:
+        for slot, goal in ((1, "reach"), (2, "authority"), (3, "authority")):
+            with self.subTest(slot=slot):
+                parsed = daily_spine_cli.parser().parse_args(
+                    ["--profile", "data/private/authority-profile.json", "--week-slot", str(slot)]
+                )
+                self.assertEqual(parsed.week_slot, slot)
+                self.assertEqual(workflow.resolve_strategic_goal(week_slot=parsed.week_slot), goal)
+        self.assertEqual(workflow.resolve_strategic_goal(
+            week_slot=daily_spine_cli.parser().parse_args(
+                ["--profile", "data/private/authority-profile.json"]
+            ).week_slot,
+        ), "authority")
         with self.assertRaises(SystemExit):
             daily_spine_cli.parser().parse_args(
                 ["--profile", "data/private/authority-profile.json", "--week-slot", "4"]
@@ -966,6 +974,22 @@ class SpineCardTests(unittest.TestCase):
         self.assertIn("do not force a template", prompt)
         self.assertIn("do not draft a post", prompt)
         self.assertIn("weekday", prompt)
+
+    def test_practical_reader_payoff_guidance_is_only_in_monday_slot(self) -> None:
+        for slot in (None, 1, 2, 3):
+            with self.subTest(slot=slot), patch.object(
+                daily_spine_cli.base, "invoke_structured", return_value={"cards": cards()}
+            ) as invoke:
+                daily_spine_cli.generate_cards(profile(), signals(), None, week_slot=slot)
+                prompt = str(invoke.call_args.kwargs["task_prompt"])
+                self.assertEqual("MONDAY REACH:" in prompt, slot == 1)
+                self.assertIn("spine is advisory only", prompt)
+                if slot == 1:
+                    self.assertIn("one-idea reach thesis cards", prompt)
+                    self.assertIn("Do not claim the author built, used, measured", prompt)
+                    self.assertIn("do not invent runtime performance", prompt)
+                else:
+                    self.assertIn("one-idea authority thesis cards", prompt)
 
     def test_thesis_generation_receives_only_topic_value_selected_signals(self) -> None:
         selected = topic_value.project_discovery_signals(signals(), value_candidates())

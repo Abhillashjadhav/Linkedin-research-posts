@@ -222,6 +222,19 @@ exact timestamp; otherwise the command fails closed rather than guessing.
 
 ## Locked high-bar search
 
+For a Monday Reach text draft, pass `--week-slot 1` to `discover` with the
+usual explicit web-research and model-egress flags. It routes both the printed
+draft command and `--generate-post` to `draft --goal reach --format text
+--week-slot 1`. Thesis guidance favors a practical payoff the reader can use
+from the post itself; the narrative spine still follows the evidence rather
+than a weekday template. The author's profile `authority_goal` remains the
+Topic Value input. Without an explicit slot, drafting defaults to Authority;
+slots 2 and 3 also stay Authority. The run's `as-of` is its actual research
+time unless explicitly supplied for an appropriate past run or resume; do not
+set it to a future posting date. Resource fit and source-link selection, and
+any Monday diagram, need separate human review: the text draft does not
+complete a resource package or visual asset. Publication remains manual.
+
 For Thursday / weekly slot 3, discovery and drafting use the existing OS's
 **capability-first workflow**: find a useful executable capability with observable
 public attention, verify a real demo, and lead with the reader's benefit. A
