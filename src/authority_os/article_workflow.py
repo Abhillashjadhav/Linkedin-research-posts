@@ -115,10 +115,14 @@ def validate_review(raw: object, role: str, article: dict, brief: dict) -> dict:
     if raw["verdict"] == "PASS" and any(f["severity"] == "blocking" for f in raw["findings"]):
         raise WorkflowError(f"Contradictory {role} review.")
     if role == "factual_reviewer":
+        # Factual findings describe unresolved assertions. Severity may guide edits,
+        # but must not downgrade evidence clearance or make an empty claim map a PASS.
+        if raw["verdict"] == "PASS" and raw["findings"]:
+            raise WorkflowError("Factual PASS contradicts unresolved factual findings.")
         checks = raw["claim_checks"]
         used = {cid for section in article["sections"] for cid in section["claim_ids"]}
         claim_by_id = {claim["id"]: claim for claim in brief["claims"]}
-        if not used or not isinstance(checks, list) or len(checks) != len(used):
+        if not isinstance(checks, list) or len(checks) != len(used):
             raise WorkflowError("Factual review must cover every used claim exactly once.")
         seen = set()
         for check in checks:
@@ -202,7 +206,7 @@ def _call(role: str, models: Mapping[str, ModelConfig], brief: dict, payload: di
     instructions = {
         "writer": "Write exactly one original long-form article for the supplied brief. Use only supplied sources, claims, author attestations and voice examples; do not invent experience or evidence. Map every factual assertion to claim IDs. Preserve topic ID and thesis and locked title. Return the structured article.",
         "narrative_reviewer": "Independently assess coherence, reader value, structure, voice and word range. Bind the review to the exact artifact SHA-256. Put a blocking finding on the relevant section for every necessary edit; do not infer human approval.",
-        "factual_reviewer": "Independently inspect every used claim against the supplied source content or author attestation, limitations and section prose. Return one claim check per used claim with only its approved source IDs. Unsupported or uncertain claims prevent PASS. Bind to the exact artifact SHA-256. This model review does not certify facts; human verification remains required.",
+        "factual_reviewer": "Independently inspect every sentence for uncited factual assertions, including when no claim IDs are used. Report a finding on the relevant section for any unresolved factual assertion; PASS requires no findings, regardless of severity. Return one claim check per used claim (an empty list only when no IDs are used), with only its approved source IDs. Empty coverage alone is not evidence of factual alignment or a reason to PASS. Unsupported or uncertain claims prevent PASS. Bind to the exact artifact SHA-256. This model review does not certify facts; human verification remains required.",
         "section_editor": "Return replacements ONLY for blocked section IDs, preserving ID and heading and all unrelated sections. Use only brief evidence. Keep topic, thesis and title fixed. Target the reported findings; no whole-article regeneration. Bind edits to the exact artifact SHA-256.",
     }
     response = invoke_structured(config=models[role], role_prompt=_role_profile(role) + "\n\n" + instructions[role],

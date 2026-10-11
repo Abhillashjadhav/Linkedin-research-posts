@@ -80,6 +80,12 @@ the new ignored output folder. An existing folder is never overwritten.
 `READY_FOR_HUMAN_REVIEW` means the structured checks passed; human fact
 verification and publication decisions remain separate. Model review alone
 does not certify source truth. There is no article publishing action.
+An article or companion with no factual assertions may use no claim IDs while
+the supplied brief retains its source and claim ledger. Empty coverage is not
+evidence of truth: factual reviewers still inspect every sentence for uncited
+assertions, and a blocking finding or failed alignment prevents review eligibility.
+Factual review `PASS` also requires no unresolved findings, even if a model
+labels one advisory; narrative review may retain advisory editorial notes.
 Completed stages are written to the run folder. An interrupted or invalid
 stage leaves a blocked trace; there is no cross-run resume for this route yet.
 Use a new output folder for a retry.

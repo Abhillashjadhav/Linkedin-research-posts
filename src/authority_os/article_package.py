@@ -301,8 +301,6 @@ def package_reviewed_article(
     rendered_article = article_contract.article_text(article, brief)
     if REPO_CTA.search(rendered_article):
         raise WorkflowError("Reviewed article contains an explicit repository call to action.")
-    if not article_claim_ids:
-        raise WorkflowError("Article has no sourced claims to package.")
     resource = brief.get("resource")
     resource_ledger = None
     if isinstance(resource, dict):
@@ -343,10 +341,10 @@ def package_reviewed_article(
             raise WorkflowError("Article asset paths cannot contain traversal segments.")
         image_data[key] = _asset(path, expected=(1920, 1080) if key == "cover" else (1200, 900))
     if fixture:
-        first_claim = sorted(article_claim_ids)[0]
+        fixture_ids = sorted(article_claim_ids)[:1]
         copy: dict[str, object] = {
-            "post": {"text": f"[SYNTHETIC FIXTURE — NOT FOR PUBLICATION] {title}: {thesis}", "claim_ids": [first_claim]},
-            "first_comment": {"text": "[SYNTHETIC FIXTURE — NOT FOR PUBLICATION] Sources are listed in sources.md.", "claim_ids": [first_claim]},
+            "post": {"text": f"[SYNTHETIC FIXTURE — NOT FOR PUBLICATION] {title}: {thesis}", "claim_ids": fixture_ids},
+            "first_comment": {"text": "[SYNTHETIC FIXTURE — NOT FOR PUBLICATION] Sources are listed in sources.md.", "claim_ids": fixture_ids},
         }
     else:
         context = {"article": article, "article_claim_ids": sorted(article_claim_ids),
@@ -355,7 +353,7 @@ def package_reviewed_article(
                    "author_attestations": brief["author"]["attestations"],
                    "resource": resource_ledger, "article_url": article_url}
         copy = _object(invoker(
-            config=model_config, role_prompt="Write a concise LinkedIn post and first source comment from the reviewed article. A supplied resource finding may be introduced in companion copy when supported by source content even if absent from the article. Attach IDs for every factual claim. Use the resource URL only when its eligible linked finding claim is cited. Never invent an article URL, license, proof, or source.",
+            config=model_config, role_prompt="Write a concise LinkedIn post and first source comment from the reviewed article. A supplied resource finding may be introduced in companion copy when supported by source content even if absent from the article. Attach IDs for every factual claim; empty IDs are only for copy with no factual assertions. Use the resource URL only when its eligible linked finding claim is cited. Never invent an article URL, license, proof, or source.",
             task_prompt=json.dumps(context, ensure_ascii=False, sort_keys=True),
             schema=COPY_SCHEMA, web_search=False, stage_label="Article companion copy",
         ), "model copy")
@@ -364,8 +362,8 @@ def package_reviewed_article(
         item = _object(copy.get(name), name)
         body = _string(item.get("text"), name + " text", max_length=20_000)
         ids = _ids(item.get("claim_ids"), name + " claim IDs")
-        if not ids or set(ids) - allowed_companion_claim_ids:
-            raise WorkflowError(f"{name} contains unsupported or missing companion claim IDs.")
+        if set(ids) - allowed_companion_claim_ids:
+            raise WorkflowError(f"{name} contains unsupported companion claim IDs.")
         source_ids = sorted({sid for cid in ids for sid in claim_by_id[cid]})
         permitted_urls = {source_by_id[sid]["url"] for sid in source_ids}
         if article_url is not None:
@@ -388,7 +386,7 @@ def package_reviewed_article(
         else:
             judgment = _object(invoker(
                 config=model_config,
-                role_prompt="Independently assess factual alignment of this copy against the reviewed article, FULL supplied source content and author attestations. Companion-only resource findings are new to this copy: verify them independently against source content; do not inherit the article PASS or infer truth from IDs/URLs. Check license assertions against supplied evidence. Report missing or unreviewed claims. Return strict JSON.",
+                role_prompt="Independently inspect every sentence of this copy for factual assertions, even when claim IDs and claim coverage are empty. Empty IDs alone never establish factual alignment: mark factual_alignment false for any unsupported or uncited assertion. Assess against the reviewed article, FULL supplied source content and author attestations. Companion-only resource findings are new to this copy: verify them independently against source content; do not inherit the article PASS or infer truth from IDs/URLs. Check license assertions against supplied evidence. Report missing or unreviewed claims. Return strict JSON.",
                 task_prompt=json.dumps({"output": name, "text": body, "claim_ids": ids,
                                         "article": article, "article_claim_ids": sorted(article_claim_ids),
                                         "resource_companion_claim_ids": sorted(resource_only_claim_ids),
@@ -469,7 +467,7 @@ def package_reviewed_article(
                   "missing_required_assets": missing_assets,
                   "provided_assets": {key: {"sha256": _hash(raw), "mime": mime}
                                       for key, (raw, mime) in image_data.items()},
-                  "limitations": ["Source mapping is not semantic truth verification.",
+                  "limitations": ["Source mapping, including an empty claim map, is not semantic truth verification; full-text factual review is still required.",
                                   "Embedded image data URLs may not survive every clipboard/editor paste."]}
     files = {"article.md": article_md, "post.md": str(_object(copy["post"], "post")["text"]) + "\n",
              "source-comment.md": str(_object(copy["first_comment"], "first comment")["text"]) + "\n",
