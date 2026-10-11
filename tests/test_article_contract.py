@@ -68,6 +68,27 @@ class ArticleContractTests(unittest.TestCase):
                 with self.assertRaises(WorkflowError):
                     validate_brief(value)
 
+    def test_malformed_source_and_resource_urls_raise_workflow_errors(self):
+        malformed = (
+            "https://[", "https://[not-an-ip]/", "https://:443/",
+            "https://exa mple.org/", "https://example.org:wrong/",
+        )
+        for url in malformed:
+            with self.subTest(url=url):
+                source_value = brief()
+                source_value["sources"][0]["url"] = url
+                with self.assertRaises(WorkflowError):
+                    validate_brief(source_value)
+                resource_value = brief()
+                resource_value["resource"] = {
+                    "name": "Method", "url": url, "source_ids": ["source-1"],
+                }
+                with self.assertRaises(WorkflowError):
+                    validate_brief(resource_value)
+        valid = brief()
+        valid["sources"][0]["url"] = "https://example.org:443/method"
+        self.assertEqual(validate_brief(valid)["sources"][0]["url"], "https://example.org:443/method")
+
     def test_author_attestation_reference_and_duplicate_ids(self):
         value = brief()
         value["claims"][1]["attestation_id"] = "unknown"

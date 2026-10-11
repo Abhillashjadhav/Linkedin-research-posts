@@ -11,7 +11,7 @@ import json
 import re
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 
 from .workflow import WorkflowError
 
@@ -52,8 +52,22 @@ def _id(value: object, path: str) -> str:
 
 def _url(value: object, path: str) -> str:
     clean = _text(value, path)
-    parsed = urlparse(clean)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+    try:
+        parsed = urlsplit(clean)
+        # Accessing hostname/port also validates bracketed hosts and port syntax.
+        hostname, port = parsed.hostname, parsed.port
+        username, password = parsed.username, parsed.password
+    except ValueError as exc:
+        raise WorkflowError(f"{path} must be a valid HTTP(S) URL.") from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not hostname
+        or username is not None
+        or password is not None
+        or any(char.isspace() for char in clean)
+        or parsed.netloc.endswith(":")
+        or (port is not None and port < 1)
+    ):
         raise WorkflowError(f"{path} must be an HTTP(S) URL without credentials.")
     return clean
 
