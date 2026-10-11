@@ -17,6 +17,7 @@ from . import individual_launch_runtime_tuning
 from . import momentum_surface_parallel
 from . import surface_scout_runtime_tuning
 from . import v1_consumability
+from . import model_runtime
 
 # Reuse the existing daily discovery contract while swapping only the live-web
 # momentum adapter. All downstream thesis, privacy and publishing boundaries stay
@@ -74,16 +75,17 @@ def command(args):
     prior_deadline = os.environ.get(runtime_budget.DEADLINE_ENV)
     os.environ[runtime_budget.DEADLINE_ENV] = str(invocation_started + budget)
     try:
-        try:
-            result = _ORIGINAL_COMMAND(args)
-            if result != 124 and not _delivered(folder):
-                runtime_budget.remaining_seconds()
-        except runtime_budget.GlobalDeadlineExceeded:
-            _record_deadline(folder, args, budget)
-            raise
-        if result == 124:
-            _record_deadline(folder, args, budget)
-        return result
+        with model_runtime.discovery_reasoning_override(getattr(args, "reasoning", None)):
+            try:
+                result = _ORIGINAL_COMMAND(args)
+                if result != 124 and not _delivered(folder):
+                    runtime_budget.remaining_seconds()
+            except runtime_budget.GlobalDeadlineExceeded:
+                _record_deadline(folder, args, budget)
+                raise
+            if result == 124:
+                _record_deadline(folder, args, budget)
+            return result
     finally:
         if prior_deadline is None:
             os.environ.pop(runtime_budget.DEADLINE_ENV, None)
@@ -145,6 +147,8 @@ def _record_deadline(folder: Path, args, budget: int) -> None:
         argv.extend(["--week-slot", str(args.week_slot)])
     if args.generate_post:
         argv.append("--generate-post")
+    if getattr(args, "reasoning", None) is not None:
+        argv.extend(["--reasoning", args.reasoning])
     resume_command = shlex.join(argv)
     base.base.write_private_json(
         folder / "deadline-checkpoint.json",

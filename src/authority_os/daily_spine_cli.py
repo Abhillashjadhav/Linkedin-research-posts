@@ -35,6 +35,7 @@ from . import (
 )
 from .spine_feedback import CONTENT_SPINES
 from .model_runtime import ModelTimeoutError
+from . import model_runtime
 from . import runtime_budget
 from . import model_call_checkpoint
 
@@ -302,7 +303,18 @@ def _run_input_fingerprint(args: argparse.Namespace, profile: Mapping[str, objec
         "as_of": as_of, "topic": args.topic, "days": args.days,
         "db": str(base._under_private(args.db)),
         "generate_post": bool(args.generate_post), "week_slot": args.week_slot,
+        "reasoning_override": getattr(args, "reasoning", None),
     })
+
+
+def set_drafting_child_reasoning(env: dict[str, str], reasoning: str | None) -> None:
+    """Pass only an explicit discover request to its generated drafting child."""
+    if reasoning is None:
+        env.pop(model_runtime.DISCOVERY_CHILD_REASONING_ENV, None)
+    elif reasoning in model_runtime.ALLOWED_REASONING:
+        env[model_runtime.DISCOVERY_CHILD_REASONING_ENV] = reasoning
+    else:
+        raise workflow.WorkflowError("Discovery reasoning setting is unsupported.")
 
 
 def _artifact_sha256(path: Path) -> str:
@@ -683,14 +695,29 @@ def new_run_dashboard(run_id: str = "") -> dict[str, object]:
 
 
 def evaluator_versions() -> dict[str, object]:
-    models = campaign.StageModels.preferred()
+    from . import momentum as authority_momentum
+    from . import momentum_surface_parallel, surface_scout_runtime_tuning, v1_runtime_tuning
+
+    # The generated post starts via bin/linkedin-os draft, which installs this
+    # single-topic profile in its own process. Read the same pure tuning helpers
+    # here without installing child-only patches in the discovery process.
+    models = v1_runtime_tuning._preferred_fast_single_topic(campaign.StageModels)
+    selection = v1_runtime_tuning._selection_model_config("codex", base.DISCOVERY_MODEL, "ultra")
     model_rows = {
         name: getattr(models, name).trace()
-        for name in ("writer", "narrative_editor", "critic", "artisanal_editor")
+        for name in models.__dataclass_fields__
     }
-    scout = getattr(momentum, "MODEL", None)
-    if hasattr(scout, "trace"):
-        model_rows["surface_scout"] = scout.trace()
+    model_rows.update({
+        "surface_scout": surface_scout_runtime_tuning.MODEL.trace(),
+        "surface_consolidation": momentum_surface_parallel.MODEL.trace(),
+        "authority_topic": authority_momentum.AUTHORITY_TOPIC_MODEL.trace(),
+        "evidence_scout": base.SCOUT_MODEL.trace(),
+        "thesis": base.THESIS_MODEL.trace(),
+        "thesis_critic": base.THESIS_CRITIC_MODEL.trace(),
+        "topic_value": model_runtime.ModelConfig("codex", base.DISCOVERY_MODEL, "ultra").trace(),
+        "draft_topic_value": selection.trace(),
+        "resonance": selection.trace(),
+    })
     rubrics: dict[str, str] = {}
     for name in ("critic-rubric-v2.json", "eval-v1.json", "eval-v1-calibration.json"):
         path = workflow.REPO_ROOT / "config" / name
@@ -801,6 +828,7 @@ def load_discovery_resume(
     days: int,
     requested_topic: str | None,
     profile: Mapping[str, object],
+    reasoning: str | None = None,
 ) -> DiscoveryResume:
     """Restore the successful discovery boundary without running its scouts again."""
 
@@ -809,6 +837,8 @@ def load_discovery_resume(
     momentum_payload = base._private_json(folder / "momentum.json", "Resume momentum")
     if not isinstance(dashboard, Mapping) or dashboard.get("schema_version") != 2:
         raise workflow.WorkflowError("Resume dashboard has an unsupported schema.")
+    if reasoning is not None:
+        raise workflow.WorkflowError("Legacy discovery resume cannot establish its original reasoning; start a fresh run.")
     if not isinstance(momentum_payload, Mapping) or momentum_payload.get("schema_version") != 1:
         raise workflow.WorkflowError("Resume momentum has an unsupported schema.")
     if momentum_payload.get("days") != days:
@@ -2546,6 +2576,7 @@ def _command(args: argparse.Namespace) -> int:
             if (source / "run-input.json").is_file()
             else load_discovery_resume(
                 source, days=args.days, requested_topic=args.topic, profile=profile,
+                reasoning=getattr(args, "reasoning", None),
             )
         )
     as_of = resume.as_of if resume is not None else (
@@ -2572,9 +2603,11 @@ def _command(args: argparse.Namespace) -> int:
             "Resume output must be different from the preserved source run."
         )
     run_dashboard = new_run_dashboard(run_id)
+    run_dashboard["requested_reasoning"] = getattr(args, "reasoning", None)
     input_fingerprint = _run_input_fingerprint(args, profile, as_of)
     base.write_private_json(folder / "run-input.json", {
         "schema_version": 1, "run_id": run_id, "as_of": as_of,
+        "requested_reasoning": getattr(args, "reasoning", None),
         "input_fingerprint": input_fingerprint,
         "contract_sha256": _contract_sha256(),
         "implementation_sha256": _implementation_sha256(),
@@ -3192,6 +3225,7 @@ def _command(args: argparse.Namespace) -> int:
         child_env["LINKEDIN_OS_DRAFT_AS_OF"] = as_of
         child_env[model_call_checkpoint.OUTPUT_ENV] = str(folder / "model-calls")
         child_env[model_call_checkpoint.INPUT_ENV] = input_fingerprint
+        set_drafting_child_reasoning(child_env, getattr(args, "reasoning", None))
         if resume is not None and (resume.source_folder / "model-calls").is_dir():
             child_env[model_call_checkpoint.SOURCE_ENV] = str(resume.source_folder / "model-calls")
         else:
@@ -3269,6 +3303,11 @@ def _command(args: argparse.Namespace) -> int:
 
 def parser() -> argparse.ArgumentParser:
     result = base.parser()
+    result.add_argument(
+        "--reasoning",
+        choices=sorted(model_runtime.ALLOWED_REASONING),
+        help="Request one Codex reasoning effort for every discovery model stage and optional generated post.",
+    )
     result.add_argument(
         "--resume-from",
         type=Path,
