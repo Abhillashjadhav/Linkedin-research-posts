@@ -4,15 +4,38 @@ from __future__ import annotations
 
 import os
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
+from collections.abc import Iterator
 
 from .model_runtime import ModelTimeoutError
 
 
 DEADLINE_ENV = "LINKEDIN_OS_GLOBAL_DEADLINE_EPOCH"
+_DISCOVERY_DEADLINE_ACTIVE: ContextVar[bool] = ContextVar("discovery_deadline_active", default=False)
 
 
 class GlobalDeadlineExceeded(ModelTimeoutError):
     """The approved shared daily budget expired, rather than one model stage."""
+
+
+@contextmanager
+def discovery_deadline(started: float, seconds: int) -> Iterator[None]:
+    """Set one invocation clock, preserving an outer discovery root and prior environment."""
+    if _DISCOVERY_DEADLINE_ACTIVE.get():
+        yield
+        return
+    prior = os.environ.get(DEADLINE_ENV)
+    token = _DISCOVERY_DEADLINE_ACTIVE.set(True)
+    os.environ[DEADLINE_ENV] = str(started + seconds)
+    try:
+        yield
+    finally:
+        if prior is None:
+            os.environ.pop(DEADLINE_ENV, None)
+        else:
+            os.environ[DEADLINE_ENV] = prior
+        _DISCOVERY_DEADLINE_ACTIVE.reset(token)
 
 
 def deadline_epoch() -> float | None:

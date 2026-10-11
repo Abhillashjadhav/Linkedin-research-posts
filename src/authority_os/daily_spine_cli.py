@@ -308,6 +308,31 @@ def _run_input_fingerprint(args: argparse.Namespace, profile: Mapping[str, objec
     })
 
 
+def discovery_time_budget(args: argparse.Namespace) -> dict[str, object]:
+    """Describe the invocation allowance separately from substantive resume input."""
+    contract = json.loads(
+        (workflow.REPO_ROOT / "config" / "linkedin-post-contract-v1.json").read_text(encoding="utf-8")
+    )
+    default = contract["runtime"]["global_deadline_seconds"]
+    slo = contract["product_outcome"]["runtime_slo_seconds"]
+    if type(default) is not int or default < 1 or type(slo) is not int or slo < 1:
+        raise workflow.WorkflowError("Approved discovery deadline or runtime SLO is invalid.")
+    requested = getattr(args, "time_budget_seconds", None)
+    if requested is not None and (type(requested) is not int or not 1 <= requested <= 3600):
+        raise workflow.WorkflowError("--time-budget-seconds must be an integer from 1 to 3600.")
+    return {
+        "requested_seconds": requested,
+        "effective_seconds": default if requested is None else requested,
+        "default_seconds": default,
+        "runtime_slo_seconds": slo,
+        "scope": "one discovery invocation, including its optional drafting child",
+        "slo_interpretation": (
+            "An increased allowance does not change the full-run SLO; a resumed "
+            "invocation is not a fresh end-to-end SLO measurement."
+        ),
+    }
+
+
 def set_drafting_child_reasoning(env: dict[str, str], reasoning: str | None) -> None:
     """Pass only an explicit discover request to its generated drafting child."""
     if reasoning is None:
@@ -2568,10 +2593,14 @@ def resolve_signal_evidence(
 def command(args: argparse.Namespace) -> int:
     # Context is reset even on errors and propagated explicitly to workers.
     # Reusing this module in another command cannot leak Thursday into Friday.
-    with base.discovery_route(thursday=False), \
-            model_runtime.discovery_model_override(getattr(args, "model", None)), \
-            model_runtime.discovery_reasoning_override(getattr(args, "reasoning", None)):
-        return _command(args)
+    started = time.time()
+    budget = discovery_time_budget(args)
+    # The installed root already started the clock; direct callers start one here.
+    with runtime_budget.discovery_deadline(started, budget["effective_seconds"]):
+        with base.discovery_route(thursday=False), \
+                model_runtime.discovery_model_override(getattr(args, "model", None)), \
+                model_runtime.discovery_reasoning_override(getattr(args, "reasoning", None)):
+            return _command(args)
 
 
 def _command(args: argparse.Namespace) -> int:
@@ -2625,6 +2654,8 @@ def _command(args: argparse.Namespace) -> int:
             "Resume output must be different from the preserved source run."
         )
     run_dashboard = new_run_dashboard(run_id)
+    time_budget = discovery_time_budget(args)
+    run_dashboard["time_budget"] = time_budget
     run_dashboard["requested_reasoning"] = getattr(args, "reasoning", None)
     run_dashboard["requested_model"] = getattr(args, "model", None)
     run_dashboard["strategic_goal"] = strategic_goal
@@ -2634,6 +2665,7 @@ def _command(args: argparse.Namespace) -> int:
         "strategic_goal": strategic_goal, "weekly_slot": explicit_slot,
         "requested_reasoning": getattr(args, "reasoning", None),
         "requested_model": getattr(args, "model", None),
+        "time_budget": time_budget,
         "input_fingerprint": input_fingerprint,
         "contract_sha256": _contract_sha256(),
         "implementation_sha256": _implementation_sha256(),
@@ -3333,6 +3365,19 @@ def _command(args: argparse.Namespace) -> int:
 
 def parser() -> argparse.ArgumentParser:
     result = base.parser()
+    def positive_time_budget(value: str) -> int:
+        try:
+            number = int(value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError("--time-budget-seconds must be an integer from 1 to 3600.") from exc
+        if not 1 <= number <= 3600:
+            raise argparse.ArgumentTypeError("--time-budget-seconds must be an integer from 1 to 3600.")
+        return number
+
+    result.add_argument(
+        "--time-budget-seconds", type=positive_time_budget,
+        help="Discovery and optional drafting shared allowance in seconds (1–3600; default from approved contract).",
+    )
     def model_slug(value: str) -> str:
         try:
             return model_runtime.validate_discovery_model(value)

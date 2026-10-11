@@ -46,6 +46,7 @@ def _delivered(folder: Path) -> bool:
 
 def command(args):
     invocation_started = time.time()
+    budget = base.discovery_time_budget(args)
     # Freeze the run timestamp before the base command so the trace folder and
     # downstream discovery artifacts share one reproducible run ID.
     resume_from = getattr(args, "resume_from", None)
@@ -66,15 +67,7 @@ def command(args):
     )
     base.base.legacy_cli._ensure_owner_only_directory(folder)
     momentum_surface_parallel.configure_trace_dir(folder)
-    contract = json.loads(
-        (base.workflow.REPO_ROOT / "config" / "linkedin-post-contract-v1.json").read_text(encoding="utf-8")
-    )
-    budget = contract["runtime"]["global_deadline_seconds"]
-    if type(budget) is not int or budget < 1:
-        raise base.workflow.WorkflowError("Approved global deadline is invalid.")
-    prior_deadline = os.environ.get(runtime_budget.DEADLINE_ENV)
-    os.environ[runtime_budget.DEADLINE_ENV] = str(invocation_started + budget)
-    try:
+    with runtime_budget.discovery_deadline(invocation_started, budget["effective_seconds"]):
         with model_runtime.discovery_model_override(getattr(args, "model", None)), \
                 model_runtime.discovery_reasoning_override(getattr(args, "reasoning", None)):
             try:
@@ -82,16 +75,11 @@ def command(args):
                 if result != 124 and not _delivered(folder):
                     runtime_budget.remaining_seconds()
             except runtime_budget.GlobalDeadlineExceeded:
-                _record_deadline(folder, args, budget)
+                _record_deadline(folder, args, budget["effective_seconds"])
                 raise
             if result == 124:
-                _record_deadline(folder, args, budget)
+                _record_deadline(folder, args, budget["effective_seconds"])
             return result
-    finally:
-        if prior_deadline is None:
-            os.environ.pop(runtime_budget.DEADLINE_ENV, None)
-        else:
-            os.environ[runtime_budget.DEADLINE_ENV] = prior_deadline
 
 
 def _record_deadline(folder: Path, args, budget: int) -> None:
@@ -128,6 +116,15 @@ def _record_deadline(folder: Path, args, budget: int) -> None:
             finally:
                 os.close(descriptor)
             os.replace(temporary, dashboard_path)
+            browser_path = folder / "eval-dashboard.html"
+            eval_path = folder / "eval-dashboard.json"
+            if browser_path.is_symlink() or eval_path.is_symlink():
+                raise base.workflow.WorkflowError("Deadline dashboard must not use symlinked reports.")
+            if browser_path.is_file() and eval_path.is_file():
+                evaluation = base.base._private_json(eval_path, "Eval dashboard")
+                if not isinstance(evaluation, dict):
+                    raise base.workflow.WorkflowError("Eval dashboard is malformed.")
+                base.eval_dashboard_html.refresh_dashboard(folder, dashboard, evaluation)
     destination = folder.with_name(folder.name + "-resume")
     suffix = 2
     while destination.exists():
@@ -152,6 +149,8 @@ def _record_deadline(folder: Path, args, budget: int) -> None:
         argv.extend(["--reasoning", args.reasoning])
     if getattr(args, "model", None) is not None:
         argv.extend(["--model", args.model])
+    if getattr(args, "time_budget_seconds", None) is not None:
+        argv.extend(["--time-budget-seconds", str(args.time_budget_seconds)])
     resume_command = shlex.join(argv)
     base.base.write_private_json(
         folder / "deadline-checkpoint.json",
