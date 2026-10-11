@@ -191,6 +191,39 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(calls.count("narrative_reviewer"), 3)
             self.assertEqual(calls.count("factual_reviewer"), 3)
 
+    def test_interrupted_stages_leave_blocked_private_trace(self):
+        for interrupted_role in ("writer", "factual_reviewer", "section_editor"):
+            with self.subTest(interrupted_role=interrupted_role):
+                calls = []
+                def fake(**kw):
+                    role = kw["stage_label"].split()[-1]
+                    calls.append(role)
+                    if role == interrupted_role:
+                        raise KeyboardInterrupt()
+                    if role == "writer":
+                        return article()
+                    payload = json.loads(kw["task_prompt"])
+                    return review(role, payload["article"], payload["brief"],
+                                  blocked=(role == "narrative_reviewer"))
+                with tempfile.TemporaryDirectory(dir=ROOT / "outputs") as parent, patch.object(
+                    aw, "invoke_structured", side_effect=fake
+                ):
+                    run = Path(parent) / "interrupted"
+                    with self.assertRaises(KeyboardInterrupt):
+                        aw.run(brief(), models(), run)
+                    manifest = json.loads((run / "manifest.json").read_text())
+                    trace = json.loads((run / "trace.json").read_text())
+                    self.assertEqual(manifest["status"], "BLOCKED")
+                    self.assertEqual(manifest["human_approval_status"], "NOT_APPROVED")
+                    self.assertEqual(manifest["publishing_status"], "DISABLED")
+                    self.assertEqual(trace["status"], "BLOCKED")
+                    self.assertEqual(trace["error"], "KeyboardInterrupt")
+                    self.assertIn(interrupted_role, calls)
+                    self.assertEqual((run / "narrative_reviewer-round-0.json").exists(),
+                                     interrupted_role != "writer")
+                    self.assertEqual((run / "factual_reviewer-round-0.json").exists(),
+                                     interrupted_role == "section_editor")
+
 
 if __name__ == "__main__":
     unittest.main()

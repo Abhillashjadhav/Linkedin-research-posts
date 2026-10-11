@@ -278,7 +278,7 @@ def run(brief_input: object, models: Mapping[str, ModelConfig], output_dir: Path
                         review_file="review.json", claim_map_file="article-claim-map.json")
         trace["status"] = status
         return manifest
-    except Exception as exc:
+    except BaseException as exc:
         manifest["status"] = "BLOCKED"
         trace["status"] = "BLOCKED"
         trace["error"] = str(exc) if isinstance(exc, WorkflowError) else type(exc).__name__
