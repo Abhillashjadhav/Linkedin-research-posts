@@ -30,6 +30,10 @@ RECORD_FIELDS = frozenset({
 })
 
 
+class _MissingFeedbackDirectory(Exception):
+    """The requested directory has not yet been created by a record command."""
+
+
 def _error(message: str) -> workflow.WorkflowError:
     return workflow.WorkflowError(message)
 
@@ -172,12 +176,21 @@ def _directory(path: Path | str, *, create: bool) -> tuple[Path, int]:
         current = root
         parts = relative.split("/")
         for index, component in enumerate(parts):
+            if index:
+                parent = os.fstat(current)
+                if parent.st_uid != os.geteuid() or stat.S_IMODE(parent.st_mode) != 0o700:
+                    raise _error("Feedback parent directory must be owner-only (0700).")
             if create and index == len(parts) - 1:
                 try:
                     os.mkdir(component, 0o700, dir_fd=current)
                 except FileExistsError:
                     pass
-            next_fd = os.open(component, flags, dir_fd=current)
+            try:
+                next_fd = os.open(component, flags, dir_fd=current)
+            except FileNotFoundError:
+                if not create:
+                    raise _MissingFeedbackDirectory from None
+                raise
             if current != root:
                 os.close(current)
             current = next_fd
@@ -292,7 +305,10 @@ def record_feedback(
 
 
 def load_records(feedback_dir: Path | str = DEFAULT_FEEDBACK_DIR) -> list[dict[str, object]]:
-    _, fd = _directory(feedback_dir, create=False)
+    try:
+        _, fd = _directory(feedback_dir, create=False)
+    except _MissingFeedbackDirectory:
+        return []
     try:
         names = sorted(name for name in os.listdir(fd) if name.endswith(".json"))
         if len(names) > MAX_RECORDS:
