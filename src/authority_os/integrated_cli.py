@@ -8,7 +8,7 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from typing import Iterator
 
-from . import acceptance_policy, anti_slop, quality_cli, resonance, v1_completion, workflow
+from . import acceptance_policy, anti_slop, quality_cli, resonance, thursday_capability, v1_completion, workflow
 
 
 _original_qualifying = quality_cli._qualifying_candidates
@@ -284,7 +284,7 @@ def _single_day(
         else "Use only the supplied research evidence; do not manufacture collateral."
     )
     return {
-        "day": "Single",
+        "day": "Thursday" if thursday_capability.is_thursday(brief=brief) else "Single",
         "target_reader": str(brief.get("target_reader", "")).strip(),
         "reader_problem": str(brief.get("reader_problem", "")).strip(),
         "thesis": str(brief.get("core_hypothesis", "")).strip(),

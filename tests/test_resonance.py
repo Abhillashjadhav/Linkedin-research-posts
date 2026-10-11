@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import Mock
 
-from authority_os import resonance
+from authority_os import resonance, thursday_capability
 
 
 def selected_topic() -> dict[str, object]:
@@ -240,6 +240,53 @@ class ResonanceThresholdTests(unittest.TestCase):
 
 
 class ResonanceProjectionTests(unittest.TestCase):
+    def test_resolved_thursday_route_reaches_selector_and_post_critic(self):
+        routes = (
+            {"day": "Thursday", "weekly_slot": 4},
+            {"weekly_slot": 3},
+            {"editorial_workflow": thursday_capability.POLICY_VERSION},
+        )
+        for route in routes:
+            with self.subTest(route=route):
+                select = Mock(return_value={**selector_payload(), "day": "Friday"})
+                selected = resonance.invoke_selector(
+                    {**day(), **route}, selected_topic(), invoker=select
+                )
+                self.assertIn(thursday_capability.guidance("writer"), select.call_args.args[3])
+                self.assertEqual(selected["day"], "Thursday")
+                critic = Mock(return_value={
+                    "scores": {axis: 5 for axis in resonance.POST_AXES},
+                    "feed_value": True,
+                    "value_before_ask": True,
+                    "status": "PASS",
+                })
+                resonance.invoke_post_critic("The grounded capability post.", selected, invoker=critic)
+                self.assertIn(thursday_capability.guidance("review"), critic.call_args.args[3])
+
+    def test_other_weekdays_and_topic_text_cannot_activate_thursday_prompts(self):
+        routes = [
+            {"day": weekday, "weekly_slot": 3}
+            for weekday in ("Monday", "Tuesday", "Wednesday", "Friday", "Saturday", "Sunday")
+        ] + [{}, {"weekly_slot": 2}, {"weekly_slot": 4}]
+        for route in routes:
+            with self.subTest(route=route):
+                select = Mock(return_value={**selector_payload(), "day": "Thursday"})
+                selected = resonance.invoke_selector(
+                    {**day(), **route, "thesis": "A Thursday capability demo."},
+                    {**selected_topic(), "situation": "Thursday capability discovery."},
+                    invoker=select,
+                )
+                self.assertNotIn(thursday_capability.guidance("writer"), select.call_args.args[3])
+                self.assertEqual(selected["day"], "Single")
+                critic = Mock(return_value={
+                    "scores": {axis: 5 for axis in resonance.POST_AXES},
+                    "feed_value": True,
+                    "value_before_ask": True,
+                    "status": "PASS",
+                })
+                resonance.invoke_post_critic("A Thursday capability demo.", selected, invoker=critic)
+                self.assertNotIn(thursday_capability.guidance("review"), critic.call_args.args[3])
+
     def test_enrich_day_moves_topic_value_packaging_and_proof_before_writer(self):
         day = {
             "dominant_take": "Original interpretation",
