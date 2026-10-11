@@ -75,7 +75,8 @@ def command(args):
     prior_deadline = os.environ.get(runtime_budget.DEADLINE_ENV)
     os.environ[runtime_budget.DEADLINE_ENV] = str(invocation_started + budget)
     try:
-        with model_runtime.discovery_reasoning_override(getattr(args, "reasoning", None)):
+        with model_runtime.discovery_model_override(getattr(args, "model", None)), \
+                model_runtime.discovery_reasoning_override(getattr(args, "reasoning", None)):
             try:
                 result = _ORIGINAL_COMMAND(args)
                 if result != 124 and not _delivered(folder):
@@ -149,6 +150,8 @@ def _record_deadline(folder: Path, args, budget: int) -> None:
         argv.append("--generate-post")
     if getattr(args, "reasoning", None) is not None:
         argv.extend(["--reasoning", args.reasoning])
+    if getattr(args, "model", None) is not None:
+        argv.extend(["--model", args.model])
     resume_command = shlex.join(argv)
     base.base.write_private_json(
         folder / "deadline-checkpoint.json",

@@ -121,15 +121,23 @@ To request Ultra reasoning for this one local discovery invocation, add
   --reasoning ultra --generate-post
 ```
 
-The request applies to discovery model calls and the optional generated-post
-child while keeping the configured model names. The run input and model traces
-record the requested effective effort; a resume must repeat `--reasoning ultra`.
-Without the flag, each stage retains its established reasoning setting. Codex
-client/model support for Ultra must be available locally; an unsupported request
-fails rather than falling back. The shared 480-second discovery deadline remains
-in force, so more reasoning may exhaust it before delivery. Model profiles in
-the dashboard describe configured stages, including optional ones; they do not
-claim every stage ran.
+To use GPT-6 Astra for this one run, add the exact model slug `--model gpt-6-astra`.
+It can be combined with the explicit reasoning request:
+
+```bash
+./bin/linkedin-os discover --profile data/private/authority-profile.json \
+  --days 7 --allow-web-research --allow-model-egress \
+  --model gpt-6-astra --reasoning ultra --generate-post
+```
+
+These requests apply to discovery model calls and the optional generated-post
+child. Run input and model traces record the requested model and effective effort;
+a resume must repeat both explicit flags. Without either flag, each stage keeps
+its established model and reasoning setting. The local Codex client and selected
+model must support the requested effort; an unsupported request fails rather than
+falling back. The shared 480-second discovery deadline remains in force, so more
+reasoning may exhaust it before delivery. Model profiles in the dashboard describe
+configured stages, including optional ones; they do not claim every stage ran.
 
 V1 uses a seven-day lookback by default and retries unavailable Scout surfaces once.
 Discovery requires at least six meaningful conversations, with more allowed when

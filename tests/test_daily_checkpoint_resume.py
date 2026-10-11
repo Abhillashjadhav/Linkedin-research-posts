@@ -101,6 +101,17 @@ class CheckpointResumeTests(unittest.TestCase):
             with self.assertRaisesRegex(workflow.WorkflowError, "input or approved contract differs"):
                 daily.load_stage_resume(self.source, args=self.args, profile=self.profile)
 
+    def test_changed_model_rejects_completed_stage_reuse(self) -> None:
+        self._checkpoint_admission()
+        changed = daily.parser().parse_args([
+            "--profile", str(self.profile_path), "--as-of", AS_OF,
+            "--output-dir", str(self.root / "resumed"),
+            "--db", str(self.root / "authority.sqlite"),
+            "--model", "gpt-6-astra", "--allow-web-research", "--allow-model-egress",
+        ])
+        with self.assertRaisesRegex(workflow.WorkflowError, "input or approved contract differs"):
+            daily.load_stage_resume(self.source, args=changed, profile=self.profile)
+
     def test_changed_selected_url_or_deleted_output_rejects_reuse(self) -> None:
         self._checkpoint_admission()
         scope = self.source / daily.ADMITTED_SCOPE_NAME

@@ -304,6 +304,7 @@ def _run_input_fingerprint(args: argparse.Namespace, profile: Mapping[str, objec
         "db": str(base._under_private(args.db)),
         "generate_post": bool(args.generate_post), "week_slot": args.week_slot,
         "reasoning_override": getattr(args, "reasoning", None),
+        "model_override": getattr(args, "model", None),
     })
 
 
@@ -315,6 +316,14 @@ def set_drafting_child_reasoning(env: dict[str, str], reasoning: str | None) -> 
         env[model_runtime.DISCOVERY_CHILD_REASONING_ENV] = reasoning
     else:
         raise workflow.WorkflowError("Discovery reasoning setting is unsupported.")
+
+
+def set_drafting_child_model(env: dict[str, str], model: str | None) -> None:
+    """Pass only an explicit discover model to its generated drafting child."""
+    if model is None:
+        env.pop(model_runtime.DISCOVERY_CHILD_MODEL_ENV, None)
+    else:
+        env[model_runtime.DISCOVERY_CHILD_MODEL_ENV] = model_runtime.validate_discovery_model(model)
 
 
 def _artifact_sha256(path: Path) -> str:
@@ -829,6 +838,7 @@ def load_discovery_resume(
     requested_topic: str | None,
     profile: Mapping[str, object],
     reasoning: str | None = None,
+    model: str | None = None,
 ) -> DiscoveryResume:
     """Restore the successful discovery boundary without running its scouts again."""
 
@@ -839,6 +849,8 @@ def load_discovery_resume(
         raise workflow.WorkflowError("Resume dashboard has an unsupported schema.")
     if reasoning is not None:
         raise workflow.WorkflowError("Legacy discovery resume cannot establish its original reasoning; start a fresh run.")
+    if model is not None:
+        raise workflow.WorkflowError("Legacy discovery resume cannot establish its original model; start a fresh run.")
     if not isinstance(momentum_payload, Mapping) or momentum_payload.get("schema_version") != 1:
         raise workflow.WorkflowError("Resume momentum has an unsupported schema.")
     if momentum_payload.get("days") != days:
@@ -2550,7 +2562,9 @@ def resolve_signal_evidence(
 def command(args: argparse.Namespace) -> int:
     # Context is reset even on errors and propagated explicitly to workers.
     # Reusing this module in another command cannot leak Thursday into Friday.
-    with base.discovery_route(thursday=False):
+    with base.discovery_route(thursday=False), \
+            model_runtime.discovery_model_override(getattr(args, "model", None)), \
+            model_runtime.discovery_reasoning_override(getattr(args, "reasoning", None)):
         return _command(args)
 
 
@@ -2577,6 +2591,7 @@ def _command(args: argparse.Namespace) -> int:
             else load_discovery_resume(
                 source, days=args.days, requested_topic=args.topic, profile=profile,
                 reasoning=getattr(args, "reasoning", None),
+                model=getattr(args, "model", None),
             )
         )
     as_of = resume.as_of if resume is not None else (
@@ -2604,10 +2619,12 @@ def _command(args: argparse.Namespace) -> int:
         )
     run_dashboard = new_run_dashboard(run_id)
     run_dashboard["requested_reasoning"] = getattr(args, "reasoning", None)
+    run_dashboard["requested_model"] = getattr(args, "model", None)
     input_fingerprint = _run_input_fingerprint(args, profile, as_of)
     base.write_private_json(folder / "run-input.json", {
         "schema_version": 1, "run_id": run_id, "as_of": as_of,
         "requested_reasoning": getattr(args, "reasoning", None),
+        "requested_model": getattr(args, "model", None),
         "input_fingerprint": input_fingerprint,
         "contract_sha256": _contract_sha256(),
         "implementation_sha256": _implementation_sha256(),
@@ -3226,6 +3243,7 @@ def _command(args: argparse.Namespace) -> int:
         child_env[model_call_checkpoint.OUTPUT_ENV] = str(folder / "model-calls")
         child_env[model_call_checkpoint.INPUT_ENV] = input_fingerprint
         set_drafting_child_reasoning(child_env, getattr(args, "reasoning", None))
+        set_drafting_child_model(child_env, getattr(args, "model", None))
         if resume is not None and (resume.source_folder / "model-calls").is_dir():
             child_env[model_call_checkpoint.SOURCE_ENV] = str(resume.source_folder / "model-calls")
         else:
@@ -3303,6 +3321,17 @@ def _command(args: argparse.Namespace) -> int:
 
 def parser() -> argparse.ArgumentParser:
     result = base.parser()
+    def model_slug(value: str) -> str:
+        try:
+            return model_runtime.validate_discovery_model(value)
+        except workflow.WorkflowError as exc:
+            raise argparse.ArgumentTypeError(str(exc)) from exc
+
+    result.add_argument(
+        "--model",
+        type=model_slug,
+        help="Request one exact Codex model slug (for example, gpt-6-astra) for discovery and the optional generated post.",
+    )
     result.add_argument(
         "--reasoning",
         choices=sorted(model_runtime.ALLOWED_REASONING),
