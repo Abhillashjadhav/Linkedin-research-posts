@@ -105,7 +105,7 @@ def _count(value: object, field: str) -> int:
         parsed = int(value)
     else:
         raise _error(f"{field} must be a non-negative whole number.")
-    if parsed > 1_000_000:
+    if not 0 <= parsed <= 1_000_000:
         raise _error(f"{field} exceeds the supported range.")
     return parsed
 
@@ -198,7 +198,11 @@ def _directory(path: Path | str, *, create: bool) -> tuple[Path, int]:
 def _read_feedback(fd: int, filename: str) -> dict[str, object]:
     descriptor = -1
     try:
-        descriptor = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0), dir_fd=fd)
+        descriptor = os.open(
+            filename,
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0),
+            dir_fd=fd,
+        )
         before = os.fstat(descriptor)
         if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
                 or stat.S_IMODE(before.st_mode) != 0o600 or before.st_size > MAX_FILE_BYTES):

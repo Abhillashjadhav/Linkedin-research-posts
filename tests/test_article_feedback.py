@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -73,6 +75,33 @@ class ArticleFeedbackTests(unittest.TestCase):
         with self.assertRaisesRegex(workflow.WorkflowError, "Light edits"):
             self.record(hook_replacements=1)
         self.assertEqual(list(self.root.glob("feedback/*.json")), [])
+
+    def test_negative_integer_counts_rejected_for_any_decision(self) -> None:
+        for field in ("substantial_rewrites", "hook_replacements", "factual_corrections"):
+            with self.subTest(field=field), self.assertRaises(workflow.WorkflowError):
+                self.record(decision="accepted_substantial_edits", **{field: -5})
+        self.assertFalse(self.private.exists())
+
+        path, _ = self.record(decision="accepted_substantial_edits")
+        corrupted = json.loads(path.read_text())
+        corrupted["factual_corrections"] = -5
+        path.write_text(json.dumps(corrupted))
+        with self.assertRaises(workflow.WorkflowError):
+            feedback.load_records(self.private)
+
+    def test_fifo_feedback_record_does_not_block_summary(self) -> None:
+        self.private.mkdir(mode=0o700)
+        fifo = self.private / ("f" * 64 + ".json")
+        os.mkfifo(fifo, 0o600)
+        result = subprocess.run(
+            [sys.executable, "-m", "authority_os.article_feedback", "summary",
+             "--feedback-dir", str(self.private)],
+            cwd=workflow.REPO_ROOT,
+            env={**os.environ, "PYTHONPATH": str(workflow.REPO_ROOT / "src")},
+            capture_output=True, text=True, timeout=3,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unavailable or unsafe", result.stderr)
 
     def test_feedback_directory_symlink_and_record_symlink_are_rejected(self) -> None:
         outside = self.root / "elsewhere"
