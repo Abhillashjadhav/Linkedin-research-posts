@@ -148,6 +148,25 @@ class ArticleContractTests(unittest.TestCase):
         with self.assertRaises(WorkflowError):
             validate_article(changed, value)
 
+    def test_article_hash_binds_source_attestation_and_byline(self):
+        value = brief()
+        draft = article()
+        original = article_hash(draft, value)
+        for field in ("source", "attestation", "byline"):
+            with self.subTest(field=field):
+                revised = copy.deepcopy(value)
+                if field == "source":
+                    revised["sources"][0]["content"] += " A new supplied passage."
+                elif field == "attestation":
+                    revised["author"]["attestations"][0]["text"] += " A new author statement."
+                else:
+                    revised["author"]["byline"] = "By Example, revised"
+                self.assertNotEqual(article_hash(draft, revised), original)
+        reordered = copy.deepcopy(value)
+        reordered["reader"] = dict(reversed(list(reordered["reader"].items())))
+        self.assertEqual(article_hash(draft, reordered), original)
+        self.assertEqual(article_hash(validate_article(draft, value), validate_brief(value)), original)
+
     def test_rejects_malformed_types_as_workflow_errors(self):
         value = brief()
         value["claims"][0]["kind"] = []

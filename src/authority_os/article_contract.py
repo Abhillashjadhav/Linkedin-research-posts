@@ -235,7 +235,11 @@ def article_text(article: object, brief: Mapping[str, object]) -> str:
 
 
 def article_hash(article: object, brief: Mapping[str, object]) -> str:
-    """Hash the validated canonical article object for revision identity."""
-    safe = validate_article(article, brief)
-    payload = json.dumps(safe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    """Hash the validated article and its complete normalized input brief."""
+    safe_brief = validate_brief(brief)
+    safe_article = validate_article(article, safe_brief)
+    payload = json.dumps(
+        {"brief": safe_brief, "article": safe_article},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
