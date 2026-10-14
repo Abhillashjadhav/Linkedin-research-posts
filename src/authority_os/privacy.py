@@ -58,6 +58,9 @@ _WORKFLOW_SCHEDULE_PATTERNS = (
     ),
     re.compile(rb"(?im)^\s*on\s*:\s*\[[^\]\n]*[\"']?schedule[\"']?"),
 )
+ALLOWED_SCHEDULED_WORKFLOWS = frozenset(
+    {".github/workflows/daily-production.yml"}
+)
 _WRITE_SURFACES = (
     b"linkedin" + b".com",
     b"ugc" + b"Posts",
@@ -414,8 +417,10 @@ def _scan_payload(
             findings.add(f"{display}: {prefix}linkedin-or-browser-write-surface")
             break
     normalized = relative.replace("\\", "/")
-    if normalized.startswith(".github/workflows/") and any(
-        pattern.search(payload) for pattern in _WORKFLOW_SCHEDULE_PATTERNS
+    if (
+        normalized.startswith(".github/workflows/")
+        and normalized not in ALLOWED_SCHEDULED_WORKFLOWS
+        and any(pattern.search(payload) for pattern in _WORKFLOW_SCHEDULE_PATTERNS)
     ):
         findings.add(f"{display}: {prefix}scheduled-workflow")
 
